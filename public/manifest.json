@@ -1,0 +1,21 @@
+{
+  "name": "乐谱同步与标注",
+  "short_name": "Choir Score",
+  "description": "天主教歌咏团专属的乐谱同步与标注工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#2c3e50",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192x192.png?text=Score",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512x512.png?text=Score",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

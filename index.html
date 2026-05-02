@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <!-- 【修复2】：移除了 maximum-scale=1.0，允许用户双指自由放大缩小！ -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>乐韵歌咏团 - 乐谱同步</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body class="bg-slate-900 h-screen flex flex-col font-sans select-none">
+
+  <!-- 顶部导航栏 -->
+  <header class="bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center shrink-0 z-50 shadow-sm">
+    <h1 id="song-title" class="text-lg font-bold text-slate-800 truncate max-w-[40%]">加载中...</h1>
+    
+    <div class="flex items-center gap-2">
+      <!-- 画笔工具栏 -->
+      <div id="draw-tools" class="hidden items-center gap-3 mr-4">
+        <button class="color-btn w-8 h-8 rounded-full bg-red-500 ring-2 ring-offset-2 ring-slate-800 transition-all shadow-sm" data-color="rgba(239, 68, 68, 0.8 )" data-width="4" title="红笔"></button>
+        <button class="color-btn w-8 h-8 rounded-full bg-blue-500 ring-2 ring-offset-2 ring-transparent transition-all shadow-sm" data-color="rgba(59, 130, 246, 0.8)" data-width="4" title="蓝笔"></button>
+        <button class="color-btn w-8 h-8 rounded-full bg-slate-800 ring-2 ring-offset-2 ring-transparent transition-all shadow-sm" data-color="rgba(30, 41, 59, 0.8)" data-width="4" title="黑笔"></button>
+        <button class="color-btn w-8 h-8 rounded-full bg-yellow-300 ring-2 ring-offset-2 ring-transparent transition-all shadow-sm flex items-center justify-center" data-color="rgba(253, 224, 71, 0.4)" data-width="20" title="高亮笔">
+          <span class="text-[10px] font-bold text-yellow-700">粗</span>
+        </button>
+        <div class="w-px h-6 bg-slate-300 mx-1"></div>
+        <button id="btn-eraser" class="p-2 rounded-md text-slate-600 hover:bg-slate-100 ring-2 ring-transparent transition-all" title="橡皮擦">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+        </button>
+        <button id="btn-clear" class="p-2 rounded-md text-red-500 hover:bg-red-50 transition-colors" title="清空本页">
+          <span class="text-xs font-bold">清空</span>
+        </button>
+      </div>
+
+      <button id="btn-draw" class="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 transition-all">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+        标注 <span id="draw-status" class="text-xs bg-slate-300 px-2 py-0.5 rounded-full">Off</span>
+      </button>
+
+      <button id="btn-sync" class="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-all shadow-md">
+        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+        Sync
+      </button>
+    </div>
+  </header>
+
+  <!-- 主体内容区 -->
+  <!-- 【修复1】：移除了 touch-none ，允许页面滚动和缩放 -->
+  <main id="slide-container" class="flex-1 relative overflow-auto bg-slate-800 flex justify-center items-start">
+    
+    <!-- 左右翻页按钮 (悬浮在图片上方) -->
+    <button id="btn-prev" class="fixed left-4 top-1/2 -translate-y-1/2 z-40 bg-black/40 hover:bg-black/60 text-white p-3 rounded-full backdrop-blur-sm transition-all hidden md:block">
+      <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+    </button>
+    <button id="btn-next" class="fixed right-4 top-1/2 -translate-y-1/2 z-40 bg-black/40 hover:bg-black/60 text-white p-3 rounded-full backdrop-blur-sm transition-all hidden md:block">
+      <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+    </button>
+
+    <!-- 画板包裹层 -->
+    <div id="canvas-wrapper" class="relative flex justify-center items-center mt-4 mb-12" style="width: 100%; max-width: 1200px;">
+      <!-- 【修复2】：图片宽度 100%，高度自适应，长图可以上下滑动看完整！ -->
+      <img id="score-image" src="" alt="Score" class="w-full h-auto object-contain shadow-2xl select-none pointer-events-none" draggable="false">
+      <canvas id="draw-canvas" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
+    </div>
+  </main>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
