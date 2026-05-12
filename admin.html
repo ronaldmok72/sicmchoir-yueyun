@@ -2707,6 +2707,10 @@
       window.renderSetlist();
     };
 
+    // --- 拖拽排序全局变量 ---
+    let dragStartIndex = null;
+
+    // --- 渲染当前排单 (支持拖拽) ---
     window.renderSetlist = function() {
       setlistAreaEl.innerHTML = '';
       setlistCountEl.textContent = `${currentSetlist.length} 首曲目`;
@@ -2722,28 +2726,73 @@
 
       currentSetlist.forEach((item, index) => {
         const card = document.createElement('div');
-        // 优化：更柔和的边框和阴影
-        card.className = "group flex items-stretch bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all overflow-hidden";
+        // 增加 draggable 属性和抓取手势 (cursor-grab)
+        card.className = "group flex items-stretch bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all overflow-hidden cursor-grab active:cursor-grabbing";
+        card.draggable = true;
+        card.dataset.index = index; // 记录当前索引
+        
         card.innerHTML = `
-          <div class="w-10 flex flex-col items-center justify-center bg-slate-50/80 border-r border-slate-100 py-1 shrink-0">
-            <button onclick="window.moveItem(${index}, 'up')" class="text-slate-300 hover:text-indigo-600 transition-colors p-1" title="上移">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
-            </button>
-            <span class="text-[10px] font-bold text-slate-400 my-0.5">${index + 1}</span>
-            <button onclick="window.moveItem(${index}, 'down')" class="text-slate-300 hover:text-indigo-600 transition-colors p-1" title="下移">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-            </button>
+          <div class="w-10 flex flex-col items-center justify-center bg-slate-50/80 border-r border-slate-100 py-2 shrink-0 text-slate-300 group-hover:text-indigo-400 transition-colors">
+            <!-- 拖拽手柄图标 (六个点) -->
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h.01M8 15h.01M16 9h.01M16 15h.01M12 9h.01M12 15h.01"></path></svg>
+            <span class="text-[10px] font-bold mt-1 text-slate-400">${index + 1}</span>
           </div>
-          <div class="flex-1 p-3 flex justify-between items-center">
+          <div class="flex-1 p-3 flex justify-between items-center pointer-events-none">
             <span class="font-semibold text-slate-700 text-sm pl-1">${item.title}</span>
-            <button onclick="window.removeFromSetlist('${item.uuid}')" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="移除">
+          </div>
+          <div class="flex items-center pr-2">
+            <!-- 删除按钮 (阻止拖拽事件冒泡) -->
+            <button onclick="event.stopPropagation(); window.removeFromSetlist('${item.uuid}')" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="移除">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
             </button>
           </div>
         `;
+
+        // --- 绑定拖拽事件 ---
+        card.addEventListener('dragstart', function(e) {
+          dragStartIndex = +this.dataset.index;
+          e.dataTransfer.effectAllowed = 'move';
+          // 拖拽时的视觉反馈：半透明 + 缩小
+          setTimeout(() => this.classList.add('opacity-40', 'scale-95'), 0);
+        });
+
+        card.addEventListener('dragover', function(e) {
+          e.preventDefault(); // 必须阻止默认行为才能触发 drop
+          e.dataTransfer.dropEffect = 'move';
+          // 拖拽经过时的目标高亮
+          this.classList.add('border-indigo-500', 'bg-indigo-50/50');
+        });
+
+        card.addEventListener('dragleave', function(e) {
+          // 离开目标时取消高亮
+          this.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+        });
+
+        card.addEventListener('drop', function(e) {
+          e.stopPropagation();
+          this.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+          
+          const dragEndIndex = +this.dataset.index;
+          
+          // 如果位置发生了改变，则重新排序数组
+          if (dragStartIndex !== dragEndIndex && dragStartIndex !== null) {
+            const draggedItem = currentSetlist.splice(dragStartIndex, 1)[0];
+            currentSetlist.splice(dragEndIndex, 0, draggedItem);
+            window.renderSetlist(); // 重新渲染
+          }
+          return false;
+        });
+
+        card.addEventListener('dragend', function(e) {
+          // 拖拽结束，恢复视觉
+          this.classList.remove('opacity-40', 'scale-95');
+          dragStartIndex = null;
+        });
+
         setlistAreaEl.appendChild(card);
       });
     };
+
 
 
 // --- 预览弹窗逻辑 (带缩放动画) ---
