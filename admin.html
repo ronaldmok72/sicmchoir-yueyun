@@ -8,21 +8,29 @@
 </head>
 <body class="bg-slate-50 h-screen flex overflow-hidden font-sans">
 
-  <!-- 左侧：曲库区 -->
-  <div class="w-1/2 h-full flex flex-col border-r border-slate-200 bg-slate-50/50">
+  <!-- 最左侧：历史排单区 (占 1/4 宽度 ) -->
+  <div class="w-1/4 h-full flex flex-col bg-slate-50 border-r border-slate-200 shrink-0">
     <div class="p-4 bg-white border-b border-slate-200 shadow-sm z-10">
-      <h1 class="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <span>🎵</span> 曲库 (Library )
-      </h1>
-      <div class="flex gap-2">
-        <input type="text" id="search-input" placeholder="搜索歌名..." class="flex-1 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
-        <select id="category-select" class="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
-          <option value="all">全部分类</option>
-          <option value="进堂咏">进堂咏</option>
-          <option value="奉献咏">奉献咏</option>
-          <option value="领主咏">领主咏</option>
-          <option value="礼仪曲">礼仪曲</option>
-        </select>
+      <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+        <span>📅</span> 历史排单
+      </h2>
+      <button onclick="loadHistory()" class="mt-3 w-full px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100 transition-colors">
+        刷新列表
+      </button>
+    </div>
+    <div id="history-list" class="flex-1 overflow-y-auto p-3 space-y-2">
+      <div class="text-center py-4 text-slate-400 text-xs">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 中间：曲库区 (占 1/3 宽度) -->
+  <div class="w-1/3 h-full flex flex-col bg-white border-r border-slate-200 shrink-0">
+    <div class="p-4 bg-white border-b border-slate-200 shadow-sm z-10">
+      <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+        <span>🎵</span> 曲库 (Library)
+      </h2>
+      <div class="mt-3">
+        <input type="text" id="search-input" placeholder="输入拼音首字母或歌名搜索..." class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner">
       </div>
     </div>
     <div id="library-list" class="flex-1 overflow-y-auto p-4 space-y-2">
@@ -30,23 +38,26 @@
     </div>
   </div>
 
-  <!-- 右侧：排单区 -->
-  <div class="w-1/2 h-full flex flex-col bg-slate-100">
+  <!-- 右侧：排单编辑区 (占据剩余所有宽度) -->
+  <div class="flex-1 h-full flex flex-col bg-slate-100">
     <div class="p-4 bg-white border-b border-slate-200 shadow-sm z-10 flex justify-between items-center">
       <div>
-        <h2 class="text-xl font-bold text-slate-800">本周主日弥撒排单</h2>
+        <h2 class="text-xl font-bold text-slate-800">当前编辑排单</h2>
         <p id="setlist-count" class="text-sm text-slate-500 mt-1">0 首曲目</p>
       </div>
-      <button onclick="handlePublish()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md transition-all flex items-center gap-2">
-        发布排单 (Publish)
-      </button>
+      <div class="flex items-center gap-2">
+        <input type="text" id="setlist-name" placeholder="例如: 5月10日 母亲节" class="px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48">
+        <button onclick="handlePublish()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md transition-all flex items-center gap-2">
+          发布 / 保存修改
+        </button>
+      </div>
     </div>
     <div id="setlist-area" class="flex-1 overflow-y-auto p-4 space-y-3">
       <!-- 排单列表将在这里渲染 -->
     </div>
   </div>
 
-  <!-- 预览模态框 (Modal) -->
+  <!-- 预览模态框 -->
   <div id="preview-modal" class="fixed inset-0 bg-slate-900/80 z-50 hidden opacity-0 transition-opacity duration-300 flex items-center justify-center p-4 backdrop-blur-sm">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
       <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -64,7 +75,7 @@
   <!-- 核心逻辑脚本 -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-    import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -165,7 +176,7 @@
   {
     "id": "song_015",
     "title": "b Bawa Ke Meja (Bring To This Table)",
-    "imageUrl": "https://res.cloudinary.com/dsfhilcgz/image/upload/b_Bawa_Ke_Meja_Bring_To_This_Table_.png"
+    "imageUrl": "https://res.cloudinary.com/dsfhilcgz/image/upload/v1777390450/b_Bawa_Ke_Meja_Bring_To_This_Table.png"
   },
   {
     "id": "song_016",
@@ -2526,37 +2537,30 @@
     "imageUrl": "https://res.cloudinary.com/dsfhilcgz/image/upload/z_%E5%9D%90%E5%9C%A8%E5%AE%9D%E5%BA%A7%E4%B8%8A%E5%9C%A3%E6%B4%81%E7%BE%94%E7%BE%8A.png"
   }];
 
-    let currentSetlist = [];
-    let searchInput, categorySelect, libraryListEl, setlistAreaEl, setlistCountEl;
-    let previewModal, modalImage, modalTitle;
+let currentSetlist = [];
 
-    function init( ) {
-      searchInput = document.getElementById('search-input');
-      categorySelect = document.getElementById('category-select');
-      libraryListEl = document.getElementById('library-list');
-      setlistAreaEl = document.getElementById('setlist-area');
-      setlistCountEl = document.getElementById('setlist-count');
-      previewModal = document.getElementById('preview-modal');
-      modalImage = document.getElementById('modal-image');
-      modalTitle = document.getElementById('modal-title');
+    const searchInput = document.getElementById('search-input');
+    const libraryListEl = document.getElementById('library-list');
+    const setlistAreaEl = document.getElementById('setlist-area');
+    const setlistCountEl = document.getElementById('setlist-count');
+    const previewModal = document.getElementById('preview-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalImage = document.getElementById('modal-image');
+    const historyListEl = document.getElementById('history-list');
 
-      searchInput.addEventListener('input', renderLibrary);
-      categorySelect.addEventListener('change', renderLibrary);
-      
-      renderLibrary();
-      renderSetlist();
+    function init() {
+      window.renderLibrary();
+      window.renderSetlist();
+      window.loadHistory();
+      if(searchInput) searchInput.addEventListener('input', window.renderLibrary);
     }
 
-    function renderLibrary() {
-      const query = searchInput.value.toLowerCase();
-      const cat = categorySelect.value;
+    window.renderLibrary = function() {
+      const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
       libraryListEl.innerHTML = '';
 
       const filtered = LIBRARY_DATA.filter(song => {
-        const matchesSearch = song.title.toLowerCase().includes(query);
-        const songCat = song.category || '未分类';
-        const matchCat = cat === 'all' || songCat === cat;
-        return matchesSearch && matchCat;
+        return song.title.toLowerCase().includes(query);
       });
 
       if (filtered.length === 0) {
@@ -2566,32 +2570,31 @@
 
       filtered.forEach(song => {
         const item = document.createElement('div');
-        item.className = "flex items-center justify-between p-3 bg-white border border-slate-200 rounded-md hover:border-indigo-300 hover:shadow-sm transition-all";
+        item.className = "flex items-center justify-between p-3 mb-2 bg-white border border-slate-200 rounded-md hover:border-indigo-300 hover:shadow-sm transition-all";
         item.innerHTML = `
           <div class="flex flex-col overflow-hidden pr-2">
-            <span class="font-bold text-slate-800 truncate text-sm">${song.title}</span>
-            <span class="text-xs text-slate-400 font-medium mt-0.5">${song.category || '未分类'}</span>
+            <span class="font-bold text-slate-800 truncate">${song.title}</span>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <button class="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100 transition-colors" onclick="openPreview('${song.id}')">预览</button>
-            <button class="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded shadow-sm hover:bg-indigo-700 transition-colors" onclick="addToSetlist('${song.id}')">添加</button>
+            <button class="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100 transition-colors" onclick="window.openPreview('${song.id}')">预览</button>
+            <button class="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded shadow-sm hover:bg-indigo-700 transition-colors" onclick="window.addToSetlist('${song.id}')">添加</button>
           </div>
         `;
         libraryListEl.appendChild(item);
       });
-    }
+    };
 
     window.addToSetlist = function(id) {
       const song = LIBRARY_DATA.find(s => s.id === id);
       if (!song) return;
-      const setlistItem = { ...song, uuid: Date.now().toString() };
+      const setlistItem = { ...song, uuid: Date.now().toString() + Math.random() };
       currentSetlist.push(setlistItem);
-      renderSetlist();
+      window.renderSetlist();
     };
 
     window.removeFromSetlist = function(uuid) {
       currentSetlist = currentSetlist.filter(item => item.uuid !== uuid);
-      renderSetlist();
+      window.renderSetlist();
     };
 
     window.moveItem = function(index, direction) {
@@ -2604,80 +2607,164 @@
         currentSetlist[index] = currentSetlist[index + 1];
         currentSetlist[index + 1] = temp;
       }
-      renderSetlist();
+      window.renderSetlist();
     };
 
-    function renderSetlist() {
+    window.renderSetlist = function() {
       setlistAreaEl.innerHTML = '';
       setlistCountEl.textContent = `${currentSetlist.length} 首曲目`;
 
       if (currentSetlist.length === 0) {
-        setlistAreaEl.innerHTML = `
-          <div class="h-full flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-300 rounded-lg p-6">
-            <p class="text-sm font-medium">排单为空，请从左侧添加曲目</p>
-          </div>
-        `;
+        setlistAreaEl.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm">排单为空，请从左侧添加曲目</div>`;
         return;
       }
 
       currentSetlist.forEach((item, index) => {
         const card = document.createElement('div');
-        card.className = "flex bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden group";
+        card.className = "flex bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mb-2";
         card.innerHTML = `
           <div class="w-10 bg-slate-50 border-r border-slate-100 flex flex-col items-center justify-center py-1 gap-1 shrink-0">
-            <button onclick="moveItem(${index}, 'up')" class="${index === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'} transition-colors" ${index === 0 ? 'disabled' : ''}>▲</button>
-            <span class="text-[10px] font-bold text-slate-400 font-mono">${index + 1}</span>
-            <button onclick="moveItem(${index}, 'down')" class="${index === currentSetlist.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'} transition-colors" ${index === currentSetlist.length - 1 ? 'disabled' : ''}>▼</button>
+            <button onclick="window.moveItem(${index}, 'up')" class="text-slate-400 hover:text-indigo-600">▲</button>
+            <span class="text-[10px] font-bold text-slate-400">${index + 1}</span>
+            <button onclick="window.moveItem(${index}, 'down')" class="text-slate-400 hover:text-indigo-600">▼</button>
           </div>
-          <div class="flex-1 p-3 flex justify-between items-center bg-white">
-            <div class="flex flex-col">
-              <span class="font-bold text-slate-800 text-sm">${item.title}</span>
-            </div>
-            <button onclick="removeFromSetlist('${item.uuid}')" class="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-md transition-colors">❌</button>
+          <div class="flex-1 p-3 flex justify-between items-center">
+            <span class="font-bold text-slate-800 text-sm">${item.title}</span>
+            <button onclick="window.removeFromSetlist('${item.uuid}')" class="text-red-400 hover:text-red-600">✖</button>
           </div>
         `;
         setlistAreaEl.appendChild(card);
       });
-    }
+    };
 
     window.openPreview = function(id) {
       const song = LIBRARY_DATA.find(s => s.id === id);
       if (!song) return;
       modalTitle.textContent = song.title + ' (预览)';
       modalImage.src = song.imageUrl;
+      
+      // 移除隐藏状态
       previewModal.classList.remove('hidden');
+      // 强制浏览器刷新一下，准备播放动画
       void previewModal.offsetWidth;
+      // 把透明度从 0 变成 100
       previewModal.classList.remove('opacity-0');
       previewModal.classList.add('opacity-100');
     };
 
     window.closeModal = function() {
+      // 先把透明度变回 0
       previewModal.classList.remove('opacity-100');
       previewModal.classList.add('opacity-0');
+      // 等待 0.3 秒动画播放完，再彻底隐藏
       setTimeout(() => {
         previewModal.classList.add('hidden');
         modalImage.src = ''; 
       }, 300);
     };
 
-    // 核心：发布到 Firebase 数据库
+
+    window.closeModal = function() {
+      previewModal.classList.add('hidden');
+      modalImage.src = ''; 
+    };
+
+    // --- 历史排单逻辑 ---
+    window.loadHistory = async function() {
+      historyListEl.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs">加载中...</div>';
+      try {
+        const querySnapshot = await getDocs(collection(db, "setlists"));
+        historyListEl.innerHTML = '';
+        
+        if (querySnapshot.empty) {
+          historyListEl.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs">暂无历史排单</div>';
+          return;
+        }
+
+        let historyItems = [];
+        querySnapshot.forEach((doc) => {
+          historyItems.push({ id: doc.id, ...doc.data() });
+        });
+
+        historyItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        historyItems.forEach(item => {
+          const div = document.createElement('div');
+          div.className = "p-3 bg-white border border-slate-200 rounded-md hover:border-indigo-300 hover:shadow-sm transition-all group";
+          
+          const dateStr = new Date(item.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+          
+          div.innerHTML = `
+            <div class="flex justify-between items-start mb-1">
+              <span class="font-bold text-slate-800 text-sm truncate pr-2 cursor-pointer" onclick="window.loadSetlist('${item.id}')" title="点击加载此排单">${item.name}</span>
+              <span class="text-[10px] text-slate-400 shrink-0">${dateStr}</span>
+            </div>
+            <div class="flex justify-between items-center mt-2">
+              <span class="text-xs text-slate-500">${item.items.length} 首曲目</span>
+              <button onclick="window.deleteSetlist('${item.id}')" class="text-xs text-red-500 font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:underline">删除</button>
+            </div>
+          `;
+          historyListEl.appendChild(div);
+        });
+      } catch (error) {
+        console.error("获取历史排单失败:", error);
+        historyListEl.innerHTML = '<div class="text-center py-4 text-red-400 text-xs">加载失败，请重试</div>';
+      }
+    };
+
+    window.loadSetlist = function(id) {
+      if(confirm(`确定要加载排单【${id}】吗？当前未发布的排单将被覆盖。`)) {
+        // 从 Firebase 重新获取最新数据，或者直接从刚才的列表中找（这里为了简单，我们假设需要重新获取，但为了速度，我们可以直接用刚才渲染时的数据。为了稳妥，我们直接触发一次读取）
+        getDocs(collection(db, "setlists")).then(snapshot => {
+          snapshot.forEach(doc => {
+            if(doc.id === id) {
+              const data = doc.data();
+              document.getElementById('setlist-name').value = data.name;
+              currentSetlist = data.items.map(song => ({ ...song, uuid: Date.now().toString() + Math.random() }));
+              window.renderSetlist();
+            }
+          });
+        });
+      }
+    };
+
+    window.deleteSetlist = async function(id) {
+      if(confirm(`🚨 警告：确定要永久删除排单【${id}】吗？此操作不可恢复！`)) {
+        try {
+          await deleteDoc(doc(db, "setlists", id));
+          alert(`✅ 已删除排单：${id}`);
+          window.loadHistory(); // 刷新列表
+        } catch (error) {
+          console.error("删除失败:", error);
+          alert("❌ 删除失败，请检查网络。");
+        }
+      }
+    };
+
     window.handlePublish = async function() {
       if (currentSetlist.length === 0) {
         alert("排单为空，不能发布！");
         return;
       }
-      
+      const setNameInput = document.getElementById('setlist-name').value.trim();
+      if (!setNameInput) {
+        alert("请先输入排单名称！（例如：5月10日 常年期）");
+        return;
+      }
+
       const payload = currentSetlist.map((item, index) => ({
-        id: item.id,
-        order: index + 1,
-        title: item.title,
-        imageUrl: item.imageUrl
+        id: item.id, order: index + 1, title: item.title, imageUrl: item.imageUrl
       }));
 
       try {
-        // 写入数据库的 setlists 集合，文档名为 latest
-        await setDoc(doc(db, "setlists", "latest"), { items: payload });
-        alert("🎉 发布成功！排单已保存到云端，团员现在可以点击 Sync 同步了！");
+        const docRef = doc(db, "setlists", setNameInput);
+        await setDoc(docRef, {
+          name: setNameInput,
+          createdAt: new Date().toISOString(),
+          items: payload
+        });
+        alert(`🎉 成功发布/保存排单：【${setNameInput}】！`);
+        window.loadHistory(); // 发布后自动刷新左侧历史列表
       } catch (error) {
         console.error("发布失败: ", error);
         alert("❌ 发布失败，请检查网络连接。");
@@ -2686,6 +2773,5 @@
 
     document.addEventListener('DOMContentLoaded', init);
   </script>
-
 </body>
 </html>
