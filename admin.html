@@ -29,14 +29,21 @@
       <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
         <span>🎵</span> 曲库 (Library)
       </h2>
-      <div class="mt-3">
-        <input type="text" id="search-input" placeholder="输入拼音首字母或歌名搜索..." class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner">
+      
+      <!-- 纯净版搜索框 + 新歌按钮 -->
+      <div class="mt-3 flex gap-2">
+        <input type="text" id="search-input" placeholder="输入拼音首字母或歌名搜索..." class="flex-1 px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner">
+        <button onclick="openAddSongModal()" class="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-md shadow-sm transition-colors shrink-0">
+          ➕ 新歌
+        </button>
       </div>
+
     </div>
     <div id="library-list" class="flex-1 overflow-y-auto p-4 space-y-2">
       <!-- 曲目列表将在这里渲染 -->
     </div>
   </div>
+
 
   <!-- 右侧：排单编辑区 (占据剩余所有宽度) -->
   <div class="flex-1 h-full flex flex-col bg-slate-100">
@@ -57,7 +64,7 @@
     </div>
   </div>
 
-  <!-- 预览模态框 -->
+  <!-- 预览模态框 (Modal) -->
   <div id="preview-modal" class="fixed inset-0 bg-slate-900/80 z-50 hidden opacity-0 transition-opacity duration-300 flex items-center justify-center p-4 backdrop-blur-sm">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
       <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -68,6 +75,33 @@
       </div>
       <div class="flex-1 overflow-auto p-4 bg-slate-200 flex justify-center">
         <img id="modal-image" src="" alt="Score Preview" class="max-w-full h-auto object-contain shadow-md rounded">
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 智能上传歌曲模态框 -->
+  <div id="add-song-modal" class="fixed inset-0 bg-slate-900/80 z-50 hidden opacity-0 transition-opacity duration-300 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <h3 class="font-bold text-slate-800 text-lg">➕ 上传新曲目 / 覆盖旧曲目</h3>
+        <button onclick="closeAddSongModal()" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">1. 选择乐谱图片</label>
+          <input type="file" id="new-song-file" accept="image/*" class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+          <p class="text-xs text-slate-500 mt-1">提示：系统会自动读取照片名字作为歌名。</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">2. 确认歌名 (可手动修改)</label>
+          <input type="text" id="new-song-title" class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+        <button id="btn-upload-save" onclick="uploadAndSaveSong()" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg shadow-md transition-all mt-4 flex justify-center items-center">
+          上传并保存到云端
+        </button>
       </div>
     </div>
   </div>
@@ -2537,7 +2571,7 @@
     "imageUrl": "https://res.cloudinary.com/dsfhilcgz/image/upload/z_%E5%9D%90%E5%9C%A8%E5%AE%9D%E5%BA%A7%E4%B8%8A%E5%9C%A3%E6%B4%81%E7%BE%94%E7%BE%8A.png"
   }];
 
-let currentSetlist = [];
+    let currentSetlist = [];
 
     const searchInput = document.getElementById('search-input');
     const libraryListEl = document.getElementById('library-list');
@@ -2547,13 +2581,28 @@ let currentSetlist = [];
     const modalTitle = document.getElementById('modal-title');
     const modalImage = document.getElementById('modal-image');
     const historyListEl = document.getElementById('history-list');
+    const addSongModal = document.getElementById('add-song-modal'); // 新增：上传弹窗
 
-    function init() {
+    // --- 初始化与拉取云端新歌 ---
+    window.init = async function() {
+      // 1. 启动时先去 Firebase 拉取你后来上传的“自定义新歌”
+      try {
+        const querySnapshot = await getDocs(collection(db, "custom_songs"));
+        querySnapshot.forEach((doc) => {
+          if (!LIBRARY_DATA.find(s => s.id === doc.id)) {
+            LIBRARY_DATA.push(doc.data());
+          }
+        });
+      } catch (e) {
+        console.log("加载自定义歌曲失败", e);
+      }
+
+      // 2. 渲染界面
       window.renderLibrary();
       window.renderSetlist();
       window.loadHistory();
       if(searchInput) searchInput.addEventListener('input', window.renderLibrary);
-    }
+    };
 
     window.renderLibrary = function() {
       const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
@@ -2643,30 +2692,19 @@ let currentSetlist = [];
       modalTitle.textContent = song.title + ' (预览)';
       modalImage.src = song.imageUrl;
       
-      // 移除隐藏状态
       previewModal.classList.remove('hidden');
-      // 强制浏览器刷新一下，准备播放动画
       void previewModal.offsetWidth;
-      // 把透明度从 0 变成 100
       previewModal.classList.remove('opacity-0');
       previewModal.classList.add('opacity-100');
     };
 
     window.closeModal = function() {
-      // 先把透明度变回 0
       previewModal.classList.remove('opacity-100');
       previewModal.classList.add('opacity-0');
-      // 等待 0.3 秒动画播放完，再彻底隐藏
       setTimeout(() => {
         previewModal.classList.add('hidden');
         modalImage.src = ''; 
       }, 300);
-    };
-
-
-    window.closeModal = function() {
-      previewModal.classList.add('hidden');
-      modalImage.src = ''; 
     };
 
     // --- 历史排单逻辑 ---
@@ -2714,7 +2752,6 @@ let currentSetlist = [];
 
     window.loadSetlist = function(id) {
       if(confirm(`确定要加载排单【${id}】吗？当前未发布的排单将被覆盖。`)) {
-        // 从 Firebase 重新获取最新数据，或者直接从刚才的列表中找（这里为了简单，我们假设需要重新获取，但为了速度，我们可以直接用刚才渲染时的数据。为了稳妥，我们直接触发一次读取）
         getDocs(collection(db, "setlists")).then(snapshot => {
           snapshot.forEach(doc => {
             if(doc.id === id) {
@@ -2731,9 +2768,11 @@ let currentSetlist = [];
     window.deleteSetlist = async function(id) {
       if(confirm(`🚨 警告：确定要永久删除排单【${id}】吗？此操作不可恢复！`)) {
         try {
-          await deleteDoc(doc(db, "setlists", id));
+          // 注意：这里需要确保顶部 import 了 deleteDoc
+          // import { ..., deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+          await deleteDoc(doc(db, "setlists", id ));
           alert(`✅ 已删除排单：${id}`);
-          window.loadHistory(); // 刷新列表
+          window.loadHistory(); 
         } catch (error) {
           console.error("删除失败:", error);
           alert("❌ 删除失败，请检查网络。");
@@ -2764,14 +2803,112 @@ let currentSetlist = [];
           items: payload
         });
         alert(`🎉 成功发布/保存排单：【${setNameInput}】！`);
-        window.loadHistory(); // 发布后自动刷新左侧历史列表
+        window.loadHistory(); 
       } catch (error) {
         console.error("发布失败: ", error);
         alert("❌ 发布失败，请检查网络连接。");
       }
     };
 
-    document.addEventListener('DOMContentLoaded', init);
+    // --- 智能批量上传歌曲逻辑 ---
+    window.openAddSongModal = function() {
+      document.getElementById('new-song-file').value = '';
+      addSongModal.classList.remove('hidden');
+      void addSongModal.offsetWidth;
+      addSongModal.classList.remove('opacity-0');
+      addSongModal.classList.add('opacity-100');
+    };
+
+    window.closeAddSongModal = function() {
+      addSongModal.classList.remove('opacity-100');
+      addSongModal.classList.add('opacity-0');
+      setTimeout(() => addSongModal.classList.add('hidden'), 300);
+    };
+
+    window.uploadAndSaveSong = async function() {
+      const fileInput = document.getElementById('new-song-file');
+      const btn = document.getElementById('btn-upload-save');
+
+      if (!fileInput.files || fileInput.files.length === 0) {
+        alert("请先选择至少一张乐谱图片！");
+        return;
+      }
+
+      const files = fileInput.files;
+      const total = files.length;
+      let successCount = 0;
+      let updateCount = 0;
+      
+      // 按钮变成加载状态
+      btn.disabled = true;
+      btn.classList.replace('bg-emerald-500', 'bg-slate-400');
+
+      // 循环处理每一张照片
+      for (let i = 0; i < total; i++) {
+        const file = files[i];
+        // 自动读取文件名，去掉 .jpg/.png 后缀，直接作为歌名
+        let cleanName = file.name.replace(/\.[^/.]+$/, ""); 
+        
+        // 在按钮上显示进度
+        btn.innerHTML = `正在上传 (${i + 1}/${total}): ${cleanName}...`;
+
+        try {
+          // 1. 上传到 Cloudinary
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('upload_preset', 'ml_default');
+
+          const cloudRes = await fetch('https://api.cloudinary.com/v1_1/dsfhilcgz/image/upload', {
+            method: 'POST',
+            body: formData
+          } );
+          const cloudData = await cloudRes.json();
+          
+          if (!cloudData.secure_url) throw new Error("Cloudinary 上传失败");
+          const imageUrl = cloudData.secure_url;
+
+          // 2. 检查是否已存在同名歌曲 (智能覆盖)
+          let existingIndex = LIBRARY_DATA.findIndex(s => s.title === cleanName);
+          let songId = "song_custom_" + Date.now() + "_" + i; 
+          let isUpdate = false;
+
+          if (existingIndex !== -1) {
+            songId = LIBRARY_DATA[existingIndex].id; // 发现同名，使用旧ID覆盖
+            isUpdate = true;
+          }
+
+          const songData = { id: songId, title: cleanName, imageUrl: imageUrl };
+
+          // 3. 永久保存到 Firebase
+          await setDoc(doc(db, "custom_songs", songId), songData);
+
+          // 4. 更新左侧列表数据
+          if (isUpdate) {
+            LIBRARY_DATA[existingIndex].imageUrl = imageUrl;
+            updateCount++;
+          } else {
+            LIBRARY_DATA.push(songData);
+            successCount++;
+          }
+        } catch (error) {
+          console.error(`上传 ${cleanName} 失败:`, error);
+        }
+      }
+
+      // 恢复按钮状态并刷新列表
+      btn.disabled = false;
+      btn.innerHTML = `开始批量上传`;
+      btn.classList.replace('bg-slate-400', 'bg-emerald-500');
+      
+      window.renderLibrary();
+      window.closeAddSongModal();
+      
+      // 弹出最终报告
+      alert(`✅ 批量处理完成！\n新增: ${successCount} 首\n覆盖更新: ${updateCount} 首`);
+    };
+
+
+    document.addEventListener('DOMContentLoaded', window.init);
   </script>
 </body>
 </html>
