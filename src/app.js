@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -13,14 +13,27 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig );
 const db = getFirestore(app);
 
-let PLAYLIST = JSON.parse(localStorage.getItem('offline_playlist')) || [];
+let PLAYLIST = [];
 let currentIndex = 0;
 let isDrawingMode = false;
 
-let titleEl, imgEl, btnDraw, drawStatus, drawTools, colorBtns, btnEraser, btnClear, btnSync, canvas, ctx, slideContainer;
-let isDrawing = false, lastX = 0, lastY = 0, currentColor = 'rgba(239, 68, 68, 0.8)', currentWidth = 4, isEraser = false;
+// DOM Elements
+let titleEl, imgEl, btnDraw, drawStatus, drawTools, colorBtns, btnEraser, btnClear, btnSync, canvas, ctx, slideContainer, setlistSelect;
 
-function init() {
+// Drawing State
+let isDrawing = false;
+let lastX = 0, lastY = 0;
+let currentColor = 'rgba(239, 68, 68, 0.8)';
+let currentWidth = 4;
+let isEraser = false;
+
+// 缩放与拖拽状态
+let scale = 1;
+let isDragging = false;
+let startX, startY, translateX = 0, translateY = 0;
+let initialDistance = null;
+
+async function init() {
   titleEl = document.getElementById('song-title');
   imgEl = document.getElementById('score-image');
   btnDraw = document.getElementById('btn-draw');
@@ -33,6 +46,7 @@ function init() {
   canvas = document.getElementById('draw-canvas');
   ctx = canvas.getContext('2d', { willReadFrequently: true });
   slideContainer = document.getElementById('slide-container');
+  setlistSelect = document.getElementById('setlist-select');
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(err => console.error(err));
@@ -40,14 +54,8 @@ function init() {
 
   window.addEventListener('resize', resizeCanvas);
   
-  if (PLAYLIST.length > 0) {
-    loadSong(currentIndex);
-  } else {
-    titleEl.textContent = "请点击右上角 Sync 获取本周排单";
-  }
-  
   if (btnDraw) btnDraw.addEventListener('click', toggleDrawMode);
-  if (btnSync) btnSync.addEventListener('click', syncScores);
+  if (btnSync) btnSync.addEventListener('click', syncSelectedSetlist);
   
   document.getElementById('btn-prev').addEventListener('click', () => {
     if (currentIndex > 0) { currentIndex--; loadSong(currentIndex); }
@@ -59,7 +67,135 @@ function init() {
   setupTools();
   setupSwipe();
   setupDrawing();
+  setupZoomAndPan();
+
+  // 启动时：1. 加载下拉菜单 2. 尝试从本地缓存恢复上次的排单
+  await loadSetlistOptions();
+  loadLocalPlaylist();
 }
+
+// --- 1. 加载云端排单列表到下拉菜单 ---
+async function loadSetlistOptions() {
+  try {
+    const querySnapshot = await getDocs(collection(db, "setlists"));
+    setlistSelect.innerHTML = '';
+    
+    if (querySnapshot.empty) {
+      setlistSelect.innerHTML = '<option value="">暂无排单</option>';
+      return;
+    }
+
+    let options = [];
+    querySnapshot.forEach((doc) => {
+      options.push({ id: doc.id, name: doc.data().name, createdAt: doc.data().createdAt });
+    });
+
+    // 按时间倒序
+    options.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    options.forEach(opt => {
+      const optionEl = document.createElement('option');
+      optionEl.value = opt.id;
+      optionEl.textContent = opt.name;
+      setlistSelect.appendChild(optionEl);
+    });
+
+  } catch (error) {
+    console.error("获取排单列表失败:", error);
+    setlistSelect.innerHTML = '<option value="">网络错误</option>';
+  }
+}
+
+// --- 2. 同步选中的排单 (百毒不侵版) ---
+async function syncSelectedSetlist() {
+  const selectedId = setlistSelect.value;
+  if (!selectedId) {
+    alert("请先选择一个排单！");
+    return;
+  }
+
+  const icon = btnSync.querySelector('svg');
+  if (icon) icon.style.opacity = '0.5';
+  btnSync.textContent = 'Syncing...';
+  btnSync.disabled = true;
+
+  try {
+    // 从 Firebase 获取选中的排单详情
+    const docRef = doc(db, "setlists", selectedId);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      PLAYLIST = docSnap.data().items;
+      
+      // 保存到本地 LocalStorage，以便离线时读取
+      localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
+      localStorage.setItem('offline_playlist_name', selectedId);
+
+      // 缓存图片 (百毒不侵的逐个缓存法)
+      const cache = await caches.open('score-cache-v1');
+      const urls = PLAYLIST.map(song => song.imageUrl);
+      
+      let successCount = 0;
+      let failCount = 0;
+
+      await Promise.all(urls.map(async (url) => {
+        try {
+          const response = await fetch(url);
+          if (response.ok) {
+            await cache.put(url, response);
+            successCount++;
+          } else {
+            console.warn('⚠️ 图片找不到，跳过缓存:', url);
+            failCount++;
+          }
+        } catch (e) {
+          console.warn('⚠️ 图片获取失败，跳过:', url);
+          failCount++;
+        }
+      }));
+      
+      currentIndex = 0;
+      loadSong(currentIndex);
+      
+      if (failCount > 0) {
+        alert(`✅ 同步完成！\n成功: ${successCount} 首\n失败: ${failCount} 首 (云端无图片)\n现在可以离线查看了。`);
+      } else {
+        alert(`✅ 成功同步排单：【${selectedId}】！\n现在可以离线查看了。`);
+      }
+      
+    } else {
+      alert('⚠️ 找不到该排单数据。');
+    }
+  } catch (error) {
+    console.error('Sync failed', error);
+    alert('❌ 同步失败，请检查网络连接。');
+  } finally {
+    if (icon) icon.style.opacity = '1';
+    btnSync.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg> Sync`;
+    btnSync.disabled = false;
+  }
+}
+
+// --- 3. 离线时加载本地排单 ---
+function loadLocalPlaylist( ) {
+  const savedPlaylist = localStorage.getItem('offline_playlist');
+  const savedName = localStorage.getItem('offline_playlist_name');
+  
+  if (savedPlaylist) {
+    PLAYLIST = JSON.parse(savedPlaylist);
+    currentIndex = 0;
+    loadSong(currentIndex);
+    
+    // 如果下拉菜单里有这个选项，就自动选中它
+    if (savedName && setlistSelect.querySelector(`option[value="${savedName}"]`)) {
+      setlistSelect.value = savedName;
+    }
+  } else {
+    titleEl.textContent = "请选择排单并点击 Sync";
+  }
+}
+
+// --- 以下是原有的画笔、缩放、翻页逻辑（保持不变） ---
 
 function setupTools() {
   if (colorBtns) {
@@ -91,19 +227,17 @@ function setupTools() {
   }
 }
 
-// 修复后的 loadSong (只保留这一个)
 function loadSong(index) {
-  if (PLAYLIST.length === 0) return;
+  if (!PLAYLIST || PLAYLIST.length === 0) return;
   const song = PLAYLIST[index];
-  titleEl.textContent = song.title;
+  titleEl.textContent = `${index + 1}/${PLAYLIST.length} : ${song.title}`;
   
-  // 清空旧画布
+  scale = 1; translateX = 0; translateY = 0;
+  updateTransform();
+  
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  imgEl.onload = () => {
-    resizeCanvas(); // 图片加载完后，立刻让画板对齐图片尺寸
-    restoreDrawing(song.id);
-  };
+  imgEl.onload = () => { restoreDrawing(song.id); };
   imgEl.src = song.imageUrl;
 }
 
@@ -116,9 +250,6 @@ function toggleDrawMode() {
     canvas.classList.add('pointer-events-auto');
     drawTools.classList.remove('hidden');
     drawTools.classList.add('flex');
-    // 开启画笔时，锁定屏幕滑动，防止画画时页面乱跑
-    slideContainer.style.overflow = 'hidden';
-    slideContainer.style.touchAction = 'none';
   } else {
     btnDraw.classList.remove('ring-2', 'ring-red-500', 'bg-slate-50');
     drawStatus.textContent = 'Off';
@@ -126,18 +257,14 @@ function toggleDrawMode() {
     canvas.classList.add('pointer-events-none');
     drawTools.classList.add('hidden');
     drawTools.classList.remove('flex');
-    // 关闭画笔时，恢复页面的上下滑动和双指缩放
-    slideContainer.style.overflow = 'auto';
-    slideContainer.style.touchAction = 'auto';
   }
 }
 
-// 修复后的 resizeCanvas
 function resizeCanvas() {
-  if (imgEl && imgEl.clientWidth > 0) {
-    canvas.width = imgEl.clientWidth;
-    canvas.height = imgEl.clientHeight;
-    if (PLAYLIST[currentIndex]) restoreDrawing(PLAYLIST[currentIndex].id);
+  canvas.width = slideContainer.clientWidth;
+  canvas.height = slideContainer.clientHeight;
+  if (PLAYLIST.length > 0) {
+    restoreDrawing(PLAYLIST[currentIndex].id);
   }
 }
 
@@ -147,19 +274,31 @@ function setupDrawing() {
   canvas.addEventListener('mousemove', draw);
   canvas.addEventListener('mouseup', stopDrawing);
   canvas.addEventListener('mouseout', stopDrawing);
-  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); if (e.touches.length > 0) startDrawing(e.touches[0]); }, { passive: false });
-  canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if (e.touches.length > 0) draw(e.touches[0]); }, { passive: false });
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      startDrawing(e.touches[0]);
+    }
+  }, { passive: false });
+  
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      draw(e.touches[0]);
+    }
+  }, { passive: false });
+  
   canvas.addEventListener('touchend', stopDrawing);
 }
 
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
-  // 适配不同屏幕的缩放比例
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  return { 
-    x: (e.clientX - rect.left) * scaleX, 
-    y: (e.clientY - rect.top) * scaleY 
+  const rawX = e.clientX - rect.left;
+  const rawY = e.clientY - rect.top;
+  return {
+    x: (rawX - translateX) / scale,
+    y: (rawY - translateY) / scale
   };
 }
 
@@ -173,20 +312,25 @@ function startDrawing(e) {
 function draw(e) {
   if (!isDrawing || !isDrawingMode) return;
   const pos = getPos(e);
+  
   ctx.beginPath();
   ctx.moveTo(lastX, lastY);
   ctx.lineTo(pos.x, pos.y);
+  
   if (isEraser) {
     ctx.globalCompositeOperation = 'destination-out';
     ctx.strokeStyle = 'rgba(0,0,0,1)';
-    ctx.lineWidth = 30;
+    ctx.lineWidth = 30 / scale;
   } else {
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = currentColor;
-    ctx.lineWidth = currentWidth;
+    ctx.lineWidth = currentWidth / scale;
   }
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.stroke();
+  
   lastX = pos.x; lastY = pos.y;
 }
 
@@ -197,7 +341,7 @@ function stopDrawing() {
 }
 
 function saveDrawing() {
-  if (PLAYLIST.length === 0) return;
+  if (!PLAYLIST || PLAYLIST.length === 0) return;
   const song = PLAYLIST[currentIndex];
   const dataURL = canvas.toDataURL('image/png');
   localStorage.setItem(`drawing_${song.id}`, dataURL);
@@ -211,74 +355,164 @@ function restoreDrawing(songId) {
     img.src = dataURL;
     img.onload = () => {
       ctx.globalCompositeOperation = 'source-over';
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
     };
   }
 }
 
 function setupSwipe() {
-  let touchStartX = 0, touchEndX = 0;
+  let touchStartX = 0;
+  let touchEndX = 0;
   if (!slideContainer) return;
-  slideContainer.addEventListener('touchstart', e => { if (!isDrawingMode) touchStartX = e.changedTouches[0].screenX; }, { passive: true });
+
+  slideContainer.addEventListener('touchstart', e => {
+    if (isDrawingMode || scale > 1) return;
+    touchStartX = e.changedTouches[0].screenX;
+  }, { passive: true });
+
   slideContainer.addEventListener('touchend', e => {
-    if (!isDrawingMode) { touchEndX = e.changedTouches[0].screenX; handleSwipe(); }
+    if (isDrawingMode || scale > 1) return;
+    touchEndX = e.changedTouches[0].screenX;
+    handleSwipe();
   }, { passive: true });
 
   function handleSwipe() {
     const swipeThreshold = 50;
-    if (touchEndX < touchStartX - swipeThreshold && currentIndex < PLAYLIST.length - 1) {
-      currentIndex++; loadSong(currentIndex);
+    if (touchEndX < touchStartX - swipeThreshold) {
+      if (currentIndex < PLAYLIST.length - 1) { currentIndex++; loadSong(currentIndex); }
     }
-    if (touchEndX > touchStartX + swipeThreshold && currentIndex > 0) {
-      currentIndex--; loadSong(currentIndex);
+    if (touchEndX > touchStartX + swipeThreshold) {
+      if (currentIndex > 0) { currentIndex--; loadSong(currentIndex); }
     }
   }
 }
 
-async function syncScores() {
-  btnSync.textContent = 'Syncing...';
-  btnSync.disabled = true;
-  try {
-    const docRef = doc(db, "setlists", "latest");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      PLAYLIST = docSnap.data().items;
-      localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
-      
-      const cache = await caches.open('score-cache-v1');
-      const urls = PLAYLIST.map(song => song.imageUrl);
-      
-      // 【升级】：一张一张缓存，坏了一张不影响其他图片！
-      await Promise.all(urls.map(async (url) => {
-        try {
-          const response = await fetch(url);
-          if (response.ok) {
-            await cache.put(url, response);
-          } else {
-            console.warn('这张图片链接失效，跳过缓存:', url);
-          }
-        } catch (e) {
-          console.warn('网络错误，跳过缓存:', url);
-        }
-      }));
-      
-      currentIndex = 0;
-      loadSong(currentIndex);
-      alert('✅ 同步成功！最新排单已下载，可离线查看。');
-    } else {
-      alert('⚠️ 云端目前没有排单数据，请指挥先在后台发布。');
+function setupZoomAndPan() {
+  const container = document.getElementById('zoom-wrapper');
+  
+  // 🚨 救命代码：如果找不到缩放区域，就安全退出，绝对不报错！
+  if (!container) return; 
+
+  container.addEventListener('wheel', (e) => {
+    if (isDrawingMode) return;
+    e.preventDefault();
+    const zoomSensitivity = 0.001;
+    const delta = e.deltaY * -zoomSensitivity;
+    const newScale = Math.min(Math.max(1, scale + delta), 5);
+    
+    if (newScale !== scale) {
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      translateX = mouseX - (mouseX - translateX) * (newScale / scale);
+      translateY = mouseY - (mouseY - translateY) * (newScale / scale);
+      scale = newScale;
+      checkBounds();
+      updateTransform();
     }
-  } catch (error) {
-    console.error('Sync failed', error);
-    alert('❌ 同步失败，请检查网络连接。');
-  } finally {
-    btnSync.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg> Sync`;
-    btnSync.disabled = false;
-  }
+  }, { passive: false });
+
+  container.addEventListener('mousedown', (e) => {
+    if (isDrawingMode || scale === 1) return;
+    isDragging = true;
+    startX = e.clientX - translateX;
+    startY = e.clientY - translateY;
+    container.style.cursor = 'grabbing';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    translateX = e.clientX - startX;
+    translateY = e.clientY - startY;
+    checkBounds();
+    updateTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    if(container) container.style.cursor = scale > 1 ? 'grab' : 'default';
+  });
+
+  container.addEventListener('touchstart', (e) => {
+    if (isDrawingMode) return;
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      initialDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    } else if (e.touches.length === 1 && scale > 1) {
+      isDragging = true;
+      startX = e.touches[0].clientX - translateX;
+      startY = e.touches[0].clientY - translateY;
+    }
+  }, { passive: false });
+
+  container.addEventListener('touchmove', (e) => {
+    if (isDrawingMode) return;
+    if (e.touches.length === 2 && initialDistance) {
+      e.preventDefault();
+      const currentDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const delta = currentDistance / initialDistance;
+      const newScale = Math.min(Math.max(1, scale * delta), 5);
+      
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const rect = container.getBoundingClientRect();
+      const touchX = centerX - rect.left;
+      const touchY = centerY - rect.top;
+
+      translateX = touchX - (touchX - translateX) * (newScale / scale);
+      translateY = touchY - (touchY - translateY) * (newScale / scale);
+      scale = newScale;
+      initialDistance = currentDistance;
+      checkBounds();
+      updateTransform();
+    } else if (e.touches.length === 1 && isDragging) {
+      e.preventDefault();
+      translateX = e.touches[0].clientX - startX;
+      translateY = e.touches[0].clientY - startY;
+      checkBounds();
+      updateTransform();
+    }
+  }, { passive: false });
+
+  container.addEventListener('touchend', () => {
+    initialDistance = null;
+    isDragging = false;
+  });
 }
 
 
-if (document.readyState === 'loading' ) {
+function checkBounds() {
+  if (scale === 1) {
+    translateX = 0; translateY = 0; return;
+  }
+  const rect = slideContainer.getBoundingClientRect();
+  const maxTx = 0;
+  const minTx = rect.width * (1 - scale);
+  const maxTy = 0;
+  const minTy = rect.height * (1 - scale);
+  
+  translateX = Math.max(minTx, Math.min(maxTx, translateX));
+  translateY = Math.max(minTy, Math.min(maxTy, translateY));
+}
+
+function updateTransform() {
+  const container = document.getElementById('zoom-wrapper');
+  
+  // 🚨 救命代码：如果找不到缩放区域，直接退出，绝对不报错！
+  if (!container) return; 
+  
+  container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+  container.style.cursor = scale > 1 && !isDrawingMode ? 'grab' : 'default';
+}
+
+
+if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
   init();
