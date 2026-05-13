@@ -11,7 +11,7 @@
     body { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
 </head>
-<body class="bg-zinc-950 text-zinc-200 h-screen flex flex-col font-sans select-none overflow-hidden">
+<body class="bg-zinc-950 text-zinc-200 h-[100dvh] flex flex-col font-sans select-none overflow-hidden">
   <!-- 解锁按钮 (仅在演出模式显示，悬浮在右上角) -->
   <button id="btn-unlock" class="fixed top-6 right-6 z-[60] p-3 bg-zinc-900/50 backdrop-blur-md text-white/30 hover:text-white hover:bg-zinc-800/80 rounded-full border border-white/10 transition-all hidden shadow-xl">
     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>
@@ -182,7 +182,7 @@
       btnInvert.classList.toggle('text-zinc-300');
     });
     // ==========================================
-    // 【D】演出模式 (Performance Mode)
+    // 【D】演出模式 (Performance Mode) + 自动全屏
     // ==========================================
     const btnLock = document.getElementById('btn-lock');
     const btnUnlock = document.getElementById('btn-unlock');
@@ -203,7 +203,39 @@
       
       // 4. 显示右上角的半透明解锁按钮
       btnUnlock.classList.remove('hidden');
+
+      // 🌟 5. 自动进入全屏模式 (兼容安卓和 iPad)
+      const docEl = document.documentElement;
+      if (docEl.requestFullscreen) {
+        docEl.requestFullscreen().catch(err => console.log("全屏被拒绝:", err));
+      } else if (docEl.webkitRequestFullscreen) { /* Safari/iPadOS */
+        docEl.webkitRequestFullscreen();
+      }
     });
+
+    btnUnlock.addEventListener('click', () => {
+      // 1. 恢复顶部导航栏
+      header.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-8');
+      
+      // 2. 恢复画板状态
+      drawCanvas.style.pointerEvents = '';
+      
+      // 3. 解除锁定标记
+      slideContainer.dataset.locked = "false";
+      
+      // 4. 隐藏解锁按钮
+      btnUnlock.classList.add('hidden');
+
+      // 🌟 5. 自动退出全屏模式
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    });
+
 
     btnUnlock.addEventListener('click', () => {
       // 1. 恢复顶部导航栏
