@@ -1,5 +1,6 @@
+// 1. 引入新增了 updateDoc 和 onSnapshot
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -17,8 +18,12 @@ let PLAYLIST = [];
 let currentIndex = 0;
 let isDrawingMode = false;
 
+// --- 新增：Live Sync 状态 ---
+let isConductor = false;
+let unsubscribeLiveSync = null;
+
 // DOM Elements
-let titleEl, imgEl, btnDraw, drawStatus, drawTools, colorBtns, btnEraser, btnClear, btnSync, canvas, ctx, slideContainer, setlistSelect;
+let titleEl, imgEl, btnDraw, drawStatus, drawTools, colorBtns, btnEraser, btnClear, btnSync, canvas, ctx, slideContainer, setlistSelect, btnConductor;
 
 // Drawing State
 let isDrawing = false;
@@ -47,6 +52,9 @@ async function init() {
   ctx = canvas.getContext('2d', { willReadFrequently: true });
   slideContainer = document.getElementById('slide-container');
   setlistSelect = document.getElementById('setlist-select');
+  
+  // 绑定指挥按钮
+  btnConductor = document.getElementById('btn-conductor');
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(err => console.error(err));
@@ -57,11 +65,50 @@ async function init() {
   if (btnDraw) btnDraw.addEventListener('click', toggleDrawMode);
   if (btnSync) btnSync.addEventListener('click', syncSelectedSetlist);
   
+  // --- 新增：指挥模式切换逻辑 ---
+    if (btnConductor) {
+    btnConductor.addEventListener('click', () => {
+      // 如果当前是关闭状态，准备开启，则需要验证密码
+      if (!isConductor) {
+        const pwd = prompt("🔒 请输入指挥专属密码：");
+        
+        // 如果点击了取消，或者密码不是 1234，就拒绝开启
+        if (pwd !== "sic") {
+          if (pwd !== null) alert("❌ 密码错误，无法开启指挥模式！");
+          return; // 直接退出，不执行后面的开启逻辑
+        }
+      }
+
+      // 密码正确（或准备关闭），切换状态
+      isConductor = !isConductor;
+      if (isConductor) {
+        btnConductor.classList.replace('text-zinc-400', 'text-yellow-400');
+        btnConductor.classList.add('ring-2', 'ring-yellow-500/50');
+        alert("👨‍🏫 指挥模式已开启！\n现在你的翻页动作将实时同步给所有团员。");
+        pushLiveSync(); 
+      } else {
+        btnConductor.classList.replace('text-yellow-400', 'text-zinc-400');
+        btnConductor.classList.remove('ring-2', 'ring-yellow-500/50');
+        alert("指挥模式已关闭。");
+      }
+    });
+  }
+
+  
+  // --- 修改：翻页时，如果是指挥，则推送到云端 ---
   document.getElementById('btn-prev').addEventListener('click', () => {
-    if (currentIndex > 0) { currentIndex--; loadSong(currentIndex); }
+    if (currentIndex > 0) { 
+      currentIndex--; 
+      loadSong(currentIndex); 
+      if (isConductor) pushLiveSync();
+    }
   });
   document.getElementById('btn-next').addEventListener('click', () => {
-    if (currentIndex < PLAYLIST.length - 1) { currentIndex++; loadSong(currentIndex); }
+    if (currentIndex < PLAYLIST.length - 1) { 
+      currentIndex++; 
+      loadSong(currentIndex); 
+      if (isConductor) pushLiveSync();
+    }
   });
 
   setupTools();
@@ -69,12 +116,45 @@ async function init() {
   setupDrawing();
   setupZoomAndPan();
 
-  // 启动时：1. 加载下拉菜单 2. 尝试从本地缓存恢复上次的排单
+resizeCanvas();
+
   await loadSetlistOptions();
   loadLocalPlaylist();
 }
 
-// --- 1. 加载云端排单列表到下拉菜单 ---
+// --- 新增：推送当前页码到 Firebase ---
+async function pushLiveSync() {
+  const selectedId = setlistSelect.value || localStorage.getItem('offline_playlist_name');
+  if (!selectedId) return;
+  try {
+    await updateDoc(doc(db, "setlists", selectedId), { 
+      livePageIndex: currentIndex 
+    });
+  } catch (error) {
+    console.error("推送翻页进度失败:", error);
+  }
+}
+
+// --- 新增：监听 Firebase 的页码变化 ---
+function startLiveSyncListener(selectedId) {
+  if (unsubscribeLiveSync) unsubscribeLiveSync(); // 清除旧的监听
+  
+  unsubscribeLiveSync = onSnapshot(doc(db, "setlists", selectedId), (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      // 如果云端有页码，且和本地不同，且当前不是指挥，就自动翻页！
+      if (data.livePageIndex !== undefined && data.livePageIndex !== currentIndex && !isConductor) {
+        currentIndex = data.livePageIndex;
+        loadSong(currentIndex);
+        
+        // 翻页时给个微小的视觉提示（可选）
+        titleEl.classList.add('text-emerald-400');
+        setTimeout(() => titleEl.classList.remove('text-emerald-400'), 1000);
+      }
+    }
+  });
+}
+
 async function loadSetlistOptions() {
   try {
     const querySnapshot = await getDocs(collection(db, "setlists"));
@@ -90,7 +170,6 @@ async function loadSetlistOptions() {
       options.push({ id: doc.id, name: doc.data().name, createdAt: doc.data().createdAt });
     });
 
-    // 按时间倒序
     options.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     options.forEach(opt => {
@@ -106,7 +185,6 @@ async function loadSetlistOptions() {
   }
 }
 
-// --- 2. 同步选中的排单 (百毒不侵版) ---
 async function syncSelectedSetlist() {
   const selectedId = setlistSelect.value;
   if (!selectedId) {
@@ -120,18 +198,15 @@ async function syncSelectedSetlist() {
   btnSync.disabled = true;
 
   try {
-    // 从 Firebase 获取选中的排单详情
     const docRef = doc(db, "setlists", selectedId);
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       PLAYLIST = docSnap.data().items;
       
-      // 保存到本地 LocalStorage，以便离线时读取
       localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
       localStorage.setItem('offline_playlist_name', selectedId);
 
-      // 缓存图片 (百毒不侵的逐个缓存法)
       const cache = await caches.open('score-cache-v1');
       const urls = PLAYLIST.map(song => song.imageUrl);
       
@@ -145,17 +220,18 @@ async function syncSelectedSetlist() {
             await cache.put(url, response);
             successCount++;
           } else {
-            console.warn('⚠️ 图片找不到，跳过缓存:', url);
             failCount++;
           }
         } catch (e) {
-          console.warn('⚠️ 图片获取失败，跳过:', url);
           failCount++;
         }
       }));
       
       currentIndex = 0;
       loadSong(currentIndex);
+      
+      // --- 新增：同步完成后，开启监听 ---
+      startLiveSyncListener(selectedId);
       
       if (failCount > 0) {
         alert(`✅ 同步完成！\n成功: ${successCount} 首\n失败: ${failCount} 首 (云端无图片)\n现在可以离线查看了。`);
@@ -176,7 +252,6 @@ async function syncSelectedSetlist() {
   }
 }
 
-// --- 3. 离线时加载本地排单 ---
 function loadLocalPlaylist( ) {
   const savedPlaylist = localStorage.getItem('offline_playlist');
   const savedName = localStorage.getItem('offline_playlist_name');
@@ -186,16 +261,15 @@ function loadLocalPlaylist( ) {
     currentIndex = 0;
     loadSong(currentIndex);
     
-    // 如果下拉菜单里有这个选项，就自动选中它
     if (savedName && setlistSelect.querySelector(`option[value="${savedName}"]`)) {
       setlistSelect.value = savedName;
+      // --- 新增：加载本地排单后，也开启监听 ---
+      startLiveSyncListener(savedName);
     }
   } else {
     titleEl.textContent = "请选择排单并点击 Sync";
   }
 }
-
-// --- 以下是原有的画笔、缩放、翻页逻辑（保持不变） ---
 
 function setupTools() {
   if (colorBtns) {
@@ -244,21 +318,26 @@ function loadSong(index) {
 function toggleDrawMode() {
   isDrawingMode = !isDrawingMode;
   if (isDrawingMode) {
+    resizeCanvas(); // 每次开启时重新获取尺寸
+    
     btnDraw.classList.add('ring-2', 'ring-red-500', 'bg-slate-50');
-    drawStatus.textContent = 'On';
+    if (drawStatus) drawStatus.textContent = 'On';
+    
     canvas.classList.remove('pointer-events-none');
     canvas.classList.add('pointer-events-auto');
     drawTools.classList.remove('hidden');
     drawTools.classList.add('flex');
   } else {
     btnDraw.classList.remove('ring-2', 'ring-red-500', 'bg-slate-50');
-    drawStatus.textContent = 'Off';
+    if (drawStatus) drawStatus.textContent = 'Off';
+    
     canvas.classList.remove('pointer-events-auto');
     canvas.classList.add('pointer-events-none');
     drawTools.classList.add('hidden');
     drawTools.classList.remove('flex');
   }
 }
+
 
 function resizeCanvas() {
   canvas.width = slideContainer.clientWidth;
@@ -334,6 +413,8 @@ function draw(e) {
   lastX = pos.x; lastY = pos.y;
 }
 
+
+
 function stopDrawing() {
   if (!isDrawing) return;
   isDrawing = false;
@@ -379,18 +460,24 @@ function setupSwipe() {
   function handleSwipe() {
     const swipeThreshold = 50;
     if (touchEndX < touchStartX - swipeThreshold) {
-      if (currentIndex < PLAYLIST.length - 1) { currentIndex++; loadSong(currentIndex); }
+      if (currentIndex < PLAYLIST.length - 1) { 
+        currentIndex++; 
+        loadSong(currentIndex); 
+        if (isConductor) pushLiveSync(); // --- 新增：滑动翻页也推送 ---
+      }
     }
     if (touchEndX > touchStartX + swipeThreshold) {
-      if (currentIndex > 0) { currentIndex--; loadSong(currentIndex); }
+      if (currentIndex > 0) { 
+        currentIndex--; 
+        loadSong(currentIndex); 
+        if (isConductor) pushLiveSync(); // --- 新增：滑动翻页也推送 ---
+      }
     }
   }
 }
 
 function setupZoomAndPan() {
   const container = document.getElementById('zoom-wrapper');
-  
-  // 🚨 救命代码：如果找不到缩放区域，就安全退出，绝对不报错！
   if (!container) return; 
 
   container.addEventListener('wheel', (e) => {
@@ -486,7 +573,6 @@ function setupZoomAndPan() {
   });
 }
 
-
 function checkBounds() {
   if (scale === 1) {
     translateX = 0; translateY = 0; return;
@@ -503,14 +589,10 @@ function checkBounds() {
 
 function updateTransform() {
   const container = document.getElementById('zoom-wrapper');
-  
-  // 🚨 救命代码：如果找不到缩放区域，直接退出，绝对不报错！
   if (!container) return; 
-  
   container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
   container.style.cursor = scale > 1 && !isDrawingMode ? 'grab' : 'default';
 }
-
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
