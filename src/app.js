@@ -373,13 +373,15 @@ function setupDrawing() {
 
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
-  const rawX = e.clientX - rect.left;
-  const rawY = e.clientY - rect.top;
+  // 🌟 核心修复：因为 canvas 已经被 zoom-wrapper 缩放和平移了
+  // rect.left 和 rect.top 已经自动包含了偏移量
+  // 我们只需要计算相对距离，再除以 scale，就能得到绝对精准的内部坐标！
   return {
-    x: (rawX - translateX) / scale,
-    y: (rawY - translateY) / scale
+    x: (e.clientX - rect.left) / scale,
+    y: (e.clientY - rect.top) / scale
   };
 }
+
 
 function startDrawing(e) {
   if (!isDrawingMode) return;
