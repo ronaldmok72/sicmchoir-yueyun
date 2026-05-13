@@ -97,6 +97,7 @@
 
   <!-- 主体乐谱查看区 -->
   <!-- 关键修复：slide-container 必须作为 canvas 的绝对定位参考系 -->
+  <!-- 主体乐谱查看区 -->
   <main id="slide-container" class="flex-1 relative w-full h-full overflow-hidden bg-zinc-950 flex justify-center items-center">
     
     <!-- 左右翻页按钮 -->
@@ -107,13 +108,17 @@
       <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg>
     </button>
 
-    <!-- 乐谱图片 -->
-    <img id="score-image" src="" alt="Score" class="max-w-full max-h-full object-contain bg-white shadow-2xl shadow-black/60 rounded-xl select-none pointer-events-none z-10" draggable="false">
+    <!-- 🌟 新增：zoom-wrapper 缩放包裹层 -->
+    <div id="zoom-wrapper" class="relative w-full h-full flex justify-center items-center origin-center">
+      <!-- 乐谱图片 -->
+      <img id="score-image" src="" alt="Score" class="max-w-full max-h-full object-contain bg-white shadow-2xl shadow-black/60 rounded-xl select-none pointer-events-none z-10" draggable="false">
+      
+      <!-- 标注画布 -->
+      <canvas id="draw-canvas" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20 mix-blend-multiply"></canvas>
+    </div>
     
-    <!-- 标注画布：绝对定位铺满整个 slide-container，确保 JS 里的坐标计算完全准确 -->
-    <canvas id="draw-canvas" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20 mix-blend-multiply"></canvas>
-
   </main>
+
 
   <script type="module" src="src/app.js"></script>
 
