@@ -9,12 +9,12 @@
     {
       "src": "https://res.cloudinary.com/dsfhilcgz/image/upload/v1778688168/sicmchoir_yueyun_logo.jpg",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/jpeg"
     },
     {
       "src": "https://res.cloudinary.com/dsfhilcgz/image/upload/v1778688168/sicmchoir_yueyun_logo.jpg",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/jpeg"
     }
   ]
 }
