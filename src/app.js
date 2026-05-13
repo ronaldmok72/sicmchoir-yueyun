@@ -482,6 +482,7 @@ function setupZoomAndPan() {
   const container = document.getElementById('zoom-wrapper');
   if (!container) return; 
 
+  // 电脑端鼠标滚轮缩放
   container.addEventListener('wheel', (e) => {
     if (isDrawingMode) return;
     e.preventDefault();
@@ -490,11 +491,15 @@ function setupZoomAndPan() {
     const newScale = Math.min(Math.max(1, scale + delta), 5);
     
     if (newScale !== scale) {
-      const rect = container.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      translateX = mouseX - (mouseX - translateX) * (newScale / scale);
-      translateY = mouseY - (mouseY - translateY) * (newScale / scale);
+      const rect = slideContainer.getBoundingClientRect();
+      // 计算鼠标相对于屏幕中心的偏移量
+      const offsetX = e.clientX - (rect.left + rect.width / 2);
+      const offsetY = e.clientY - (rect.top + rect.height / 2);
+      const ratio = newScale / scale;
+      
+      // 精准补偿偏移，实现“指哪打哪”
+      translateX -= offsetX * (ratio - 1);
+      translateY -= offsetY * (ratio - 1);
       scale = newScale;
       checkBounds();
       updateTransform();
@@ -522,6 +527,7 @@ function setupZoomAndPan() {
     if(container) container.style.cursor = scale > 1 ? 'grab' : 'default';
   });
 
+  // 手机端双指缩放与单指拖拽
   container.addEventListener('touchstart', (e) => {
     if (isDrawingMode) return;
     if (e.touches.length === 2) {
@@ -548,18 +554,24 @@ function setupZoomAndPan() {
       const delta = currentDistance / initialDistance;
       const newScale = Math.min(Math.max(1, scale * delta), 5);
       
-      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      const rect = container.getBoundingClientRect();
-      const touchX = centerX - rect.left;
-      const touchY = centerY - rect.top;
+      if (newScale !== scale) {
+        // 计算双指中心点
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const rect = slideContainer.getBoundingClientRect();
+        // 计算双指中心相对于屏幕中心的偏移量
+        const offsetX = centerX - (rect.left + rect.width / 2);
+        const offsetY = centerY - (rect.top + rect.height / 2);
+        const ratio = newScale / scale;
 
-      translateX = touchX - (touchX - translateX) * (newScale / scale);
-      translateY = touchY - (touchY - translateY) * (newScale / scale);
-      scale = newScale;
-      initialDistance = currentDistance;
-      checkBounds();
-      updateTransform();
+        // 精准补偿偏移
+        translateX -= offsetX * (ratio - 1);
+        translateY -= offsetY * (ratio - 1);
+        scale = newScale;
+        initialDistance = currentDistance;
+        checkBounds();
+        updateTransform();
+      }
     } else if (e.touches.length === 1 && isDragging) {
       e.preventDefault();
       translateX = e.touches[0].clientX - startX;
@@ -580,14 +592,15 @@ function checkBounds() {
     translateX = 0; translateY = 0; return;
   }
   const rect = slideContainer.getBoundingClientRect();
-  const maxTx = 0;
-  const minTx = rect.width * (1 - scale);
-  const maxTy = 0;
-  const minTy = rect.height * (1 - scale);
+  // 🌟 核心修复：因为是从中心点放大的，所以上下左右允许拖拽的边界是均分的！
+  const boundX = (rect.width * (scale - 1)) / 2;
+  const boundY = (rect.height * (scale - 1)) / 2;
   
-  translateX = Math.max(minTx, Math.min(maxTx, translateX));
-  translateY = Math.max(minTy, Math.min(maxTy, translateY));
+  // 限制拖拽范围，绝对不会再被强制拽回左上角
+  translateX = Math.max(-boundX, Math.min(boundX, translateX));
+  translateY = Math.max(-boundY, Math.min(boundY, translateY));
 }
+
 
 function updateTransform() {
   const container = document.getElementById('zoom-wrapper');
