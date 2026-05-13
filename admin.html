@@ -6,6 +6,10 @@
   <title>指挥后台 - 乐谱排单</title>
   <script src="https://cdn.tailwindcss.com"></script>
   
+  <!-- 必须有这两行 ，手机拖拽才能生效 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0/default.css">
+  <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0/index.min.js"></script>
+
   <!-- 现代 SaaS 隐藏式细滚动条 -->
   <style>
     .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -15,80 +19,179 @@
   </style>
 </head>
 
-<body class="bg-slate-100 h-screen flex overflow-hidden font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
-
-  <!-- 整体 App 容器：增加 padding 和 gap，营造现代 SaaS 的悬浮面板感 -->
-  <div class="flex flex-col lg:flex-row w-full h-full p-2 md:p-3 gap-3 overflow-y-auto lg:overflow-hidden custom-scrollbar">
-
-    <!-- 左侧：历史排单 (Sidebar) -->
-    <div class="w-full lg:w-72 h-[350px] lg:h-full flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden shrink-0 relative">
-      <!-- Header -->
-      <div class="p-4 border-b border-slate-100 bg-white/80 backdrop-blur-md sticky top-0 z-10">
-        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-          <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-          历史排单
-        </h2>
-      </div>
-      <!-- List Container -->
-      <div id="history-list" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-slate-50/30">
-        <!-- JS 渲染区域 -->
-      </div>
-    </div>
-
-    <!-- 中间：曲库区 (Library) -->
-    <div class="w-full lg:flex-1 h-[500px] lg:h-full flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden min-w-[320px] relative">
-      <!-- Header -->
-      <div class="p-4 border-b border-slate-100 bg-white/80 backdrop-blur-md sticky top-0 z-10 flex flex-col gap-3">
-        <div class="flex justify-between items-center">
-          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
-            曲库 (Library)
-          </h2>
-          <button onclick="openAddSongModal()" class="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-sm font-bold rounded-lg transition-colors flex items-center gap-1.5">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-            新歌
-          </button>
-        </div>
-        <!-- Search Bar -->
-        <div class="relative">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-          </div>
-          <input type="text" id="search-input" placeholder="输入拼音首字母或歌名搜索..." class="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-sm transition-all">
-        </div>
-      </div>
-      <!-- List Container -->
-      <div id="library-list" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-slate-50/30">
-        <!-- JS 渲染区域 -->
-      </div>
-    </div>
-
-    <!-- 右侧：当前排单 (Setlist) -->
-    <div class="w-full lg:w-[380px] h-[500px] lg:h-full flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden shrink-0 relative">
-      <!-- Header -->
-      <div class="p-4 border-b border-slate-100 bg-white/80 backdrop-blur-md sticky top-0 z-10 flex flex-col gap-3">
-        <div class="flex justify-between items-start">
-          <div>
-            <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-              <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
-              当前排单
-            </h2>
-            <p id="setlist-count" class="text-xs text-slate-500 mt-1 font-medium">0 首曲目</p>
-          </div>
-          <button onclick="handlePublish()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-md shadow-indigo-200 transition-all flex items-center gap-1.5 active:scale-95">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-            发布
-          </button>
-        </div>
-        <input type="text" id="setlist-name" placeholder="例如: 5月10日 母亲节" class="w-full px-3 py-2 bg-slate-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-sm transition-all font-medium text-slate-700">
-      </div>
-      <!-- List Container -->
-      <div id="setlist-area" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-slate-50/30">
-        <!-- JS 渲染区域 -->
-      </div>
-    </div>
-
+  <!-- 专属开发者签名 (Watermark) -->
+  <div class="fixed bottom-2 right-3 text-[10px] text-slate-300/60 font-mono tracking-widest pointer-events-none select-none z-40 hidden md:block">
+    Crafted by Mok
   </div>
+
+
+<body class="bg-slate-50 h-screen flex overflow-hidden font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
+
+  <!-- ========================================== -->
+  <!-- 1. 全局深色侧边栏 (Global Sidebar) -->
+  <!-- ========================================== -->
+  <aside id="global-sidebar" class="w-64 bg-zinc-950 text-zinc-400 flex flex-col transition-all duration-300 ease-in-out shrink-0 hidden md:flex relative z-20">
+    <!-- Logo Area -->
+    <div class="h-16 flex items-center px-4 border-b border-white/10">
+      <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20 shrink-0">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+      </div>
+      <span class="ml-3 font-bold text-white text-sm tracking-wide whitespace-nowrap overflow-hidden sidebar-text">乐韵歌咏团  
+<span class="text-[10px] text-zinc-500 font-normal">指挥后台</span></span>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 py-4 px-2 space-y-1 overflow-y-auto custom-scrollbar">
+      <a href="#" class="flex items-center px-3 py-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl group transition-colors">
+        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+        <span class="ml-3 text-sm font-medium whitespace-nowrap overflow-hidden sidebar-text">排单管理</span>
+      </a>
+      <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/5 hover:text-zinc-200 rounded-xl group transition-colors">
+        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+        <span class="ml-3 text-sm font-medium whitespace-nowrap overflow-hidden sidebar-text">曲库管理</span>
+      </a>
+      <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/5 hover:text-zinc-200 rounded-xl group transition-colors">
+        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span class="ml-3 text-sm font-medium whitespace-nowrap overflow-hidden sidebar-text">历史排单</span>
+      </a>
+    </nav>
+
+    <!-- Bottom Actions -->
+    <div class="p-4 border-t border-white/10">
+      <button onclick="toggleSidebar()" class="w-full flex items-center justify-center p-2 hover:bg-white/5 rounded-lg transition-colors text-zinc-500 hover:text-zinc-300">
+        <svg id="sidebar-icon" class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ========================================== -->
+  <!-- 2. 主内容区 (Main Content) -->
+  <!-- ========================================== -->
+  <div class="flex-1 flex flex-col h-screen overflow-hidden relative">
+    
+    <!-- 顶部 Header (Glassmorphism) -->
+    <header class="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shrink-0">
+      <div class="flex items-center gap-3">
+        <!-- 手机端汉堡菜单 -->
+        <button class="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+        <h1 class="text-lg font-bold text-slate-800 hidden sm:block">主日弥撒排单</h1>
+      </div>
+
+      <!-- 全局发布控制区 -->
+      <div class="flex items-center gap-3">
+        <div class="hidden sm:flex items-center gap-2 text-xs font-medium text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
+          <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>
+          已保存
+        </div>
+        <input type="text" id="setlist-name" placeholder="例如: 5月10日 母亲节" class="w-40 sm:w-56 px-3 py-1.5 bg-slate-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-lg text-sm transition-all font-medium text-slate-700">
+        <button onclick="handlePublish()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-md shadow-indigo-200 transition-all flex items-center gap-1.5 active:scale-95">
+          发布排单
+        </button>
+      </div>
+    </header>
+
+    <!-- ========================================== -->
+    <!-- 3. 工作区 (Workspace) - 响应式三栏/Tabs -->
+    <!-- ========================================== -->
+    <main class="flex-1 overflow-hidden flex flex-col p-2 md:p-4 relative">
+      
+      <!-- 手机端 Tabs (仅在小屏幕显示) -->
+      <div class="md:hidden flex bg-slate-200/50 p-1 rounded-xl mb-3 shrink-0">
+        <button onclick="switchTab('library')" id="tab-library" class="flex-1 py-2 text-sm font-bold rounded-lg bg-white text-indigo-600 shadow-sm transition-all">曲库</button>
+        <button onclick="switchTab('setlist')" id="tab-setlist" class="flex-1 py-2 text-sm font-bold rounded-lg text-slate-500 hover:text-slate-700 transition-all">排单</button>
+        <button onclick="switchTab('history')" id="tab-history" class="flex-1 py-2 text-sm font-bold rounded-lg text-slate-500 hover:text-slate-700 transition-all">历史</button>
+      </div>
+
+      <!-- 三栏容器 -->
+      <div class="flex-1 flex flex-col md:flex-row gap-4 overflow-hidden">
+        
+        <!-- 左栏：历史排单 (默认在手机端隐藏) -->
+        <div id="pane-history" class="hidden md:flex w-full md:w-64 lg:w-72 flex-col bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden shrink-0 h-full">
+          <div class="p-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h2 class="text-sm font-bold text-slate-700">历史排单</h2>
+          </div>
+          <div id="history-list" class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+            <!-- JS 渲染区域 -->
+          </div>
+        </div>
+
+        <!-- 中栏：曲库 (手机端默认显示) -->
+        <div id="pane-library" class="flex flex-1 flex-col bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden h-full">
+          <div class="p-3 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
+            <div class="flex justify-between items-center">
+              <h2 class="text-sm font-bold text-slate-700">曲库 (Library)</h2>
+              <button onclick="openAddSongModal()" class="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-md hover:bg-indigo-100 transition-colors">➕ 新歌</button>
+            </div>
+            <input type="text" id="search-input" placeholder="搜索歌名/拼音..." class="w-full px-3 py-1.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 rounded-lg text-sm transition-all">
+          </div>
+          <div id="library-list" class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+            <!-- JS 渲染区域 -->
+          </div>
+        </div>
+
+        <!-- 右栏：当前排单 (默认在手机端隐藏) -->
+        <div id="pane-setlist" class="hidden md:flex w-full md:w-80 lg:w-96 flex-col bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden shrink-0 h-full">
+          <div class="p-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h2 class="text-sm font-bold text-slate-700">当前编辑排单</h2>
+            <span id="setlist-count" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">0 首</span>
+          </div>
+          <div id="setlist-area" class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar bg-slate-50/30">
+            <!-- JS 渲染区域 -->
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- UI 交互脚本 (不影响业务逻辑) -->
+  <script>
+    // 侧边栏收合逻辑
+    let isSidebarCollapsed = false;
+    function toggleSidebar() {
+      const sidebar = document.getElementById('global-sidebar');
+      const texts = document.querySelectorAll('.sidebar-text');
+      const icon = document.getElementById('sidebar-icon');
+      
+      isSidebarCollapsed = !isSidebarCollapsed;
+      if (isSidebarCollapsed) {
+        sidebar.classList.replace('w-64', 'w-16');
+        texts.forEach(t => t.classList.add('opacity-0', 'w-0'));
+        icon.classList.add('rotate-180');
+      } else {
+        sidebar.classList.replace('w-16', 'w-64');
+        texts.forEach(t => t.classList.remove('opacity-0', 'w-0'));
+        icon.classList.remove('rotate-180');
+      }
+    }
+
+    // 手机端 Tab 切换逻辑
+    function switchTab(tabName) {
+      // 重置所有 Tab 按钮样式
+      ['library', 'setlist', 'history'].forEach(name => {
+        const btn = document.getElementById(`tab-${name}`);
+        btn.className = "flex-1 py-2 text-sm font-bold rounded-lg text-slate-500 hover:text-slate-700 transition-all";
+      });
+      // 激活当前 Tab 按钮
+      const activeBtn = document.getElementById(`tab-${tabName}`);
+      activeBtn.className = "flex-1 py-2 text-sm font-bold rounded-lg bg-white text-indigo-600 shadow-sm transition-all";
+
+      // 隐藏所有面板，显示目标面板 (仅在手机端生效，md 以上由 CSS 控制)
+      ['history', 'library', 'setlist'].forEach(name => {
+        const pane = document.getElementById(`pane-${name}`);
+        if (name === tabName) {
+          pane.classList.remove('hidden');
+          pane.classList.add('flex');
+        } else {
+          pane.classList.remove('flex');
+          pane.classList.add('hidden');
+        }
+      });
+    }
+  </script>
+
 
   <!-- 预览模态框 (Modal) -->
   <div id="preview-modal" class="fixed inset-0 bg-slate-900/60 z-50 hidden opacity-0 transition-all duration-300 flex items-center justify-center p-4 backdrop-blur-md">
@@ -139,7 +242,18 @@
     </div>
   </div>
 
-
+  <!-- ========================================== -->
+  <!-- 移动端拖拽兼容补丁 (绝对生效版) -->
+  <!-- ========================================== -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/default.css">
+  <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js"></script>
+  <script>
+    // 强制立即激活手机拖拽
+    MobileDragDrop.polyfill({
+      holdToDrag: 250 // 长按 0.25 秒触发拖拽
+    } );
+    window.addEventListener('touchmove', function() {}, {passive: false});
+  </script>
 
   <!-- 核心逻辑脚本 -->
   <script type="module">
@@ -2639,6 +2753,7 @@
       if(searchInput) searchInput.addEventListener('input', window.renderLibrary);
     };
 
+    // --- 曲库渲染逻辑 (Spotify Track Style) ---
     window.renderLibrary = function() {
       const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
       libraryListEl.innerHTML = '';
@@ -2649,36 +2764,58 @@
 
       if (filtered.length === 0) {
         libraryListEl.innerHTML = `
-          <div class="flex flex-col items-center justify-center py-12 text-slate-400">
-            <svg class="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            <p class="text-sm font-medium">未找到相关曲目</p>
+          <div class="flex flex-col items-center justify-center py-16 text-slate-400">
+            <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+              <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+            <p class="text-sm font-bold text-slate-600">未找到相关曲目</p>
+            <p class="text-xs text-slate-400 mt-1">请尝试其他拼音或关键字</p>
           </div>`;
         return;
       }
 
       filtered.forEach(song => {
         const item = document.createElement('div');
-        // 优化：圆角、微阴影、Hover 边框变色
-        item.className = "group flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 hover:border-indigo-200 hover:shadow-md hover:shadow-indigo-500/5 transition-all cursor-default";
+        // Spotify 风格：平时无边框，Hover 时出现浅色背景和微阴影
+        item.className = "group flex items-center justify-between p-2.5 bg-white rounded-xl border border-transparent hover:border-slate-200/60 hover:bg-slate-50 hover:shadow-sm transition-all duration-200 cursor-default";
+        
+        // 智能生成 Badge (根据歌名猜测类型，增加视觉丰富度)
+        let badgeText = "弥撒曲";
+        let badgeColor = "bg-slate-100 text-slate-500";
+        if(song.title.includes("进堂")) { badgeText = "进堂咏"; badgeColor = "bg-emerald-50 text-emerald-600 border-emerald-100"; }
+        else if(song.title.includes("奉献")) { badgeText = "奉献咏"; badgeColor = "bg-amber-50 text-amber-600 border-amber-100"; }
+        else if(song.title.includes("领主")) { badgeText = "领主咏"; badgeColor = "bg-blue-50 text-blue-600 border-blue-100"; }
+        else if(song.title.includes("圣诞")) { badgeText = "圣诞期"; badgeColor = "bg-red-50 text-red-600 border-red-100"; }
+
         item.innerHTML = `
           <div class="flex items-center gap-3 overflow-hidden pr-2">
-            <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-indigo-500 group-hover:bg-indigo-50 transition-colors shrink-0">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+            <!-- 音乐 Icon -->
+            <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors shrink-0 relative overflow-hidden">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
             </div>
-            <span class="font-semibold text-sm text-slate-700 group-hover:text-indigo-700 transition-colors truncate">${song.title}</span>
+            
+            <div class="flex flex-col overflow-hidden">
+              <span class="font-bold text-sm text-slate-700 group-hover:text-indigo-700 transition-colors truncate">${song.title}</span>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border ${badgeColor}">${badgeText}</span>
+              </div>
+            </div>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-            <button class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" onclick="window.openPreview('${song.id}')" title="预览">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          
+          <!-- 操作区 (Hover 显现) -->
+          <div class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 translate-x-2 group-hover:translate-x-0">
+            <button class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" onclick="window.openPreview('${song.id}')" title="预览乐谱">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
             </button>
-            <button class="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white text-xs font-bold rounded-lg transition-colors" onclick="window.addToSetlist('${song.id}')">
-              添加
+            <button class="p-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors shadow-sm" onclick="window.addToSetlist('${song.id}')" title="添加到排单">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
             </button>
           </div>
         `;
         libraryListEl.appendChild(item);
       });
     };
+
 
 
     window.addToSetlist = function(id) {
@@ -2710,90 +2847,100 @@
     // --- 拖拽排序全局变量 ---
     let dragStartIndex = null;
 
-    // --- 渲染当前排单 (支持拖拽) ---
+    // --- 当前排单渲染逻辑 (Timeline Editor Style) ---
     window.renderSetlist = function() {
       setlistAreaEl.innerHTML = '';
-      setlistCountEl.textContent = `${currentSetlist.length} 首曲目`;
+      
+      // 计算预计总时长 (假设每首歌平均 3.5 分钟)
+      const totalMinutes = Math.ceil(currentSetlist.length * 3.5);
+      setlistCountEl.innerHTML = `
+        <span class="font-bold">${currentSetlist.length}</span> 首 
+        <span class="text-indigo-300 mx-1">|</span> 
+        约 <span class="font-bold">${totalMinutes}</span> 分钟
+      `;
 
       if (currentSetlist.length === 0) {
         setlistAreaEl.innerHTML = `
-          <div class="flex flex-col items-center justify-center py-16 text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-            <svg class="w-10 h-10 mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
-            <p class="text-sm font-medium">排单为空，请从左侧添加</p>
+          <div class="flex flex-col items-center justify-center py-20 text-slate-400 border-2 border-dashed border-slate-200/80 rounded-2xl bg-slate-50/50 mx-2 mt-2">
+            <div class="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4">
+              <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+            </div>
+            <p class="text-sm font-bold text-slate-600">排单空空如也</p>
+            <p class="text-xs text-slate-400 mt-1">请从左侧曲库点击 "+" 添加曲目</p>
           </div>`;
         return;
       }
 
       currentSetlist.forEach((item, index) => {
         const card = document.createElement('div');
-        // 增加 draggable 属性和抓取手势 (cursor-grab)
-        card.className = "group flex items-stretch bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all overflow-hidden cursor-grab active:cursor-grabbing";
+        // 优化：拖拽手势、圆角、过渡动画
+        card.className = "group flex items-stretch bg-white rounded-xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all duration-200 overflow-hidden cursor-grab active:cursor-grabbing mb-2.5";
         card.draggable = true;
-        card.dataset.index = index; // 记录当前索引
+        card.dataset.index = index;
         
         card.innerHTML = `
-          <div class="w-10 flex flex-col items-center justify-center bg-slate-50/80 border-r border-slate-100 py-2 shrink-0 text-slate-300 group-hover:text-indigo-400 transition-colors">
-            <!-- 拖拽手柄图标 (六个点) -->
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h.01M8 15h.01M16 9h.01M16 15h.01M12 9h.01M12 15h.01"></path></svg>
-            <span class="text-[10px] font-bold mt-1 text-slate-400">${index + 1}</span>
+          <!-- 左侧：拖拽手柄与序号 -->
+          <div class="w-12 flex flex-col items-center justify-center bg-slate-50/80 border-r border-slate-100 py-2 shrink-0 text-slate-300 group-hover:text-indigo-500 group-hover:bg-indigo-50/50 transition-colors">
+            <svg class="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity absolute" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h.01M8 15h.01M16 9h.01M16 15h.01M12 9h.01M12 15h.01"></path></svg>
+            <span class="text-xs font-bold text-slate-400 group-hover:opacity-0 transition-opacity">${index + 1}</span>
           </div>
-          <div class="flex-1 p-3 flex justify-between items-center pointer-events-none">
-            <span class="font-semibold text-slate-700 text-sm pl-1">${item.title}</span>
+          
+          <!-- 中间：歌曲信息 -->
+          <div class="flex-1 p-3 flex flex-col justify-center pointer-events-none">
+            <span class="font-bold text-slate-700 text-sm leading-tight">${item.title}</span>
           </div>
+          
+          <!-- 右侧：删除按钮 (优化移动端显示) -->
           <div class="flex items-center pr-2">
-            <!-- 删除按钮 (阻止拖拽事件冒泡) -->
-            <button onclick="event.stopPropagation(); window.removeFromSetlist('${item.uuid}')" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="移除">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            <!-- 注意这里的 class：去掉了 opacity-0，改为 md:opacity-0 (电脑端隐藏，手机端常驻) -->
+            <button onclick="event.stopPropagation(); window.removeFromSetlist('${item.uuid}')" class="p-2 text-slate-300 hover:text-white hover:bg-red-500 md:opacity-0 group-hover:opacity-100 md:translate-x-2 group-hover:translate-x-0 rounded-lg transition-all shadow-sm" title="移除此曲目">
+              <svg class="w-5 h-5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
             </button>
           </div>
         `;
 
-        // --- 绑定拖拽事件 ---
+        // --- 拖拽事件绑定 (增强视觉反馈) ---
         card.addEventListener('dragstart', function(e) {
           dragStartIndex = +this.dataset.index;
           e.dataTransfer.effectAllowed = 'move';
-          // 拖拽时的视觉反馈：半透明 + 缩小
-          setTimeout(() => this.classList.add('opacity-40', 'scale-95'), 0);
+          // 拖起时的视觉：半透明、缩小、加深阴影
+          setTimeout(() => {
+            this.classList.add('opacity-50', 'scale-95', 'shadow-lg', 'border-indigo-500');
+          }, 0);
         });
 
         card.addEventListener('dragover', function(e) {
-          e.preventDefault(); // 必须阻止默认行为才能触发 drop
+          e.preventDefault(); 
           e.dataTransfer.dropEffect = 'move';
-          // 拖拽经过时的目标高亮
-          this.classList.add('border-indigo-500', 'bg-indigo-50/50');
+          // 经过时的视觉：变成虚线放置槽
+          this.classList.add('border-indigo-400', 'bg-indigo-50/50', 'border-dashed');
         });
 
         card.addEventListener('dragleave', function(e) {
-          // 离开目标时取消高亮
-          this.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+          this.classList.remove('border-indigo-400', 'bg-indigo-50/50', 'border-dashed');
         });
 
         card.addEventListener('drop', function(e) {
           e.stopPropagation();
-          this.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+          this.classList.remove('border-indigo-400', 'bg-indigo-50/50', 'border-dashed');
           
           const dragEndIndex = +this.dataset.index;
-          
-          // 如果位置发生了改变，则重新排序数组
           if (dragStartIndex !== dragEndIndex && dragStartIndex !== null) {
             const draggedItem = currentSetlist.splice(dragStartIndex, 1)[0];
             currentSetlist.splice(dragEndIndex, 0, draggedItem);
-            window.renderSetlist(); // 重新渲染
+            window.renderSetlist(); 
           }
           return false;
         });
 
         card.addEventListener('dragend', function(e) {
-          // 拖拽结束，恢复视觉
-          this.classList.remove('opacity-40', 'scale-95');
+          this.classList.remove('opacity-50', 'scale-95', 'shadow-lg', 'border-indigo-500');
           dragStartIndex = null;
         });
 
         setlistAreaEl.appendChild(card);
       });
     };
-
-
 
 // --- 预览弹窗逻辑 (带缩放动画) ---
     window.openPreview = function(id) {
@@ -2831,9 +2978,8 @@
       }, 300);
     };
 
-    // --- 历史排单逻辑 ---
+    // --- 历史排单逻辑 (Notion Card Style) ---
     window.loadHistory = async function() {
-      // 优化：加载中的动画状态
       historyListEl.innerHTML = `
         <div class="flex flex-col items-center justify-center py-10 text-slate-400">
           <svg class="w-6 h-6 mb-3 animate-spin opacity-50" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -2845,11 +2991,10 @@
         historyListEl.innerHTML = '';
         
         if (querySnapshot.empty) {
-          // 优化：空状态的虚线框和图标
           historyListEl.innerHTML = `
-            <div class="flex flex-col items-center justify-center py-10 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 mx-1 mt-2">
-              <svg class="w-8 h-8 mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-              <span class="text-xs font-medium">暂无历史排单</span>
+            <div class="flex flex-col items-center justify-center py-12 text-slate-400 border-2 border-dashed border-slate-200/60 rounded-2xl bg-slate-50/50 mx-1 mt-2">
+              <svg class="w-10 h-10 mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              <span class="text-sm font-medium">暂无历史排单</span>
             </div>`;
           return;
         }
@@ -2863,28 +3008,36 @@
 
         historyItems.forEach(item => {
           const div = document.createElement('div');
-          // 优化：卡片化，增加左侧高亮条的潜台词
-          div.className = "group p-3.5 bg-white rounded-xl border border-slate-100 hover:border-indigo-200 hover:shadow-md hover:shadow-indigo-500/5 transition-all cursor-pointer relative overflow-hidden";
+          // Notion 风格卡片：大圆角、微阴影、Hover 边框变色
+          div.className = "group relative p-4 bg-white rounded-2xl border border-slate-200/60 hover:border-indigo-300 hover:shadow-md hover:shadow-indigo-500/5 transition-all duration-200 cursor-pointer overflow-hidden";
           
           const dateStr = new Date(item.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
           
           div.innerHTML = `
-            <!-- Hover 时的左侧强调线 -->
-            <div class="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <!-- 左侧 Hover 强调线 -->
+            <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-indigo-400 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
             
-            <div class="flex justify-between items-start mb-2" onclick="window.loadSetlist('${item.id}')" title="点击加载此排单">
-              <div class="flex items-start gap-2 pr-2">
-                <svg class="w-4 h-4 text-slate-400 mt-0.5 shrink-0 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                <span class="font-bold text-slate-700 text-sm group-hover:text-indigo-700 transition-colors leading-tight">${item.name}</span>
+            <div class="flex justify-between items-start mb-3" onclick="window.loadSetlist('${item.id}')">
+              <div class="flex items-start gap-2.5 pr-6">
+                <div class="mt-0.5 w-6 h-6 rounded-md bg-indigo-50 flex items-center justify-center text-indigo-500 shrink-0 group-hover:scale-110 transition-transform">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                </div>
+                <span class="font-bold text-slate-800 text-sm group-hover:text-indigo-700 transition-colors leading-snug">${item.name}</span>
               </div>
             </div>
-            <div class="flex justify-between items-center mt-1 pl-6">
-              <div class="flex items-center gap-2">
-                <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">${item.items.length} 首</span>
-                <span class="text-[11px] text-slate-400">${dateStr}</span>
+            
+            <div class="flex justify-between items-center mt-auto">
+              <div class="flex items-center gap-2.5">
+                <span class="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">${item.items.length} 首</span>
+                <span class="text-xs font-medium text-slate-400 flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                  ${dateStr}
+                </span>
               </div>
-              <button onclick="event.stopPropagation(); window.deleteSetlist('${item.id}')" class="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100" title="删除排单">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              
+              <!-- Hover 时才出现的删除按钮 -->
+              <button onclick="event.stopPropagation(); window.deleteSetlist('${item.id}')" class="absolute right-3 bottom-3 p-1.5 text-slate-300 hover:text-white hover:bg-red-500 rounded-lg transition-all opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 shadow-sm" title="删除排单">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
               </button>
             </div>
           `;
@@ -2892,7 +3045,6 @@
         });
       } catch (error) {
         console.error("获取历史排单失败:", error);
-        // 优化：失败状态的图标
         historyListEl.innerHTML = `
           <div class="flex flex-col items-center justify-center py-10 text-red-400">
             <svg class="w-8 h-8 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -2900,6 +3052,7 @@
           </div>`;
       }
     };
+
 
 
     window.loadSetlist = function(id) {
