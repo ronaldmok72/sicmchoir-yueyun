@@ -6,10 +6,6 @@
   <title>指挥后台 - 乐谱排单</title>
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- 必须有这两行 ，手机拖拽才能生效 -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0/default.css">
-  <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0/index.min.js"></script>
-
   <!-- 现代 SaaS 隐藏式细滚动条 -->
   <style>
     .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -25,8 +21,7 @@
   </div>
 
 
-<body class="bg-slate-50 h-screen flex overflow-hidden font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
-
+<body class="bg-slate-50 h-[100dvh] pb-12 md:pb-0 flex overflow-hidden font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
   <!-- ========================================== -->
   <!-- 1. 全局深色侧边栏 (Global Sidebar) -->
   <!-- ========================================== -->
@@ -67,7 +62,7 @@
   <!-- ========================================== -->
   <!-- 2. 主内容区 (Main Content) -->
   <!-- ========================================== -->
-  <div class="flex-1 flex flex-col h-screen overflow-hidden relative">
+  <div class="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
     
     <!-- 顶部 Header (Glassmorphism) -->
     <header class="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shrink-0">
@@ -242,19 +237,6 @@
     </div>
   </div>
 
-  <!-- ========================================== -->
-  <!-- 移动端拖拽兼容补丁 (绝对生效版) -->
-  <!-- ========================================== -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/default.css">
-  <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js"></script>
-  <script>
-    // 强制立即激活手机拖拽
-    MobileDragDrop.polyfill({
-      holdToDrag: 250 // 长按 0.25 秒触发拖拽
-    } );
-    window.addEventListener('touchmove', function() {}, {passive: false});
-  </script>
-
   <!-- 核心逻辑脚本 -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
@@ -272,7 +254,7 @@
     const app = initializeApp(firebaseConfig );
     const db = getFirestore(app);
 
-    // --- 你的 12 首真实曲库数据 ---
+    // --- 真实曲库数据 ---
     const LIBRARY_DATA = [
       { "id": "song_001", "title": "12 days of Christmas - 公青报佳音", "imageUrl": "https://res.cloudinary.com/dsfhilcgz/image/upload/12_days_of_Christmas_-_%E5%85%AC%E9%9D%92%E6%8A%A5%E4%BD%B3%E9%9F%B3.jpg" },
       { "id": "song_002", "title": "a Above All", "imageUrl": "https://res.cloudinary.com/dsfhilcgz/image/upload/v1777221323/a_Above_All.jpg" },
@@ -2847,11 +2829,10 @@
     // --- 拖拽排序全局变量 ---
     let dragStartIndex = null;
 
-    // --- 当前排单渲染逻辑 (Timeline Editor Style) ---
+    // --- 当前排单渲染逻辑 (上下移动按钮版) ---
     window.renderSetlist = function() {
       setlistAreaEl.innerHTML = '';
       
-      // 计算预计总时长 (假设每首歌平均 3.5 分钟)
       const totalMinutes = Math.ceil(currentSetlist.length * 3.5);
       setlistCountEl.innerHTML = `
         <span class="font-bold">${currentSetlist.length}</span> 首 
@@ -2873,16 +2854,13 @@
 
       currentSetlist.forEach((item, index) => {
         const card = document.createElement('div');
-        // 优化：拖拽手势、圆角、过渡动画
-        card.className = "group flex items-stretch bg-white rounded-xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all duration-200 overflow-hidden cursor-grab active:cursor-grabbing mb-2.5";
-        card.draggable = true;
-        card.dataset.index = index;
+        // 去掉了拖拽手势，保留了圆角和阴影
+        card.className = "group flex items-stretch bg-white rounded-xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all duration-200 overflow-hidden mb-2.5";
         
         card.innerHTML = `
-          <!-- 左侧：拖拽手柄与序号 -->
-          <div class="w-12 flex flex-col items-center justify-center bg-slate-50/80 border-r border-slate-100 py-2 shrink-0 text-slate-300 group-hover:text-indigo-500 group-hover:bg-indigo-50/50 transition-colors">
-            <svg class="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity absolute" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h.01M8 15h.01M16 9h.01M16 15h.01M12 9h.01M12 15h.01"></path></svg>
-            <span class="text-xs font-bold text-slate-400 group-hover:opacity-0 transition-opacity">${index + 1}</span>
+          <!-- 左侧：序号 -->
+          <div class="w-10 flex flex-col items-center justify-center bg-slate-50/80 border-r border-slate-100 py-2 shrink-0 text-slate-400 font-bold text-sm">
+            ${index + 1}
           </div>
           
           <!-- 中间：歌曲信息 -->
@@ -2890,57 +2868,29 @@
             <span class="font-bold text-slate-700 text-sm leading-tight">${item.title}</span>
           </div>
           
-          <!-- 右侧：删除按钮 (优化移动端显示) -->
-          <div class="flex items-center pr-2">
-            <!-- 注意这里的 class：去掉了 opacity-0，改为 md:opacity-0 (电脑端隐藏，手机端常驻) -->
-            <button onclick="event.stopPropagation(); window.removeFromSetlist('${item.uuid}')" class="p-2 text-slate-300 hover:text-white hover:bg-red-500 md:opacity-0 group-hover:opacity-100 md:translate-x-2 group-hover:translate-x-0 rounded-lg transition-all shadow-sm" title="移除此曲目">
-              <svg class="w-5 h-5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+          <!-- 右侧：上移/下移/删除 按钮 -->
+          <div class="flex items-center pr-2 gap-1">
+            <!-- 上移按钮 (第一首隐藏) -->
+            <button onclick="event.stopPropagation(); window.moveItem(${index}, 'up')" class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all ${index === 0 ? 'invisible' : ''}" title="上移">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7"></path></svg>
+            </button>
+            
+            <!-- 下移按钮 (最后一首隐藏) -->
+            <button onclick="event.stopPropagation(); window.moveItem(${index}, 'down')" class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all ${index === currentSetlist.length - 1 ? 'invisible' : ''}" title="下移">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" transform="rotate(180 12 12)"></path></svg>
+            </button>
+
+            <!-- 删除按钮 -->
+            <button onclick="event.stopPropagation(); window.removeFromSetlist('${item.uuid}')" class="p-2 text-slate-300 hover:text-white hover:bg-red-500 rounded-lg transition-all shadow-sm ml-1" title="移除此曲目">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
             </button>
           </div>
         `;
 
-        // --- 拖拽事件绑定 (增强视觉反馈) ---
-        card.addEventListener('dragstart', function(e) {
-          dragStartIndex = +this.dataset.index;
-          e.dataTransfer.effectAllowed = 'move';
-          // 拖起时的视觉：半透明、缩小、加深阴影
-          setTimeout(() => {
-            this.classList.add('opacity-50', 'scale-95', 'shadow-lg', 'border-indigo-500');
-          }, 0);
-        });
-
-        card.addEventListener('dragover', function(e) {
-          e.preventDefault(); 
-          e.dataTransfer.dropEffect = 'move';
-          // 经过时的视觉：变成虚线放置槽
-          this.classList.add('border-indigo-400', 'bg-indigo-50/50', 'border-dashed');
-        });
-
-        card.addEventListener('dragleave', function(e) {
-          this.classList.remove('border-indigo-400', 'bg-indigo-50/50', 'border-dashed');
-        });
-
-        card.addEventListener('drop', function(e) {
-          e.stopPropagation();
-          this.classList.remove('border-indigo-400', 'bg-indigo-50/50', 'border-dashed');
-          
-          const dragEndIndex = +this.dataset.index;
-          if (dragStartIndex !== dragEndIndex && dragStartIndex !== null) {
-            const draggedItem = currentSetlist.splice(dragStartIndex, 1)[0];
-            currentSetlist.splice(dragEndIndex, 0, draggedItem);
-            window.renderSetlist(); 
-          }
-          return false;
-        });
-
-        card.addEventListener('dragend', function(e) {
-          this.classList.remove('opacity-50', 'scale-95', 'shadow-lg', 'border-indigo-500');
-          dragStartIndex = null;
-        });
-
         setlistAreaEl.appendChild(card);
       });
     };
+
 
 // --- 预览弹窗逻辑 (带缩放动画) ---
     window.openPreview = function(id) {
