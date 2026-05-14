@@ -52,6 +52,11 @@ async function init() {
   ctx = canvas.getContext('2d', { willReadFrequently: true });
   slideContainer = document.getElementById('slide-container');
   setlistSelect = document.getElementById('setlist-select');
+  const btnSongList = document.getElementById('btn-song-list');
+  const btnCloseSongList = document.getElementById('btn-close-song-list');
+  if (btnSongList) btnSongList.addEventListener('click', openSongList);
+  if (btnCloseSongList) btnCloseSongList.addEventListener('click', closeSongList);
+
   
   // 绑定指挥按钮
   btnConductor = document.getElementById('btn-conductor');
@@ -313,7 +318,32 @@ function loadSong(index) {
   
   imgEl.onload = () => { restoreDrawing(song.id); };
   imgEl.src = song.imageUrl;
+
+  // 🌟 每次加载歌曲时，呼出左下角提示框
+  showToast(index, song.title);
 }
+
+// --- 新增：控制左下角提示框的动画 ---
+let toastTimeout = null;
+function showToast(index, title) {
+  const toast = document.getElementById('toast-notification');
+  const toastNum = document.getElementById('toast-number');
+  const toastTitle = document.getElementById('toast-title');
+  if (!toast) return;
+
+  toastNum.textContent = `TRACK ${index + 1} / ${PLAYLIST.length}`;
+  toastTitle.textContent = title;
+
+  // 弹出动画
+  toast.classList.remove('translate-y-4', 'opacity-0');
+  
+  // 2.5秒后自动淡出
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.add('translate-y-4', 'opacity-0');
+  }, 2500);
+}
+
 
 function toggleDrawMode() {
   isDrawingMode = !isDrawingMode;
@@ -488,16 +518,15 @@ function setupZoomAndPan() {
     e.preventDefault();
     const zoomSensitivity = 0.001;
     const delta = e.deltaY * -zoomSensitivity;
-    const newScale = Math.min(Math.max(1, scale + delta), 5);
+    // 🌟 允许缩小到 0.6 倍
+    const newScale = Math.min(Math.max(0.6, scale + delta), 5);
     
     if (newScale !== scale) {
       const rect = slideContainer.getBoundingClientRect();
-      // 计算鼠标相对于屏幕中心的偏移量
       const offsetX = e.clientX - (rect.left + rect.width / 2);
       const offsetY = e.clientY - (rect.top + rect.height / 2);
       const ratio = newScale / scale;
       
-      // 精准补偿偏移，实现“指哪打哪”
       translateX -= offsetX * (ratio - 1);
       translateY -= offsetY * (ratio - 1);
       scale = newScale;
@@ -552,19 +581,17 @@ function setupZoomAndPan() {
         e.touches[0].clientY - e.touches[1].clientY
       );
       const delta = currentDistance / initialDistance;
-      const newScale = Math.min(Math.max(1, scale * delta), 5);
+      // 🌟 允许缩小到 0.6 倍
+      const newScale = Math.min(Math.max(0.6, scale * delta), 5);
       
       if (newScale !== scale) {
-        // 计算双指中心点
         const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const rect = slideContainer.getBoundingClientRect();
-        // 计算双指中心相对于屏幕中心的偏移量
         const offsetX = centerX - (rect.left + rect.width / 2);
         const offsetY = centerY - (rect.top + rect.height / 2);
         const ratio = newScale / scale;
 
-        // 精准补偿偏移
         translateX -= offsetX * (ratio - 1);
         translateY -= offsetY * (ratio - 1);
         scale = newScale;
@@ -588,18 +615,21 @@ function setupZoomAndPan() {
 }
 
 function checkBounds() {
-  if (scale === 1) {
-    translateX = 0; translateY = 0; return;
-  }
   const rect = slideContainer.getBoundingClientRect();
-  // 🌟 核心修复：因为是从中心点放大的，所以上下左右允许拖拽的边界是均分的！
-  const boundX = (rect.width * (scale - 1)) / 2;
-  const boundY = (rect.height * (scale - 1)) / 2;
+  let boundX = 0;
+  let boundY = 0;
   
-  // 限制拖拽范围，绝对不会再被强制拽回左上角
+  // 🌟 核心修复：只有当放大(scale > 1)时，才允许拖拽偏移
+  // 如果是缩小(scale <= 1)，boundX 和 boundY 强制为 0，图片会自动吸附到正中心！
+  if (scale > 1) {
+    boundX = (rect.width * (scale - 1)) / 2;
+    boundY = (rect.height * (scale - 1)) / 2;
+  }
+  
   translateX = Math.max(-boundX, Math.min(boundX, translateX));
   translateY = Math.max(-boundY, Math.min(boundY, translateY));
 }
+
 
 
 function updateTransform() {
@@ -613,4 +643,36 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
   init();
+}
+function openSongList() {
+  if (!PLAYLIST || PLAYLIST.length === 0) return;
+  const container = document.getElementById('song-list-container');
+  container.innerHTML = '';
+  PLAYLIST.forEach((song, idx) => {
+    const div = document.createElement('div');
+    div.className = `p-3 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors cursor-pointer ${idx === currentIndex ? 'bg-indigo-600 text-white shadow-md' : 'text-zinc-300 hover:bg-zinc-800'}`;
+    div.innerHTML = `<span class="w-6 text-center opacity-70">${idx + 1}</span> <span class="flex-1 truncate">${song.title}</span>`;
+    div.onclick = () => {
+      currentIndex = idx;
+      loadSong(currentIndex);
+      if (isConductor) pushLiveSync();
+      closeSongList();
+    };
+    container.appendChild(div);
+  });
+  
+  const modal = document.getElementById('song-list-modal');
+  const content = document.getElementById('song-list-content');
+  modal.classList.remove('hidden');
+  void modal.offsetWidth; // 触发重绘
+  modal.classList.remove('opacity-0');
+  content.classList.remove('translate-y-full', 'md:scale-95');
+}
+
+function closeSongList() {
+  const modal = document.getElementById('song-list-modal');
+  const content = document.getElementById('song-list-content');
+  modal.classList.add('opacity-0');
+  content.classList.add('translate-y-full', 'md:scale-95');
+  setTimeout(() => modal.classList.add('hidden'), 300);
 }
