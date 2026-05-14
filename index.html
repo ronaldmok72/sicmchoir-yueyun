@@ -33,9 +33,10 @@
       </div>
     </div>
 
-    <!-- 中间：当前曲名 (空间不够时自动显示省略号) -->
-    <div class="flex-1 min-w-0 px-2 flex justify-center text-center pointer-events-none">
+    <!-- 中间：当前曲名 (点击呼出列表) -->
+    <div id="btn-song-list" class="flex-1 min-w-0 px-2 flex justify-center items-center text-center pointer-events-auto cursor-pointer hover:opacity-80 transition-opacity" title="点击查看排单列表">
       <h1 id="song-title" class="text-xs md:text-lg font-bold text-white truncate tracking-wide drop-shadow-md">加载中...</h1>
+      <svg class="w-4 h-4 ml-1 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
     </div>
 
     <!-- 右侧：操作按钮 (手机端只显示图标，隐藏文字) -->
@@ -260,6 +261,28 @@
     // 页面加载时立刻请求
     requestWakeLock();
   </script>
+  
+  <!-- 快速跳转弹窗 -->
+  <div id="song-list-modal" class="fixed inset-0 bg-black/80 z-[100] hidden opacity-0 transition-opacity duration-300 flex items-end md:items-center justify-center backdrop-blur-sm">
+    <div class="bg-zinc-900 w-full md:w-96 max-h-[70vh] rounded-t-2xl md:rounded-2xl flex flex-col overflow-hidden transform translate-y-full md:translate-y-0 md:scale-95 transition-all duration-300" id="song-list-content">
+      <div class="p-4 border-b border-white/10 flex justify-between items-center bg-zinc-800/50">
+        <h3 class="text-white font-bold text-lg">排单曲目</h3>
+        <button id="btn-close-song-list" class="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div id="song-list-container" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+        <!-- JS 渲染列表 -->
+      </div>
+    </div>
+  </div>
+
+    <!-- 翻页提示 (Toast) 悬浮在左下角 -->
+  <div id="toast-notification" class="fixed bottom-8 left-6 z-[70] bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white px-4 py-2.5 rounded-xl shadow-2xl transform translate-y-4 opacity-0 pointer-events-none transition-all duration-300 flex flex-col">
+    <span id="toast-number" class="text-indigo-400 font-black text-[10px] tracking-wider mb-0.5"></span>
+    <span id="toast-title" class="font-bold text-sm md:text-base truncate max-w-[200px] md:max-w-xs"></span>
+  </div>
+
 
 </body>
 </html>
