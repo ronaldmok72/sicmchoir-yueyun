@@ -316,12 +316,15 @@ function loadSong(index) {
   
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  imgEl.onload = () => { restoreDrawing(song.id); };
+  // 🌟 核心修复：图片加载完成后，强制同步画板尺寸
+  imgEl.onload = () => { 
+    resizeCanvas(); 
+  };
   imgEl.src = song.imageUrl;
 
-  // 🌟 每次加载歌曲时，呼出左下角提示框
-  showToast(index, song.title);
+  if(window.showToast) window.showToast(index, song.title);
 }
+
 
 // --- 控制左下角提示框的动画 ---
 let toastTimeout = null;
@@ -371,12 +374,20 @@ function toggleDrawMode() {
 
 
 function resizeCanvas() {
-  canvas.width = slideContainer.clientWidth;
-  canvas.height = slideContainer.clientHeight;
+  // 🌟 核心修复：画板的物理分辨率永远等于图片的真实分辨率
+  if (imgEl && imgEl.naturalWidth) {
+    canvas.width = imgEl.naturalWidth;
+    canvas.height = imgEl.naturalHeight;
+  } else {
+    canvas.width = slideContainer.clientWidth;
+    canvas.height = slideContainer.clientHeight;
+  }
+  
   if (PLAYLIST.length > 0) {
     restoreDrawing(PLAYLIST[currentIndex].id);
   }
 }
+
 
 function setupDrawing() {
   if (!canvas) return;
@@ -404,14 +415,13 @@ function setupDrawing() {
 
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
-  // 🌟 核心修复：因为 canvas 已经被 zoom-wrapper 缩放和平移了
-  // rect.left 和 rect.top 已经自动包含了偏移量
-  // 我们只需要计算相对距离，再除以 scale，就能得到绝对精准的内部坐标！
+  // 🌟 终极数学公式：无论怎么全屏、怎么双指放大，这个公式都能算出绝对精准的笔迹坐标！
   return {
-    x: (e.clientX - rect.left) / scale,
-    y: (e.clientY - rect.top) / scale
+    x: (e.clientX - rect.left) * (canvas.width / rect.width),
+    y: (e.clientY - rect.top) * (canvas.height / rect.height)
   };
 }
+
 
 
 function startDrawing(e) {
