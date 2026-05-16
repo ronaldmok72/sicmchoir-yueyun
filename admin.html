@@ -2730,7 +2730,12 @@
       try {
         const querySnapshot = await getDocs(collection(db, "custom_songs"));
         querySnapshot.forEach((doc) => {
-          if (!LIBRARY_DATA.find(s => s.id === doc.id)) {
+          const existingIndex = LIBRARY_DATA.findIndex(s => s.id === doc.id);
+          if (existingIndex !== -1) {
+            // 🌟 核心修复：如果发现同ID的歌，强制用云端的新图片覆盖本地旧图片！
+            LIBRARY_DATA[existingIndex] = doc.data();
+          } else {
+            // 如果是全新的歌，直接加进去
             LIBRARY_DATA.push(doc.data());
           }
         });
@@ -2744,6 +2749,7 @@
       window.loadHistory();
       if(searchInput) searchInput.addEventListener('input', window.renderLibrary);
     };
+
 
     // --- 曲库渲染逻辑 (Spotify Track Style) ---
     window.renderLibrary = function() {
