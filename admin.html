@@ -3160,21 +3160,16 @@
       let successCount = 0;
       let updateCount = 0;
       
-      // 按钮变成加载状态
       btn.disabled = true;
       btn.classList.replace('bg-emerald-500', 'bg-slate-400');
 
-      // 循环处理每一张照片
       for (let i = 0; i < total; i++) {
         const file = files[i];
-        // 自动读取文件名，去掉 .jpg/.png 后缀，直接作为歌名
         let cleanName = file.name.replace(/\.[^/.]+$/, ""); 
         
-        // 在按钮上显示进度
         btn.innerHTML = `正在上传 (${i + 1}/${total}): ${cleanName}...`;
 
         try {
-          // 1. 上传到 Cloudinary
           const formData = new FormData();
           formData.append('file', file);
           formData.append('upload_preset', 'ml_default');
@@ -3186,24 +3181,23 @@
           const cloudData = await cloudRes.json();
           
           if (!cloudData.secure_url) throw new Error("Cloudinary 上传失败");
-          const imageUrl = cloudData.secure_url;
+          
+          // 🌟 核心修复：给图片链接加上时间戳尾巴，彻底打破浏览器缓存！
+          const imageUrl = cloudData.secure_url + "?t=" + Date.now();
 
-          // 2. 检查是否已存在同名歌曲 (智能覆盖)
           let existingIndex = LIBRARY_DATA.findIndex(s => s.title === cleanName);
           let songId = "song_custom_" + Date.now() + "_" + i; 
           let isUpdate = false;
 
           if (existingIndex !== -1) {
-            songId = LIBRARY_DATA[existingIndex].id; // 发现同名，使用旧ID覆盖
+            songId = LIBRARY_DATA[existingIndex].id; 
             isUpdate = true;
           }
 
           const songData = { id: songId, title: cleanName, imageUrl: imageUrl };
 
-          // 3. 永久保存到 Firebase
           await setDoc(doc(db, "custom_songs", songId), songData);
 
-          // 4. 更新左侧列表数据
           if (isUpdate) {
             LIBRARY_DATA[existingIndex].imageUrl = imageUrl;
             updateCount++;
@@ -3216,7 +3210,6 @@
         }
       }
 
-      // 恢复按钮状态并刷新列表
       btn.disabled = false;
       btn.innerHTML = `开始批量上传`;
       btn.classList.replace('bg-slate-400', 'bg-emerald-500');
@@ -3224,47 +3217,9 @@
       window.renderLibrary();
       window.closeAddSongModal();
       
-      // 弹出最终报告
       alert(`✅ 批量处理完成！\n新增: ${successCount} 首\n覆盖更新: ${updateCount} 首`);
     };
 
-    // --- 新建排单逻辑 ---
-    window.createNewSetlist = function() {
-      if (currentSetlist.length > 0) {
-        if (!confirm("确定要清空当前列表，创建一个新的排单吗？\n(未发布的更改将会丢失)")) return;
-      }
-      currentSetlist = [];
-      document.getElementById('setlist-name').value = '';
-      window.renderSetlist();
-      
-      // 🌟 如果在手机端，新建后自动切回“曲库”Tab方便选歌
-      if (window.innerWidth < 768) {
-        switchTab('library');
-      }
-    };
-
-    // --- 删除曲库歌曲逻辑 ---
-    window.deleteLibrarySong = async function(id) {
-      if(confirm('🚨 警告：确定要从曲库中永久删除这首歌吗？')) {
-        try {
-          // 如果是你后来上传的歌，从 Firebase 删除
-          if (id.startsWith('song_custom_')) {
-            await deleteDoc(doc(db, "custom_songs", id));
-          }
-          
-          // 从本地数组中移除
-          const index = LIBRARY_DATA.findIndex(s => s.id === id);
-          if (index > -1) LIBRARY_DATA.splice(index, 1);
-          
-          // 重新渲染曲库列表
-          window.renderLibrary();
-          alert('✅ 歌曲已成功删除！');
-        } catch (error) {
-          console.error("删除歌曲失败:", error);
-          alert('❌ 删除失败，请检查网络。');
-        }
-      }
-    };
 
 
 
