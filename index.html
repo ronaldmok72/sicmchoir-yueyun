@@ -48,9 +48,9 @@
         <span class="hidden md:inline text-sm font-semibold">指挥</span>
       </button>
 
-      <!-- 演出模式按钮 (锁) -->
-      <button id="btn-lock" class="p-2 md:p-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm" title="开启演出模式">
-        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+      <!-- 演出模式按钮 (全屏) -->
+      <button id="btn-lock" class="p-2 md:p-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm" title="全屏演出模式">
+        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
       </button>
 
       <!-- 智能反色按钮 (月亮) -->
@@ -114,8 +114,9 @@
       <!-- 乐谱图片 -->
       <img id="score-image" src="" alt="Score" class="max-w-full max-h-full object-contain bg-white shadow-2xl shadow-black/60 rounded-xl select-none pointer-events-none z-10" draggable="false">
       
-      <!-- 标注画布 -->
-      <canvas id="draw-canvas" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20 mix-blend-multiply"></canvas>
+      <!-- 🌟 核心修复：加上了 inset-0 m-auto max-w-full max-h-full object-contain，让画板和图片完美焊死 -->
+      <canvas id="draw-canvas" class="absolute inset-0 m-auto max-w-full max-h-full object-contain pointer-events-none z-20 mix-blend-multiply rounded-xl"></canvas>
+
     </div>
     
   </main>
