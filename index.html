@@ -277,10 +277,11 @@
     </div>
   </div>
 
-    <!-- 翻页提示 (Toast) 悬浮在左下角 -->
-  <div id="toast-notification" class="fixed bottom-8 left-6 z-[70] bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white px-4 py-2.5 rounded-xl shadow-2xl transform translate-y-4 opacity-0 pointer-events-none transition-all duration-300 flex flex-col">
-    <span id="toast-number" class="text-indigo-400 font-black text-[10px] tracking-wider mb-0.5"></span>
-    <span id="toast-title" class="font-bold text-sm md:text-base truncate max-w-[200px] md:max-w-xs"></span>
+  <!-- 翻页提示 (Toast) 悬浮在左下角 -->
+  <div id="toast-notification" class="fixed bottom-8 left-6 z-[70] bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white px-4 py-3 rounded-xl shadow-2xl transform translate-y-4 opacity-0 pointer-events-none transition-all duration-300 flex flex-col max-w-[80vw] md:max-w-md">
+    <span id="toast-number" class="text-indigo-400 font-black text-[10px] tracking-wider mb-1"></span>
+    <!-- 🌟 核心修复：去掉了 truncate，加上了 break-words，长歌名会自动换行，绝不遮挡！ -->
+    <span id="toast-title" class="font-bold text-sm md:text-base leading-snug break-words whitespace-normal"></span>
   </div>
 
 
