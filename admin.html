@@ -2726,29 +2726,28 @@
 
     // --- 初始化与拉取云端新歌 ---
     window.init = async function() {
-      // 1. 启动时先去 Firebase 拉取你后来上传的“自定义新歌”
       try {
         const querySnapshot = await getDocs(collection(db, "custom_songs"));
         querySnapshot.forEach((doc) => {
-          const existingIndex = LIBRARY_DATA.findIndex(s => s.id === doc.id);
+          const data = doc.data();
+          const existingIndex = LIBRARY_DATA.findIndex(s => s.id === data.id);
           if (existingIndex !== -1) {
-            // 🌟 核心修复：如果发现同ID的歌，强制用云端的新图片覆盖本地旧图片！
-            LIBRARY_DATA[existingIndex] = doc.data();
+            // 🌟 暴力覆盖：直接替换整个对象，确保图片链接绝对更新
+            LIBRARY_DATA[existingIndex] = data;
           } else {
-            // 如果是全新的歌，直接加进去
-            LIBRARY_DATA.push(doc.data());
+            LIBRARY_DATA.push(data);
           }
         });
       } catch (e) {
         console.log("加载自定义歌曲失败", e);
       }
 
-      // 2. 渲染界面
       window.renderLibrary();
       window.renderSetlist();
       window.loadHistory();
       if(searchInput) searchInput.addEventListener('input', window.renderLibrary);
     };
+
 
 
     // --- 曲库渲染逻辑 (Spotify Track Style) ---
@@ -3146,6 +3145,7 @@
       setTimeout(() => addSongModal.classList.add('hidden'), 300);
     };
 
+    // --- 智能批量上传弹窗逻辑 ---
     window.uploadAndSaveSong = async function() {
       const fileInput = document.getElementById('new-song-file');
       const btn = document.getElementById('btn-upload-save');
@@ -3182,7 +3182,7 @@
           
           if (!cloudData.secure_url) throw new Error("Cloudinary 上传失败");
           
-          // 🌟 核心修复：给图片链接加上时间戳尾巴，彻底打破浏览器缓存！
+          // 🌟 强制加时间戳，打破浏览器缓存
           const imageUrl = cloudData.secure_url + "?t=" + Date.now();
 
           let existingIndex = LIBRARY_DATA.findIndex(s => s.title === cleanName);
@@ -3196,10 +3196,12 @@
 
           const songData = { id: songId, title: cleanName, imageUrl: imageUrl };
 
+          // 保存到 Firebase
           await setDoc(doc(db, "custom_songs", songId), songData);
 
+          // 🌟 暴力更新本地数据
           if (isUpdate) {
-            LIBRARY_DATA[existingIndex].imageUrl = imageUrl;
+            LIBRARY_DATA[existingIndex] = songData; // 直接替换整个对象
             updateCount++;
           } else {
             LIBRARY_DATA.push(songData);
@@ -3207,6 +3209,7 @@
           }
         } catch (error) {
           console.error(`上传 ${cleanName} 失败:`, error);
+          alert(`上传 ${cleanName} 失败: ` + error.message);
         }
       }
 
@@ -3220,6 +3223,28 @@
       alert(`✅ 批量处理完成！\n新增: ${successCount} 首\n覆盖更新: ${updateCount} 首`);
     };
 
+    // --- 删除曲库歌曲逻辑 ---
+    window.deleteLibrarySong = async function(id) {
+      if(confirm('🚨 警告：确定要从曲库中永久删除这首歌吗？')) {
+        try {
+          // 强制从 Firebase 数据库中删除
+          await deleteDoc(doc(db, "custom_songs", id));
+          
+          // 从本地数组中移除
+          const index = LIBRARY_DATA.findIndex(s => s.id === id);
+          if (index > -1) {
+            LIBRARY_DATA.splice(index, 1);
+          }
+          
+          // 重新渲染曲库列表
+          window.renderLibrary();
+          alert('✅ 歌曲已成功删除！\n(注：如果是系统自带的默认老歌，刷新页面后会恢复原状)');
+        } catch (error) {
+          console.error("删除歌曲失败:", error);
+          alert('❌ 删除失败: ' + error.message);
+        }
+      }
+    };
 
 
 
