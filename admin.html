@@ -3165,13 +3165,20 @@
 
       for (let i = 0; i < total; i++) {
         const file = files[i];
+        // 提取纯歌名（去掉 .jpg/.png）
         let cleanName = file.name.replace(/\.[^/.]+$/, ""); 
         
         btn.innerHTML = `正在上传 (${i + 1}/${total}): ${cleanName}...`;
 
         try {
+          // 🌟 终极杀招：偷偷给文件名加上时间戳，强制 Cloudinary 认为这是一张全新的图片！
+          const extension = file.name.split('.').pop(); // 获取后缀名
+          const uniqueFilename = cleanName + "_" + Date.now() + "_" + i + "." + extension;
+          // 创建一个改过名字的新文件对象
+          const newFile = new File([file], uniqueFilename, { type: file.type });
+
           const formData = new FormData();
-          formData.append('file', file);
+          formData.append('file', newFile); // ⚠️ 注意：这里上传的是改名后的新文件！
           formData.append('upload_preset', 'ml_default');
 
           const cloudRes = await fetch('https://api.cloudinary.com/v1_1/dsfhilcgz/image/upload', {
@@ -3182,8 +3189,8 @@
           
           if (!cloudData.secure_url) throw new Error("Cloudinary 上传失败");
           
-          // 🌟 强制加时间戳，打破浏览器缓存
-          const imageUrl = cloudData.secure_url + "?t=" + Date.now();
+          // 获取全新的图片链接
+          const imageUrl = cloudData.secure_url;
 
           let existingIndex = LIBRARY_DATA.findIndex(s => s.title === cleanName);
           let songId = "song_custom_" + Date.now() + "_" + i; 
@@ -3199,9 +3206,9 @@
           // 保存到 Firebase
           await setDoc(doc(db, "custom_songs", songId), songData);
 
-          // 🌟 暴力更新本地数据
+          // 暴力更新本地数据
           if (isUpdate) {
-            LIBRARY_DATA[existingIndex] = songData; // 直接替换整个对象
+            LIBRARY_DATA[existingIndex] = songData;
             updateCount++;
           } else {
             LIBRARY_DATA.push(songData);
@@ -3222,6 +3229,7 @@
       
       alert(`✅ 批量处理完成！\n新增: ${successCount} 首\n覆盖更新: ${updateCount} 首`);
     };
+
 
     // --- 删除曲库歌曲逻辑 ---
     window.deleteLibrarySong = async function(id) {
