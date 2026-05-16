@@ -323,9 +323,9 @@ function loadSong(index) {
   showToast(index, song.title);
 }
 
-// --- 新增：控制左下角提示框的动画 ---
+// --- 控制左下角提示框的动画 ---
 let toastTimeout = null;
-function showToast(index, title) {
+window.showToast = function(index, title) {
   const toast = document.getElementById('toast-notification');
   const toastNum = document.getElementById('toast-number');
   const toastTitle = document.getElementById('toast-title');
@@ -342,7 +342,8 @@ function showToast(index, title) {
   toastTimeout = setTimeout(() => {
     toast.classList.add('translate-y-4', 'opacity-0');
   }, 2500);
-}
+};
+
 
 
 function toggleDrawMode() {
@@ -468,45 +469,74 @@ function restoreDrawing(songId) {
     img.src = dataURL;
     img.onload = () => {
       ctx.globalCompositeOperation = 'source-over';
-      ctx.drawImage(img, 0, 0);
+      // 🌟 核心修复：强制让保存的笔迹拉伸贴合当前的画板尺寸，绝对不再走位！
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     };
   }
 }
 
+
 function setupSwipe() {
   let touchStartX = 0;
   let touchEndX = 0;
+  let isMultiTouch = false;
+  let isValidSwipeStart = false;
+
   if (!slideContainer) return;
 
   slideContainer.addEventListener('touchstart', e => {
-    if (isDrawingMode || scale > 1) return;
+    if (isDrawingMode) return;
+    // 🌟 如果是双指(缩放)，立刻标记为多指操作，禁止翻页
+    if (e.touches.length > 1) {
+      isMultiTouch = true;
+      isValidSwipeStart = false;
+      return;
+    }
+    // 只有在未放大时才允许翻页
+    if (scale > 1) return; 
+    
+    isMultiTouch = false;
+    isValidSwipeStart = true;
     touchStartX = e.changedTouches[0].screenX;
   }, { passive: true });
 
+  slideContainer.addEventListener('touchmove', e => {
+    // 滑动过程中如果加入了第二根手指，立刻取消翻页资格
+    if (e.touches.length > 1) {
+      isMultiTouch = true;
+      isValidSwipeStart = false;
+    }
+  }, { passive: true });
+
   slideContainer.addEventListener('touchend', e => {
-    if (isDrawingMode || scale > 1) return;
+    // 如果是画画模式、放大状态、或者是多指缩放刚结束，绝对不触发翻页！
+    if (isDrawingMode || scale > 1 || isMultiTouch || !isValidSwipeStart) {
+      isMultiTouch = false; 
+      return;
+    }
     touchEndX = e.changedTouches[0].screenX;
     handleSwipe();
   }, { passive: true });
 
   function handleSwipe() {
-    const swipeThreshold = 50;
+    const swipeThreshold = 80; // 🌟 调大了滑动阈值，必须明确滑动才会翻页
     if (touchEndX < touchStartX - swipeThreshold) {
       if (currentIndex < PLAYLIST.length - 1) { 
         currentIndex++; 
         loadSong(currentIndex); 
-        if (isConductor) pushLiveSync(); // --- 新增：滑动翻页也推送 ---
+        if (isConductor) pushLiveSync(); 
       }
     }
     if (touchEndX > touchStartX + swipeThreshold) {
       if (currentIndex > 0) { 
         currentIndex--; 
         loadSong(currentIndex); 
-        if (isConductor) pushLiveSync(); // --- 新增：滑动翻页也推送 ---
+        if (isConductor) pushLiveSync(); 
       }
     }
   }
 }
+
 
 function setupZoomAndPan() {
   const container = document.getElementById('zoom-wrapper');
