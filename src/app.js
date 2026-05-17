@@ -316,37 +316,26 @@ function loadSong(index) {
   
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // 🌟 核心修复：图片加载完成后，强制同步画板尺寸
   imgEl.onload = () => { 
     resizeCanvas(); 
   };
   imgEl.src = song.imageUrl;
 
+  // 👇 确保有这一行，每次翻页都会把新歌名写进左下角！
   if(window.showToast) window.showToast(index, song.title);
 }
 
 
-// --- 控制左下角提示框的动画 ---
-let toastTimeout = null;
+// --- 控制左下角提示框的内容更新 ---
 window.showToast = function(index, title) {
-  const toast = document.getElementById('toast-notification');
   const toastNum = document.getElementById('toast-number');
   const toastTitle = document.getElementById('toast-title');
-  if (!toast) return;
+  if (!toastNum || !toastTitle) return;
 
+  // 只负责更新文字，显示/隐藏完全交给 index.html 里的点击事件控制
   toastNum.textContent = `TRACK ${index + 1} / ${PLAYLIST.length}`;
   toastTitle.textContent = title;
-
-  // 弹出动画
-  toast.classList.remove('translate-y-4', 'opacity-0');
-  
-  // 2.5秒后自动淡出
-  if (toastTimeout) clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => {
-    toast.classList.add('translate-y-4', 'opacity-0');
-  }, 2500);
 };
-
 
 
 function toggleDrawMode() {
