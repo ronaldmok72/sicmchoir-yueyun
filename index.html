@@ -80,16 +80,30 @@
 
   <!-- 底部悬浮画笔工具栏 -->
   <div id="draw-tools" class="hidden fixed bottom-8 left-1/2 -translate-x-1/2 z-50 items-center gap-2 p-2 bg-zinc-800/95 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl">
-    <button class="color-btn w-10 h-10 rounded-full bg-red-500 ring-2 ring-offset-2 ring-offset-zinc-800 ring-white transition-all shadow-sm hover:scale-110" data-color="rgba(239, 68, 68, 0.8 )" data-width="4" title="红笔"></button>
+    <button class="color-btn w-10 h-10 rounded-full bg-red-500 ring-2 ring-offset-2 ring-offset-zinc-800 ring-white transition-all shadow-sm hover:scale-110" data-color="rgba(239, 68, 68, 0.8)" data-width="4" title="红笔"></button>
     <button class="color-btn w-10 h-10 rounded-full bg-blue-500 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm hover:scale-110" data-color="rgba(59, 130, 246, 0.8)" data-width="4" title="蓝笔"></button>
     <button class="color-btn w-10 h-10 rounded-full bg-zinc-900 border border-zinc-600 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm hover:scale-110" data-color="rgba(30, 41, 59, 0.8)" data-width="4" title="黑笔"></button>
     <button class="color-btn w-10 h-10 rounded-full bg-yellow-400 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm flex items-center justify-center hover:scale-110" data-color="rgba(253, 224, 71, 0.8)" data-width="20" title="高亮笔">
      <span class="text-[11px] font-black text-yellow-900">粗</span>
     </button>
+    
+    <div class="w-px h-8 bg-white/10 mx-1"></div>
+    
+    <!-- 🌟 新增：画笔尺寸选择 -->
+    <div class="flex items-center gap-1 bg-zinc-900/50 rounded-full p-1 border border-white/5">
+      <button class="size-btn w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all ring-2 ring-zinc-400" data-size="3" title="细笔">
+        <div class="w-1.5 h-1.5 bg-current rounded-full"></div>
+      </button>
+      <button class="size-btn w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all ring-2 ring-transparent" data-size="6" title="中笔">
+        <div class="w-2.5 h-2.5 bg-current rounded-full"></div>
+      </button>
+      <button class="size-btn w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all ring-2 ring-transparent" data-size="12" title="粗笔">
+        <div class="w-4 h-4 bg-current rounded-full"></div>
+      </button>
+    </div>
 
-    
-    <div class="w-px h-8 bg-white/10 mx-2"></div>
-    
+    <div class="w-px h-8 bg-white/10 mx-1"></div>
+
     <button id="btn-eraser" class="p-2.5 rounded-full text-zinc-400 hover:bg-zinc-700 hover:text-white ring-2 ring-transparent transition-all" title="橡皮擦">
       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
     </button>
@@ -97,6 +111,7 @@
       <span class="text-xs font-bold px-1">清空</span>
     </button>
   </div>
+
 
   <!-- 主体乐谱查看区 -->
   <!-- 关键修复：slide-container 必须作为 canvas 的绝对定位参考系 -->
@@ -173,75 +188,89 @@
 
 
     // ==========================================
-    // 【B】防息屏功能 (Wake Lock API)
+    // 【B】智能防息屏 (仅在全屏演出时激活，省电)
     // ==========================================
     let wakeLock = null;
     const requestWakeLock = async () => {
       try {
         if ('wakeLock' in navigator) {
           wakeLock = await navigator.wakeLock.request('screen');
-          console.log('☀️ 防息屏已激活，弥撒中绝不黑屏！');
+          console.log('☀️ 演出模式：防息屏已激活');
         }
       } catch (err) {
         console.error('防息屏请求失败:', err);
       }
     };
+    const releaseWakeLock = async () => {
+      if (wakeLock !== null) {
+        await wakeLock.release();
+        wakeLock = null;
+        console.log('🌙 退出演出：防息屏已释放，恢复省电');
+      }
+    };
     
-    // 当用户切换 App 再切回来时，重新激活防息屏
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') requestWakeLock();
+      if (document.visibilityState === 'visible' && slideContainer.dataset.locked === "true") {
+        requestWakeLock();
+      }
     });
-    
+
     // ==========================================
-    // 【C】智能反色 (Smart Invert)
+    // 【C】其他功能 (反色、全屏等)
     // ==========================================
     const btnInvert = document.getElementById('btn-invert');
     const scoreImg = document.getElementById('score-image');
     
     btnInvert.addEventListener('click', () => {
-      // 切换 Tailwind 的内置滤镜 class
-      // invert: 反转颜色 (白变黑)
-      // hue-rotate-180: 修正色相 (保证彩色部分不变色太离谱)
-      // brightness-90: 稍微降低一点亮度，让纯白字不那么刺眼
       scoreImg.classList.toggle('invert');
       scoreImg.classList.toggle('hue-rotate-180');
       scoreImg.classList.toggle('brightness-90');
-      
-      // 按钮视觉反馈
       btnInvert.classList.toggle('text-yellow-400');
       btnInvert.classList.toggle('text-zinc-300');
     });
-    // ==========================================
-    // 【D】演出模式 (Performance Mode) + 自动全屏
-    // ==========================================
+
     const btnLock = document.getElementById('btn-lock');
     const btnUnlock = document.getElementById('btn-unlock');
     const drawCanvas = document.getElementById('draw-canvas');
     
     btnLock.addEventListener('click', () => {
-      // 1. 强制隐藏顶部导航栏和底部画笔栏
       header.classList.add('opacity-0', 'pointer-events-none', '-translate-y-8');
       if (!drawTools.classList.contains('hidden')) {
         drawTools.classList.add('opacity-0', 'pointer-events-none', 'translate-y-12');
       }
-      
-      // 2. 禁用画板的触摸事件，彻底防止误触画出线条
       drawCanvas.style.pointerEvents = 'none';
-      
-      // 3. 给容器打上“已锁定”标记，禁用点击呼出菜单
       slideContainer.dataset.locked = "true";
-      
-      // 4. 显示右上角的半透明解锁按钮
       btnUnlock.classList.remove('hidden');
 
-      // 🌟 5. 自动进入全屏模式 (兼容安卓和 iPad)
+      // 🌟 进入全屏时，激活防息屏
+      requestWakeLock();
+
       const docEl = document.documentElement;
       if (docEl.requestFullscreen) {
         docEl.requestFullscreen().catch(err => console.log("全屏被拒绝:", err));
-      } else if (docEl.webkitRequestFullscreen) { /* Safari/iPadOS */
+      } else if (docEl.webkitRequestFullscreen) {
         docEl.webkitRequestFullscreen();
       }
     });
+
+    btnUnlock.addEventListener('click', () => {
+      header.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-8');
+      drawCanvas.style.pointerEvents = '';
+      slideContainer.dataset.locked = "false";
+      btnUnlock.classList.add('hidden');
+
+      // 🌟 退出全屏时，释放防息屏，省电！
+      releaseWakeLock();
+
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    });
+
 
     btnUnlock.addEventListener('click', () => {
       // 1. 恢复顶部导航栏
