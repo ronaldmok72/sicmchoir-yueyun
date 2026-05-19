@@ -282,18 +282,41 @@ function setupTools() {
       btn.addEventListener('click', () => {
         isEraser = false;
         currentColor = btn.dataset.color;
-        currentWidth = parseInt(btn.dataset.width, 10);
-        colorBtns.forEach(b => b.classList.replace('ring-slate-800', 'ring-transparent'));
-        btn.classList.replace('ring-transparent', 'ring-slate-800');
-        if (btnEraser) btnEraser.classList.replace('ring-slate-800', 'ring-transparent');
+        // 如果是高亮笔，强制用粗笔；否则保持当前选择的粗细
+        if (btn.dataset.width === "20") {
+          currentWidth = 20;
+        } else {
+          // 恢复之前选择的粗细
+          const activeSizeBtn = document.querySelector('.size-btn.ring-zinc-400');
+          if (activeSizeBtn) currentWidth = parseInt(activeSizeBtn.dataset.size, 10);
+        }
+        
+        colorBtns.forEach(b => b.classList.replace('ring-white', 'ring-transparent'));
+        colorBtns.forEach(b => b.classList.replace('ring-zinc-600', 'ring-transparent'));
+        btn.classList.replace('ring-transparent', btn.classList.contains('bg-zinc-900') ? 'ring-zinc-600' : 'ring-white');
+        if (btnEraser) btnEraser.classList.replace('ring-zinc-400', 'ring-transparent');
       });
     });
   }
+
+  // 🌟 新增：绑定尺寸选择按钮
+  const sizeBtns = document.querySelectorAll('.size-btn');
+  if (sizeBtns) {
+    sizeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentWidth = parseInt(btn.dataset.size, 10);
+        sizeBtns.forEach(b => b.classList.replace('ring-zinc-400', 'ring-transparent'));
+        btn.classList.replace('ring-transparent', 'ring-zinc-400');
+      });
+    });
+  }
+
   if (btnEraser) {
     btnEraser.addEventListener('click', () => {
       isEraser = true;
-      if (colorBtns) colorBtns.forEach(b => b.classList.replace('ring-slate-800', 'ring-transparent'));
-      btnEraser.classList.replace('ring-transparent', 'ring-slate-800');
+      colorBtns.forEach(b => b.classList.replace('ring-white', 'ring-transparent'));
+      colorBtns.forEach(b => b.classList.replace('ring-zinc-600', 'ring-transparent'));
+      btnEraser.classList.replace('ring-transparent', 'ring-zinc-400');
     });
   }
   if (btnClear) {
@@ -305,6 +328,7 @@ function setupTools() {
     });
   }
 }
+
 
 function loadSong(index) {
   if (!PLAYLIST || PLAYLIST.length === 0) return;
@@ -431,11 +455,14 @@ function draw(e) {
   if (isEraser) {
     ctx.globalCompositeOperation = 'destination-out';
     ctx.strokeStyle = 'rgba(0,0,0,1)';
-    ctx.lineWidth = 30 / scale;
+    // 🌟 修复：去掉 / scale，让橡皮擦大小保持绝对物理尺寸
+    ctx.lineWidth = 40; 
   } else {
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = currentColor;
-    ctx.lineWidth = currentWidth / scale;
+    // 🌟 核心修复：去掉 / scale！
+    // 这样你在放大时写字，画笔在画布上依然是粗的，缩小后字迹清晰可见！
+    ctx.lineWidth = currentWidth; 
   }
   
   ctx.lineCap = 'round';
@@ -444,6 +471,7 @@ function draw(e) {
   
   lastX = pos.x; lastY = pos.y;
 }
+
 
 
 
