@@ -488,8 +488,30 @@ function stopDrawing() {
 function saveDrawing() {
   if (!PLAYLIST || PLAYLIST.length === 0) return;
   const song = PLAYLIST[currentIndex];
-  const dataURL = canvas.toDataURL('image/png');
-  localStorage.setItem(`drawing_${song.id}`, dataURL);
+
+  try {
+    // 🌟 修复：标注不需要跟原图一样的超高分辨率，存全尺寸很快把手机的 localStorage 塞满。
+    // 存之前先压缩到最长边 1400px 再存，画质对标注来说完全够用，储存空间省下大半。
+    const MAX_SAVE_DIM = 1400;
+    let sourceCanvas = canvas;
+    if (canvas.width > MAX_SAVE_DIM || canvas.height > MAX_SAVE_DIM) {
+      const ratio = Math.min(MAX_SAVE_DIM / canvas.width, MAX_SAVE_DIM / canvas.height);
+      const scaled = document.createElement('canvas');
+      scaled.width = Math.round(canvas.width * ratio);
+      scaled.height = Math.round(canvas.height * ratio);
+      scaled.getContext('2d').drawImage(canvas, 0, 0, scaled.width, scaled.height);
+      sourceCanvas = scaled;
+    }
+    const dataURL = sourceCanvas.toDataURL('image/png');
+    localStorage.setItem(`drawing_${song.id}`, dataURL);
+  } catch (error) {
+    // 🌟 修复：以前这里没有 try/catch，储存空间满了会静默失败——
+    // 当下看起来画上去了，但其实根本没存进去，一 refresh 或翻页回来就消失。
+    console.error('保存标注失败:', error);
+    if (error && error.name === 'QuotaExceededError') {
+      alert('⚠️ 这台设备的储存空间已满，刚才这笔标注没能保存下来！\n请到浏览器设置里清除本网站的「网站数据/储存空间」以释放空间，再重新标注一次。');
+    }
+  }
 }
 
 function restoreDrawing(songId) {
