@@ -366,14 +366,18 @@ function toggleDrawMode() {
   isDrawingMode = !isDrawingMode;
   if (isDrawingMode) {
     resizeCanvas(); // 每次开启时重新获取尺寸
-    
+
     btnDraw.classList.add('ring-2', 'ring-red-500', 'bg-slate-50');
     if (drawStatus) drawStatus.textContent = 'On';
-    
+
     canvas.classList.remove('pointer-events-none');
     canvas.classList.add('pointer-events-auto');
     drawTools.classList.remove('hidden');
     drawTools.classList.add('flex');
+
+    // 🌟 修复：开始标注时，把左下角的曲名提示收起来，避免挡住画板
+    const toast = document.getElementById('toast-notification');
+    if (toast) toast.classList.add('translate-y-4', 'opacity-0');
   } else {
     btnDraw.classList.remove('ring-2', 'ring-red-500', 'bg-slate-50');
     if (drawStatus) drawStatus.textContent = 'Off';

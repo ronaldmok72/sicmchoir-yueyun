@@ -231,14 +231,15 @@
 
     const btnLock = document.getElementById('btn-lock');
     const btnUnlock = document.getElementById('btn-unlock');
-    const drawCanvas = document.getElementById('draw-canvas');
-    
+
     btnLock.addEventListener('click', () => {
       header.classList.add('opacity-0', 'pointer-events-none', '-translate-y-8');
       if (!drawTools.classList.contains('hidden')) {
         drawTools.classList.add('opacity-0', 'pointer-events-none', 'translate-y-12');
       }
-      drawCanvas.style.pointerEvents = 'none';
+      // 🌟 修复：不再强制把画板设成 pointerEvents:none。
+      // 画板是否能画，完全交给 app.js 的「标注」开关(isDrawingMode)决定，
+      // 全屏演出模式不应该覆盖它——不然全屏时打开标注也画不出来。
       slideContainer.dataset.locked = "true";
       btnUnlock.classList.remove('hidden');
 
@@ -255,7 +256,6 @@
 
     btnUnlock.addEventListener('click', () => {
       header.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-8');
-      drawCanvas.style.pointerEvents = '';
       slideContainer.dataset.locked = "false";
       btnUnlock.classList.add('hidden');
 
@@ -269,45 +269,6 @@
           document.webkitExitFullscreen();
         }
       }
-    });
-
-
-    btnUnlock.addEventListener('click', () => {
-      // 1. 恢复顶部导航栏
-      header.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-8');
-      
-      // 2. 恢复画板状态
-      drawCanvas.style.pointerEvents = '';
-      
-      // 3. 解除锁定标记
-      slideContainer.dataset.locked = "false";
-      
-      // 4. 隐藏解锁按钮
-      btnUnlock.classList.add('hidden');
-
-      // 🌟 5. 自动退出全屏模式
-      if (document.fullscreenElement || document.webkitFullscreenElement) {
-        if (document.exitFullscreen) {
-          document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) {
-          document.webkitExitFullscreen();
-        }
-      }
-    });
-
-
-    btnUnlock.addEventListener('click', () => {
-      // 1. 恢复顶部导航栏
-      header.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-8');
-      
-      // 2. 恢复画板状态 (交还给 app.js 原本的逻辑控制)
-      drawCanvas.style.pointerEvents = '';
-      
-      // 3. 解除锁定标记
-      slideContainer.dataset.locked = "false";
-      
-      // 4. 隐藏解锁按钮
-      btnUnlock.classList.add('hidden');
     });
 
 
