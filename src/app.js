@@ -23,7 +23,7 @@ let isConductor = false;
 let unsubscribeLiveSync = null;
 
 // DOM Elements
-let titleEl, imgEl, btnDraw, drawStatus, drawTools, colorBtns, btnEraser, btnClear, btnSync, canvas, ctx, slideContainer, setlistSelect, btnConductor;
+let titleEl, imgEl, btnDraw, drawStatus, drawTools, colorBtns, btnEraser, btnClear, btnSync, canvas, ctx, slideContainer, setlistSelect, btnConductor, btnRenameSong;
 
 // Drawing State
 let isDrawing = false;
@@ -58,7 +58,8 @@ async function init() {
   if (btnCloseSongList) btnCloseSongList.addEventListener('click', closeSongList);
 
   // 🌟 新增：改名/备注按钮（风格·拍子·Key 用文字记录，不用画笔，省储存空间）
-  const btnRenameSong = document.getElementById('btn-rename-song');
+  // 默认隐藏，只有指挥模式开启后才显示，避免团员按错误改歌名
+  btnRenameSong = document.getElementById('btn-rename-song');
   if (btnRenameSong) btnRenameSong.addEventListener('click', renameCurrentSong);
 
 
@@ -93,11 +94,14 @@ async function init() {
       if (isConductor) {
         btnConductor.classList.replace('text-zinc-400', 'text-yellow-400');
         btnConductor.classList.add('ring-2', 'ring-yellow-500/50');
-        alert("👨‍🏫 指挥模式已开启！\n现在你的翻页动作将实时同步给所有团员。");
-        pushLiveSync(); 
+        // 🌟 改名功能只在指挥模式下才露出来，避免团员按错误改歌名
+        if (btnRenameSong) { btnRenameSong.classList.remove('hidden'); btnRenameSong.classList.add('flex'); }
+        alert("👨‍🏫 指挥模式已开启！\n现在你的翻页动作将实时同步给所有团员，也可以修改歌名/加备注了。");
+        pushLiveSync();
       } else {
         btnConductor.classList.replace('text-yellow-400', 'text-zinc-400');
         btnConductor.classList.remove('ring-2', 'ring-yellow-500/50');
+        if (btnRenameSong) { btnRenameSong.classList.add('hidden'); btnRenameSong.classList.remove('flex'); }
         alert("指挥模式已关闭。");
       }
     });
@@ -357,6 +361,11 @@ function loadSong(index) {
 // --- 🌟 新增：改名/加备注（风格·拍子·Key·页码），取代画笔标注，几乎不占储存空间 ---
 // 靠 song.id 认歌，不是靠标题——改名只会更新同一首歌的记录，不会变成第二首歌。
 async function renameCurrentSong() {
+  // 🌟 防呆：按钮平时是隐藏的，但多一层判断，避免任何情况下被误触发
+  if (!isConductor) {
+    alert('🔒 请先开启「指挥模式」才能修改歌名/备注，避免大家不小心按到改坏。');
+    return;
+  }
   if (!PLAYLIST || PLAYLIST.length === 0) return;
   const song = PLAYLIST[currentIndex];
 
@@ -364,6 +373,9 @@ async function renameCurrentSong() {
   if (newTitle === null) return; // 按了取消
   const trimmed = newTitle.trim();
   if (!trimmed || trimmed === song.title) return;
+
+  // 🌟 二次确认，防手滑
+  if (!confirm(`确定要把歌名改成：\n\n「${trimmed}」\n\n吗？`)) return;
 
   const oldTitle = song.title;
   song.title = trimmed; // 本地立刻生效

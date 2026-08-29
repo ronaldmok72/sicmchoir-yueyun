@@ -42,8 +42,10 @@
     </div>
 
     <!-- 🌟 新增：改名/备注按钮 (风格·拍子·Key 用文字记，取代画笔标注，不占储存空间) -->
-    <button id="btn-rename-song" class="p-2 md:p-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm shrink-0" title="修改歌名/加备注（风格·拍子·Key·页码）">
-      <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+    <!-- 默认隐藏：只有开启「指挥模式」(输入密码) 之后才会出现，避免团员按错误改歌名 -->
+    <button id="btn-rename-song" class="hidden items-center gap-1.5 p-2 md:px-3 md:py-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm shrink-0" title="修改歌名/加备注（风格·拍子·Key·页码）—— 仅指挥模式可用">
+      <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6h.008v.008H6V6z"></path></svg>
+      <span class="hidden md:inline text-sm font-semibold">改名</span>
     </button>
 
     <!-- 右侧：操作按钮 (手机端只显示图标，隐藏文字) -->
