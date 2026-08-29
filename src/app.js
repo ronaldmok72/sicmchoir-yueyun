@@ -1,6 +1,6 @@
-// 1. 引入新增了 updateDoc 和 onSnapshot
+// 1. 引入新增了 updateDoc、onSnapshot、setDoc(改名功能要用)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -57,7 +57,11 @@ async function init() {
   if (btnSongList) btnSongList.addEventListener('click', openSongList);
   if (btnCloseSongList) btnCloseSongList.addEventListener('click', closeSongList);
 
-  
+  // 🌟 新增：改名/备注按钮（风格·拍子·Key 用文字记录，不用画笔，省储存空间）
+  const btnRenameSong = document.getElementById('btn-rename-song');
+  if (btnRenameSong) btnRenameSong.addEventListener('click', renameCurrentSong);
+
+
   // 绑定指挥按钮
   btnConductor = document.getElementById('btn-conductor');
 
@@ -347,6 +351,44 @@ function loadSong(index) {
 
   // 👇 确保有这一行，每次翻页都会把新歌名写进左下角！
   if(window.showToast) window.showToast(index, song.title);
+}
+
+
+// --- 🌟 新增：改名/加备注（风格·拍子·Key·页码），取代画笔标注，几乎不占储存空间 ---
+// 靠 song.id 认歌，不是靠标题——改名只会更新同一首歌的记录，不会变成第二首歌。
+async function renameCurrentSong() {
+  if (!PLAYLIST || PLAYLIST.length === 0) return;
+  const song = PLAYLIST[currentIndex];
+
+  const newTitle = prompt('✏️ 修改歌名／加备注（风格、拍子、Key、页码都可以直接写在这）：', song.title);
+  if (newTitle === null) return; // 按了取消
+  const trimmed = newTitle.trim();
+  if (!trimmed || trimmed === song.title) return;
+
+  const oldTitle = song.title;
+  song.title = trimmed; // 本地立刻生效
+
+  titleEl.textContent = `${currentIndex + 1}/${PLAYLIST.length} : ${song.title}`;
+  if (window.showToast) window.showToast(currentIndex, song.title);
+
+  // 更新离线缓存，就算不联网/直接refresh，改的名字也不会丢
+  localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
+
+  const selectedId = setlistSelect.value || localStorage.getItem('offline_playlist_name');
+
+  try {
+    // 1) 写回「当前这份排单」，下次任何人打开这份排单都会看到新名字
+    if (selectedId) {
+      await updateDoc(doc(db, "setlists", selectedId), { items: PLAYLIST });
+    }
+    // 2) 写回「曲库」母本（用同一个 id 覆盖），以后这首歌被加进任何新排单，用的都是最新名字
+    await setDoc(doc(db, "custom_songs", song.id), {
+      id: song.id, title: song.title, imageUrl: song.imageUrl
+    }, { merge: true });
+  } catch (error) {
+    console.error('改名同步失败:', error);
+    alert(`⚠️ 改名已经在这台设备生效，但同步到云端失败，请检查网络后重新改一次。\n(${oldTitle} → ${song.title})`);
+  }
 }
 
 
