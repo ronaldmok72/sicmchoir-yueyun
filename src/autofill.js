@@ -72,4 +72,68 @@ export function autofill(date, title, masses, library, template, sourceId) {
   return { day, sources, source, slots, ordinary, note: source?.note || '' };
 }
 
+// ───────── 选歌时的推荐 ─────────
+// 旧歌单对到曲库很花时间：对过一次就记住
+const blockCache = new Map();
+const historySongs = (i, library) => {
+  if (!blockCache.has(i)) blockCache.set(i, matchBlock(HISTORY[i].l, library));
+  return blockCache.get(i);
+};
+const DAY = 864e5;
+// 页面打开后慢慢先对好（一次 20 份），第一次点「选歌」就不会卡
+export function warmHistory(library) {
+  let i = 0;
+  const step = () => {
+    const end = Math.min(i + 20, HISTORY.length);
+    for (; i < end; i++) historySongs(i, library);
+    if (i < HISTORY.length) setTimeout(step, 30);
+  };
+  setTimeout(step, 500);
+}
+
+// 给一个位置推荐歌：
+//   sameDay = 以前这个主日在这个位置唱过的（★ 同一个甲乙丙年）
+//   season  = 这个礼仪季在这个位置常唱的（答唱咏每个主日不一样，不推荐）
+//   recent  = 前后 5 个礼拜已经排了的歌 → { id: 相差几天 }，提醒不要太密
+export function suggestFor(date, title, slotKey, masses, library) {
+  const { day, sources } = sourcesFor(date, title, masses, library);
+  const add = (map, x, extra) => {
+    if (!x.id || x.missing) return;
+    const e = map.get(x.id) || { song: x, n: 0, tags: [], sameCycle: false };
+    e.n++;
+    Object.assign(e, extra(e));
+    map.set(x.id, e);
+  };
+  const same = new Map();
+  sources.forEach(s => (s.songs[slotKey] || []).forEach(x => add(same, x, e => ({
+    tags: e.tags.concat(`${s.label.slice(0, 4)}${s.cycle}`), sameCycle: e.sameCycle || s.cycle === day.cycle,
+  }))));
+  const sameDay = [...same.values()].sort((a, b) => b.sameCycle - a.sameCycle || b.n - a.n);
+
+  const season = new Map();
+  if (slotKey !== 'psalm') {
+    masses.forEach(m => {
+      if (m.date === date || SEASON_OF(keyOfTitle(m.title) || litDay(m.date).key) !== day.season) return;
+      (m.slots || []).filter(s => s.key === slotKey).forEach(s => s.songs.forEach(x => add(season, x, () => ({}))));
+    });
+    if (PROPER.includes(slotKey)) HISTORY.forEach((h, i) => {
+      if (SEASON_OF(h.k) !== day.season) return;
+      (historySongs(i, library)[slotKey] || []).forEach(x => add(season, x, () => ({})));
+    });
+  }
+  const seasonList = [...season.values()].filter(e => !same.has(e.song.id) && e.n >= 2).sort((a, b) => b.n - a.n).slice(0, 12);
+
+  const recent = {};
+  const t0 = new Date(date + 'T12:00').getTime();
+  masses.forEach(m => {
+    if (m.date === date) return;
+    const diff = Math.round((new Date(m.date + 'T12:00').getTime() - t0) / DAY);
+    if (Math.abs(diff) > 35) return;
+    (m.slots || []).forEach(s => s.songs.forEach(x => {
+      if (x.id && (recent[x.id] === undefined || Math.abs(diff) < Math.abs(recent[x.id]))) recent[x.id] = diff;
+    }));
+  });
+  return { day, sameDay, season: seasonList, recent };
+}
+
 export { litDay, cycleOf };

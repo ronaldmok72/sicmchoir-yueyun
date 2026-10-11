@@ -2,7 +2,7 @@
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
-import { autofill, sourcesFor, litDay } from "./autofill.js";
+import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER } from "./autofill.js";
 
 const $ = id => document.getElementById(id);
 const MASSES = 'masses';
@@ -256,15 +256,33 @@ function renderPicker() {
   const q = $('picker-search').value.trim().toLowerCase();
   const onlyFit = $('picker-suggest').checked && !q;
   const used = usedCount(slot.key);
+  // 推荐：以前这个主日唱过的、这个季节常唱的；前后几个礼拜已经排了的会提醒
+  const sug = M.date ? suggestFor(M.date, M.title, slot.key, masses.filter(m => m.id !== M.id), LIBRARY_DATA) : null;
+  const recent = sug && PROPER.includes(slot.key) && slot.key !== 'psalm' ? sug.recent : {};
+  const inSlot = new Set(slot.songs.map(x => x.id));
+  const when = d => d === 0 ? '' : d < 0 ? `${Math.round(-d / 7) || 1} 周前刚唱过` : `${Math.round(d / 7) || 1} 周后已经排了`;
+  const row = (s, right) => `
+    <button data-id="${esc(s.id)}" class="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-indigo-50 ${inSlot.has(s.id) ? 'opacity-40' : ''}">
+      <span class="flex-1 min-w-0">
+        <span class="block truncate text-sm">${esc(clean(s.title))}</span>
+        ${recent[s.id] !== undefined ? `<span class="block text-[11px] text-amber-600">⚠ ${when(recent[s.id])}</span>` : ''}
+      </span>
+      ${right ? `<span class="text-[10px] text-slate-400 shrink-0 text-right">${right}</span>` : ''}
+    </button>`;
+  const head = t => `<div class="px-3 pt-2 pb-1 text-xs font-semibold text-slate-500">${t}</div>`;
+  let top = '';
+  if (sug && !q) {
+    const ok = e => songById(e.song.id);
+    const sd = sug.sameDay.filter(ok), se = sug.season.filter(ok);
+    if (sd.length) top += head(`⭐ 以前「${esc(sug.day.name)}」唱过`) + sd.map(e => row(songById(e.song.id), `${e.sameCycle ? '★ ' : ''}${e.tags.slice(0, 3).join(' · ')}`)).join('');
+    if (se.length) top += head(`这个季节常唱`) + se.map(e => row(songById(e.song.id), `唱过 ${e.n} 次`)).join('');
+    if (top) top += head('全部');
+  }
   let list = allSongs().filter(s => (!q || s.title.toLowerCase().includes(q)) && (!onlyFit || fits(s, tpl)));
   list.sort((a, b) => (used[b.id] || 0) - (used[a.id] || 0) || clean(a.title).localeCompare(clean(b.title), 'zh'));
   const total = list.length;
   list = list.slice(0, 120);
-  $('picker-list').innerHTML = list.map(s => `
-    <button data-id="${esc(s.id)}" class="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-indigo-50">
-      <span class="flex-1 min-w-0 truncate text-sm">${esc(clean(s.title))}</span>
-      ${used[s.id] ? `<span class="text-[10px] text-slate-400 shrink-0">唱过 ${used[s.id]} 次</span>` : ''}
-    </button>`).join('')
+  $('picker-list').innerHTML = top + list.map(s => row(s, used[s.id] ? `唱过 ${used[s.id]} 次` : '')).join('')
     + (total > list.length ? `<div class="text-xs text-slate-400 text-center py-2">还有 ${total - list.length} 首，打字缩小范围</div>` : '')
     + (!total ? '<div class="text-sm text-slate-400 text-center py-8">找不到。试试别的字，或把「只看适合这个位置的」关掉。</div>' : '');
 }
@@ -513,4 +531,5 @@ $('btn-new').addEventListener('click', () => {
   const today = isoDate(new Date());
   const upcoming = [...masses].reverse().find(m => m.date >= today);
   if (upcoming) openMass(upcoming); else newMass();
+  warmHistory(LIBRARY_DATA);
 })();
