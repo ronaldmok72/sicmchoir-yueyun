@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>团员名单 - 乐韵歌咏团</title>
+  <script src="src/gate.js" data-require></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
+  <main class="max-w-3xl mx-auto px-4 py-5 pb-24">
+
+    <header class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
+        <h1 class="text-xl font-semibold">团员名单</h1>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <a href="mass.html" class="text-slate-500 hover:text-indigo-600">弥撒排歌</a>
+        <a href="/" class="text-slate-500 hover:text-indigo-600">← 回乐谱</a>
+      </div>
+    </header>
+
+    <!-- 第一次：导入 -->
+    <section id="seed-box" class="hidden bg-indigo-50 border border-indigo-200 rounded-2xl p-4 mb-4 text-sm space-y-2">
+      <div class="font-semibold text-indigo-900">名单还是空的</div>
+      <div class="text-indigo-800">可以先导入座位表和 2026 职务表里的 <b id="seed-count"></b> 个人（披肩号码、谁当过指挥／答唱咏／琴师）。声部大部分空着，等 10/17 测验答完再补。导入后再一个一个改。</div>
+      <button id="btn-seed" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">导入名单</button>
+    </section>
+
+    <!-- 总览 -->
+    <section id="summary" class="bg-white rounded-2xl border border-slate-200 p-4 mb-4 text-sm space-y-2"></section>
+
+    <!-- 测验声部 -->
+    <section id="quiz-box" class="hidden bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-4 text-sm space-y-2"></section>
+
+    <!-- 工具列 -->
+    <div class="flex flex-wrap gap-2 items-center mb-3">
+      <input id="search" type="search" placeholder="搜名字、披肩号码" class="flex-1 min-w-[10rem] border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
+      <select id="filter" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="active">活跃的</option>
+        <option value="novoice">还没填声部</option>
+        <option value="inactive">没在来的</option>
+        <option value="all">全部</option>
+      </select>
+      <button id="btn-add" class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">＋ 加团员</button>
+    </div>
+
+    <section id="list" class="space-y-4"></section>
+    <div id="status" class="text-xs text-slate-400 text-center mt-6"></div>
+  </main>
+
+  <!-- 编辑弹窗 -->
+  <div id="editor" class="hidden fixed inset-0 z-50 bg-slate-900/40 flex items-end sm:items-center justify-center">
+    <form id="edit-form" class="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[90dvh] overflow-y-auto p-4 space-y-3 text-sm">
+      <div class="flex justify-between items-center">
+        <h2 id="edit-title" class="font-semibold text-base"></h2>
+        <button type="button" id="edit-close" class="text-slate-400 hover:text-slate-700 px-2 text-lg">✕</button>
+      </div>
+      <label class="block space-y-1"><span class="text-slate-500">常用名字（排座位、职务表上的叫法）</span>
+        <input name="name" required class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>
+      <label class="block space-y-1"><span class="text-slate-500">全名（可以不填）</span>
+        <input name="fullName" placeholder="例如：Ronald Mok 莫荣烽" class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>
+      <div class="space-y-1"><span class="text-slate-500">声部</span>
+        <div id="voice-btns" class="flex flex-wrap gap-1.5"></div>
+        <div id="quiz-hint" class="text-xs text-emerald-700"></div>
+      </div>
+      <label class="block space-y-1"><span class="text-slate-500">披肩号码</span>
+        <input name="cape" type="number" min="1" inputmode="numeric" class="w-28 border border-slate-300 rounded-lg px-3 py-2">
+        <span id="cape-warn" class="text-xs text-amber-600 ml-2"></span></label>
+      <div class="space-y-1"><span class="text-slate-500">会做的职务（排职务表时用）</span>
+        <div id="role-btns" class="flex flex-wrap gap-1.5"></div>
+      </div>
+      <label class="flex items-center gap-2"><input name="active" type="checkbox" class="w-4 h-4"> 还有在来（排座位、职务时才会出现）</label>
+      <label class="block space-y-1"><span class="text-slate-500">备注</span>
+        <input name="note" class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>
+      <div class="flex items-center gap-2 pt-2">
+        <button type="button" id="edit-delete" class="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg">删除</button>
+        <span class="flex-1"></span>
+        <button type="submit" class="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <script type="module" src="src/members.js"></script>
+</body>
+</html>
