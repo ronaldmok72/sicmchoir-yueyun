@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>弥撒排歌 - 乐韵歌咏团</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
+  <main class="max-w-3xl mx-auto px-4 py-5 pb-32">
+
+    <header class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
+        <h1 class="text-xl font-semibold">弥撒排歌</h1>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <a href="admin.html" class="text-slate-500 hover:text-indigo-600">排单后台</a>
+        <a href="/" class="text-slate-500 hover:text-indigo-600">乐谱 ↗</a>
+      </div>
+    </header>
+
+    <!-- 选哪一场 -->
+    <section class="bg-white rounded-2xl border border-slate-200 p-4 mb-4 space-y-3">
+      <div class="flex flex-wrap gap-2 items-center">
+        <select id="mass-select" class="flex-1 min-w-[12rem] border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm"></select>
+        <button id="btn-new" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm">＋ 新的一场</button>
+      </div>
+      <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center text-sm">
+        <label for="mass-date" class="text-slate-500">日期</label>
+        <input id="mass-date" type="date" class="border border-slate-300 rounded-lg px-3 py-2 w-full sm:w-48">
+        <label for="mass-title" class="text-slate-500">礼仪</label>
+        <input id="mass-title" type="text" placeholder="例如：常年29主日" class="border border-slate-300 rounded-lg px-3 py-2 w-full">
+      </div>
+      <div class="text-xs text-slate-400">乐谱排单名称：<span id="setlist-name-preview" class="text-slate-600 font-medium"></span></div>
+      <div id="start-tools" class="flex flex-wrap gap-2 pt-1"></div>
+    </section>
+
+    <!-- 每个位置 -->
+    <section id="slots" class="space-y-2.5"></section>
+    <button id="btn-add-slot" class="mt-3 text-sm text-slate-500 hover:text-indigo-600">＋ 加一个位置（例如圣母歌、特别仪式）</button>
+  </main>
+
+  <!-- 底部按钮 -->
+  <div class="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
+      <span id="status" class="text-xs text-slate-500 flex-1 min-w-0 truncate"></span>
+      <button id="btn-copy" class="px-3 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm whitespace-nowrap">复制歌单文字</button>
+      <button id="btn-save" class="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold whitespace-nowrap">保存并更新乐谱</button>
+    </div>
+  </div>
+
+  <!-- 选歌弹窗 -->
+  <div id="picker" class="hidden fixed inset-0 z-50 bg-slate-900/40 flex items-end sm:items-center justify-center">
+    <div class="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[85dvh] flex flex-col">
+      <div class="p-4 border-b border-slate-100 space-y-2">
+        <div class="flex justify-between items-center">
+          <h2 id="picker-title" class="font-semibold"></h2>
+          <button id="picker-close" class="text-slate-400 hover:text-slate-700 px-2 text-lg">✕</button>
+        </div>
+        <input id="picker-search" type="search" placeholder="搜歌名、编号（例如 C24）" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <label class="flex items-center gap-2 text-xs text-slate-500"><input id="picker-suggest" type="checkbox" checked> 只看适合这个位置的</label>
+      </div>
+      <div id="picker-list" class="overflow-y-auto p-2"></div>
+    </div>
+  </div>
+
+  <script type="module" src="src/mass.js"></script>
+</body>
+</html>
