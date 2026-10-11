@@ -72,9 +72,13 @@ window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); 
 function renderHeader() {
   $('mass-date').value = M.date;
   $('mass-title').value = M.title;
+  $('mass-note').value = M.note || '';
+  const missing = M.slots.reduce((n, s) => n + s.songs.filter(x => x.missing).length, 0);
+  $('draft-banner').classList.toggle('hidden', !!M.setlistName || M.isNew);
+  $('draft-banner').textContent = `草稿：还没出现在乐谱 App。检查好按「保存并更新乐谱」才会生成排单。${missing ? `另外有 ${missing} 首曲库还没有谱（⚠ 标出来的）。` : ''}`;
   $('setlist-name-preview').textContent = setlistNameOf(M) || '—';
   const sel = $('mass-select');
-  const opts = masses.map(m => `<option value="${esc(m.id)}">${esc(m.date)}　${esc(m.title || '')}</option>`);
+  const opts = masses.map(m => `<option value="${esc(m.id)}">${esc(m.date)}　${esc(m.title || '')}${m.setlistName ? '' : '　（草稿）'}</option>`);
   if (M.isNew) opts.unshift(`<option value="__new">（新的一场，还没保存）</option>`);
   sel.innerHTML = opts.join('') || '<option>还没有</option>';
   sel.value = M.isNew ? '__new' : M.id;
@@ -105,7 +109,9 @@ function renderSlots() {
     el.className = 'bg-white rounded-xl border border-slate-200 px-3 py-2.5';
     const songs = slot.songs.map((s, k) => `
       <div class="flex items-center gap-1.5 py-1 group">
-        <a href="${esc(s.imageUrl)}" target="_blank" rel="noopener" class="flex-1 min-w-0 truncate text-sm text-slate-800 hover:text-indigo-600" title="看乐谱">${esc(clean(s.title))}</a>
+        ${s.missing
+          ? `<span class="flex-1 min-w-0 truncate text-sm text-amber-600" title="曲库里还没有这首的谱：先到排单后台上传，再回来按 ＋ 选歌换掉它">⚠ 还没有谱：${esc(s.title)}</span>`
+          : `<a href="${esc(s.imageUrl)}" target="_blank" rel="noopener" class="flex-1 min-w-0 truncate text-sm text-slate-800 hover:text-indigo-600" title="看乐谱">${esc(clean(s.title))}</a>`}
         ${slot.songs.length > 1 ? `<button data-act="up" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-slate-600 ${k === 0 ? 'invisible' : ''}" title="上移">↑</button>` : ''}
         <button data-act="rm" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-red-500" title="拿掉">✕</button>
       </div>`).join('');
@@ -148,9 +154,10 @@ $('btn-add-slot').addEventListener('click', () => {
   renderSlots();
 });
 
-['mass-date', 'mass-title'].forEach(id => $(id).addEventListener('input', () => {
+['mass-date', 'mass-title', 'mass-note'].forEach(id => $(id).addEventListener('input', () => {
   M.date = $('mass-date').value;
   M.title = $('mass-title').value.trim();
+  M.note = $('mass-note').value.trim();
   $('setlist-name-preview').textContent = setlistNameOf(M) || '—';
   setDirty();
 }));
@@ -184,7 +191,7 @@ function fits(song, tpl) {
 // 这首歌以前在这个位置唱过几次（从已存的弥撒算）
 function usedCount(slotKey) {
   const c = {};
-  masses.forEach(m => (m.slots || []).filter(s => s.key === slotKey).forEach(s => s.songs.forEach(x => { c[x.id] = (c[x.id] || 0) + 1; })));
+  masses.forEach(m => (m.slots || []).filter(s => s.key === slotKey).forEach(s => s.songs.forEach(x => { if (x.id) c[x.id] = (c[x.id] || 0) + 1; })));
   return c;
 }
 function renderPicker() {
@@ -279,11 +286,14 @@ async function save() {
   if (!M.date) return alert('请先填日期。');
   if (!M.title) return alert('请先填礼仪名称（例如：常年29主日）。');
   const items = [];
+  let missing = 0;
   M.slots.forEach(s => s.songs.forEach(x => {
+    if (x.missing) { missing++; return; }   // 还没有谱的，乐谱里先跳过
     const lib = songById(x.id) || x;   // 用曲库最新的歌名和图片
     items.push({ id: x.id, order: items.length + 1, title: lib.title, imageUrl: lib.imageUrl });
   }));
   if (!items.length) return alert('还没有选任何歌。');
+  if (missing && !confirm(`有 ${missing} 首还没有谱（⚠），乐谱里会先跳过它们。继续保存？`)) return;
 
   const newId = M.date;
   if (M.isNew && masses.some(m => m.id === newId) && !confirm(`${newId} 已经排过一场，要覆盖吗？`)) return;
@@ -296,8 +306,10 @@ async function save() {
     const oldSetlist = M.setlistName;
     const now = new Date().toISOString();
     const data = {
-      date: M.date, title: M.title, setlistName: name,
-      slots: M.slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => ({ id: x.id, title: (songById(x.id) || x).title, imageUrl: (songById(x.id) || x).imageUrl })) })),
+      date: M.date, title: M.title, note: M.note || '', setlistName: name,
+      slots: M.slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => x.missing
+        ? { id: null, title: x.title, imageUrl: '', missing: true }
+        : { id: x.id, title: (songById(x.id) || x).title, imageUrl: (songById(x.id) || x).imageUrl }) })),
       createdAt: M.createdAt || now, savedAt: now,
     };
     await setDoc(doc(db, MASSES, newId), data);
@@ -333,6 +345,7 @@ $('btn-copy').addEventListener('click', async () => {
   M.slots.filter(s => !QUIET.has(s.key) && s.songs.length).forEach(s => {
     lines.push(`${s.label}：${s.songs.map(x => waTitle(x.title)).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
   });
+  if (M.note) lines.push('', M.note);
   const text = lines.join('\n');
   try { await navigator.clipboard.writeText(text); $('status').textContent = '✅ 已复制，可以贴到 WhatsApp'; }
   catch { prompt('复制下面这段：', text); }
@@ -345,7 +358,7 @@ async function loadMasses() {
   const seen = new Set(LIBRARY_DATA.map(x => x.id));
   EXTRA = [];
   masses.forEach(m => m.slots.forEach(sl => sl.songs.forEach(x => {
-    if (!seen.has(x.id)) { seen.add(x.id); EXTRA.push({ id: x.id, title: x.title, imageUrl: x.imageUrl }); }
+    if (x.id && !x.missing && !seen.has(x.id)) { seen.add(x.id); EXTRA.push({ id: x.id, title: x.title, imageUrl: x.imageUrl }); }
   })));
 }
 function openMass(m) {
