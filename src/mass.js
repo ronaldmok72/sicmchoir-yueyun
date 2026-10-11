@@ -2,6 +2,7 @@
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
+import { autofill, sourcesFor, litDay } from "./autofill.js";
 
 const $ = id => document.getElementById(id);
 const MASSES = 'masses';
@@ -83,15 +84,60 @@ function renderHeader() {
   sel.innerHTML = opts.join('') || '<option>还没有</option>';
   sel.value = M.isNew ? '__new' : M.id;
 
-  // 新的一场：给两个起手方法
+  // 新的一场／草稿：显示照哪一份旧歌单排的，可以换；另外两个起手方法
   const tools = $('start-tools');
   tools.innerHTML = '';
-  const empty = M.slots.every(s => !s.songs.length);
-  if (M.isNew && empty) {
+  if (M.isNew || !M.setlistName) renderAutoBox(tools);
+  if (M.isNew) {
     const prev = masses.find(m => m.date < M.date) || masses[0];
     if (prev) addTool(tools, `照上一场（${prev.date} ${prev.title || ''}）复制，再换歌`, () => copyFrom(prev));
     addTool(tools, '从现有的乐谱排单导入', importFromSetlist);
   }
+}
+
+const SEASON_NAME = { OT: '常年期', ADV: '将临期', LENT: '四旬期', EAS: '复活期', XMAS: '圣诞期', TRIDUUM: '圣周三日' };
+function renderAutoBox(tools) {
+  if (!M.date) return;
+  const { day, sources } = sourcesFor(M.date, M.title, masses, LIBRARY_DATA);
+  const box = document.createElement('div');
+  box.className = 'w-full text-xs space-y-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2';
+  const cur = sources.find(s => s.id === M.autoFrom);
+  const head = `${esc(day.name)} · <b>${day.cycle}年</b>`;
+  box.innerHTML = `
+    <div class="text-slate-600">${head}${cur ? `　✅ 已照「${esc(cur.label)}」排好，检查一下再保存` : sources.length ? '' : '　以前的歌单里没有这个主日，请自己选歌'}</div>
+    ${sources.length ? `<label class="flex flex-wrap items-center gap-2 text-slate-500">${cur ? '换成别年的：' : '照以前的歌单排：'}
+      <select id="auto-src" class="flex-1 min-w-[12rem] border border-slate-300 rounded-md px-2 py-1 bg-white text-slate-700">
+        ${cur ? '' : '<option value="">— 选一份 —</option>'}
+        ${sources.map(s => `<option value="${esc(s.id)}" ${s.id === M.autoFrom ? 'selected' : ''}>${s.cycle === day.cycle ? '★ ' : ''}${esc(s.label)}</option>`).join('')}
+      </select></label>
+      <div class="text-slate-400">★ = 同一个${day.cycle}年，最适合照着排</div>` : ''}
+    ${M.autoFrom !== undefined && M.ordinaryHint ? `<div class="text-amber-700">${esc(M.ordinaryHint)}</div>` : ''}`;
+  tools.appendChild(box);
+  box.querySelector('#auto-src')?.addEventListener('change', e => {
+    if (!e.target.value) return;
+    const filled = M.slots.some(s => s.songs.length);
+    if (filled && !confirm('换掉现在排好的歌？（固定部分如垂怜曲不会动）')) { e.target.value = M.autoFrom || ''; return; }
+    applyAuto(e.target.value, { keepOrdinary: filled });
+  });
+}
+
+// 照以前同一个主日的歌单自动排：换歌部分照来源，固定部分（垂怜曲、圣圣圣…）照同季最近一场
+function applyAuto(sourceId, { keepOrdinary = false } = {}) {
+  if (!M.title || M.autoTitle) { M.title = litDay(M.date).name; M.autoTitle = true; }
+  const a = autofill(M.date, M.title, masses, LIBRARY_DATA, SLOT_TEMPLATE, sourceId);
+  if (keepOrdinary) {
+    // 只换会换歌的位置，其他的（包括自己加的位置）不动
+    M.slots = M.slots.map(s => { const n = a.slots.find(x => x.key === s.key); return n && a.source && ['entrance', 'psalm', 'offertory', 'communion', 'thanks', 'recessional'].includes(s.key) ? n : s; });
+  } else {
+    M.slots = a.slots;
+  }
+  M.autoFrom = a.source?.id || null;
+  if (a.source) M.note = a.note;
+  M.ordinaryHint = a.ordinary ? '' : `⚠ ${SEASON_NAME[a.day.season] || '这个礼仪季'}还没排过：垂怜曲、圣圣圣这些固定部分请选一次，之后同季的会自动带上`;
+  M.manual = false;
+  setDirty(M.slots.some(s => s.songs.length));
+  renderSlots();
+  renderHeader();
 }
 function addTool(box, label, fn) {
   const b = document.createElement('button');
@@ -138,6 +184,7 @@ $('slots').addEventListener('click', e => {
     if (slot.songs.length && !confirm(`删掉「${slot.label}」这个位置和里面的歌？`)) return;
     M.slots.splice(si, 1);
   }
+  M.manual = true;
   setDirty();
   renderSlots();
   renderHeader();
@@ -150,16 +197,24 @@ $('btn-add-slot').addEventListener('click', () => {
   let idx = M.slots.findIndex(s => s.label === after.trim());
   if (idx === -1) idx = M.slots.findIndex(s => s.key === 'recessional') - 1;
   M.slots.splice(idx + 1, 0, { key: `custom_${Date.now()}`, label: name.trim(), songs: [] });
+  M.manual = true;
   setDirty();
   renderSlots();
 });
 
 ['mass-date', 'mass-title', 'mass-note'].forEach(id => $(id).addEventListener('input', () => {
   M.date = $('mass-date').value;
+  if (M.title !== $('mass-title').value.trim()) M.autoTitle = false;
   M.title = $('mass-title').value.trim();
   M.note = $('mass-note').value.trim();
   $('setlist-name-preview').textContent = setlistNameOf(M) || '—';
   setDirty();
+}));
+// 新的一场还没动过歌：改日期／改礼仪名称 → 重新自动排
+['mass-date', 'mass-title'].forEach(id => $(id).addEventListener('change', () => {
+  if (!M.isNew || M.manual || !M.date) return renderHeader();
+  if (id === 'mass-title' && !M.title) M.autoTitle = true;
+  applyAuto();
 }));
 
 // ───────── 选歌 ─────────
@@ -219,6 +274,7 @@ $('picker-list').addEventListener('click', e => {
   const s = allSongs().find(x => x.id === b.dataset.id);
   if (!s) return;
   M.slots[pickSlot].songs.push({ id: s.id, title: s.title, imageUrl: s.imageUrl });
+  M.manual = true;
   setDirty();
   renderSlots();
   renderHeader();
@@ -229,7 +285,7 @@ $('picker-list').addEventListener('click', e => {
 function copyFrom(prev) {
   const keep = { date: M.date, title: M.title };
   M.slots = prev.slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => ({ ...x })) }));
-  Object.assign(M, keep);
+  Object.assign(M, keep, { manual: true, autoFrom: undefined });
   setDirty();
   renderSlots();
   renderHeader();
@@ -247,6 +303,8 @@ async function importFromSetlist() {
   // 排单名称像 "1018 常年29主日" → 礼仪名拿来用
   if (!M.title) M.title = (l.name || '').replace(/^\d{3,4}\s*/, '');
   M.importedFrom = l.id;
+  M.manual = true;
+  M.autoFrom = undefined;
   setDirty();
   renderSlots();
   renderHeader();
@@ -371,10 +429,54 @@ function newMass() {
   const latest = masses[0]?.date;
   const base = latest && latest >= isoDate(new Date()) ? new Date(latest + 'T12:00') : new Date();
   M = emptyMass(nextSunday(base));
-  setDirty(false);
-  renderHeader();
-  renderSlots();
+  M.autoTitle = true;
+  applyAuto();
 }
+
+// ───────── 一次排好后面几周（存成草稿，不会出现在乐谱 App）─────────
+const serialize = slots => slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => x.missing || !x.id
+  ? { id: null, title: x.title, imageUrl: '', missing: true }
+  : { id: x.id, title: x.title, imageUrl: x.imageUrl || '' }) }));
+$('btn-bulk').addEventListener('click', async () => {
+  const n = Number(prompt('要自动排后面几个主日？（已经排过的日期会跳过）', '8'));
+  if (!n || n < 1) return;
+  const start = new Date(Math.max(masses[0] ? new Date(masses[0].date + 'T12:00').getTime() : 0, Date.now()));
+  // 后面 n 个主日，加上中间遇到的圣诞前夕／圣诞节
+  const dates = [];
+  let d = new Date(nextSunday(start) + 'T12:00');
+  for (let i = 0; i < n; i++, d.setDate(d.getDate() + 7)) dates.push(isoDate(d));
+  const end = dates[dates.length - 1];
+  for (let y = start.getFullYear(); y <= Number(end.slice(0, 4)); y++) [`${y}-12-24`, `${y}-12-25`].forEach(x => { if (x > isoDate(start) && x <= end && !dates.includes(x)) dates.push(x); });
+  dates.sort();
+  const pool = [...masses];   // 新排的也算进去，后面几周的固定部分可以接着带
+  const plan = [];
+  for (const date of dates) {
+    if (pool.some(m => m.date === date)) continue;
+    const title = litDay(date).name;
+    const a = autofill(date, title, pool, LIBRARY_DATA, SLOT_TEMPLATE);
+    if (!a.source && new Date(date + 'T12:00').getDay() !== 0) continue;
+    const m = { id: date, date, title, note: a.note, setlistName: null, importedFrom: a.source ? a.source.label : null, autoFrom: a.source?.id || null, slots: serialize(a.slots) };
+    pool.push(m);
+    plan.push({ m, a });
+  }
+  if (!plan.length) return alert('这几周都已经排过了。');
+  const lines = plan.map(({ m, a }) => `${m.date.slice(5)} ${m.title}（${a.day.cycle}年）← ${a.source ? a.source.label : '找不到旧歌单，空的'}${a.ordinary ? '' : ' ⚠固定部分要自己选'}`);
+  if (!confirm(`会新建这些草稿（不会出现在乐谱 App，检查好按保存才会）：\n\n${lines.join('\n')}\n\n确定？`)) return;
+  $('status').textContent = '排歌中…';
+  const now = new Date().toISOString();
+  try {
+    for (const { m } of plan) {
+      const { id, ...data } = m;
+      await setDoc(doc(db, MASSES, id), { ...data, createdAt: now, savedAt: now });
+    }
+  } catch (e) {
+    console.error(e);
+    return alert('排歌失败：' + (e.code || e.message));
+  }
+  await loadMasses();
+  openMass(masses.find(x => x.id === plan[0].m.id));
+  $('status').textContent = `✅ 排好 ${plan.length} 场草稿，在上面的选单里一场一场检查`;
+});
 $('mass-select').addEventListener('change', e => {
   if (e.target.value === '__new') return;
   if (dirty && !confirm('这一场还没保存，确定要换吗？')) { e.target.value = M.isNew ? '__new' : M.id; return; }

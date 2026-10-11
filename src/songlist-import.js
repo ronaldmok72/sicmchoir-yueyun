@@ -29,9 +29,10 @@ export function matchSong(text, library) {
   if (!raw) return null;
   const lib = library.map(s => ({ s, t: clean(s.title), n: norm(clean(s.title)) }));
   const name = raw.replace(/[（(][^）)]*[）)]/g, ' ').replace(/\bpg\.?\s*\d+.*$/i, '').replace(/page\s*\d+.*$/i, '');
-  const best = (cands) => {
+  // 好几首都对得上：看哪一首的歌名跟表上的字最像（圣咏连答句一起比，才分得出同一篇的不同答句）
+  const best = (cands, text = name) => {
     if (cands.length <= 1) return cands[0]?.s || null;
-    const nn = norm(name.replace(/\b[A-Z]\s?\d+\b/g, '').replace(/\d+/g, ''));
+    const nn = norm(text.replace(/\b[A-Z]\s?\d+\b/g, '').replace(/\d+/g, ''));
     let top = null, score = -1;
     cands.forEach(c => { const sc = [...nn].filter(ch => c.n.includes(ch)).length - c.n.length * 0.01; if (sc > score) { score = sc; top = c; } });
     return top.s;
@@ -41,7 +42,7 @@ export function matchSong(text, library) {
   const ps = raw.match(/(?:圣|聖)(?:咏|詠)?\s*(\d+)/);
   if (ps) {
     const re = new RegExp(`(圣|聖)(咏|詠)\\s*${ps[1]}(?!\\d)`);
-    return best(lib.filter(c => re.test(c.t)));
+    return best(lib.filter(c => re.test(c.t)), raw);
   }
   // 歌本编号 C33 / E100 / i 16
   const code = raw.match(/\b([A-Za-z])\s?(\d{1,3})\b/);
