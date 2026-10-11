@@ -79,14 +79,16 @@ async function init() {
     if (btnConductor) {
     btnConductor.addEventListener('click', () => {
       // 如果当前是关闭状态，准备开启，则需要验证密码
-      if (!isConductor) {
+      // 这部手机已经输过指挥密码（菜单或指挥后台）就不用再问
+      if (!isConductor && !window.sicStaff?.isStaff()) {
         const pwd = prompt("🔒 请输入指挥专属密码：");
-        
-        // 如果点击了取消，或者密码不是 1234，就拒绝开启
+
+        // 如果点击了取消，或者密码不对，就拒绝开启
         if (pwd !== "sic") {
           if (pwd !== null) alert("❌ 密码错误，无法开启指挥模式！");
           return; // 直接退出，不执行后面的开启逻辑
         }
+        window.sicStaff?.remember();
       }
 
       // 密码正确（或准备关闭），切换状态

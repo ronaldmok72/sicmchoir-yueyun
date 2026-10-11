@@ -18,6 +18,7 @@ $('gate-form').addEventListener('submit', e => {
   e.preventDefault();
   if ($('gate-pwd').value !== PASSWORD) { $('gate-err').classList.remove('hidden'); return; }
   try { sessionStorage.setItem('quizAdmin', '1'); } catch { /* 没关系 */ }
+  window.sicStaff?.remember();
   enter();
 });
 function enter() {
@@ -25,7 +26,7 @@ function enter() {
   $('app').classList.remove('hidden');
   load();
 }
-try { if (sessionStorage.getItem('quizAdmin') === '1') enter(); } catch { /* 没关系 */ }
+try { if (sessionStorage.getItem('quizAdmin') === '1' || window.sicStaff?.isStaff()) enter(); } catch { /* 没关系 */ }
 
 $('btn-reload').addEventListener('click', load);
 $('latest-only').addEventListener('change', render);

@@ -31,6 +31,9 @@ const QUIET = new Set(['pre', 'post', 'pater', 'doxology']);
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clean = t => String(t || '').replace(/^[a-z]\s+/, '');           // 去掉排序用的开头字母 "r 日升之处" → "日升之处"
+// WA 文字只留歌名和编号：去掉 B4-2、S84、142bpm、V1、In-3、Key、Pop Balled 这类给乐手看的尾巴
+const TECH_TAIL = /(\s*[-_]?\s*(\bS\d+[\w-]*|\b\d+\s*bpm|\bV\d+\b|\bIn[-\d]|\bGuitar|\b[A-G][#b]?\s*Key|\bStandard|\bMedium|\bBigBand|\bfull\b|\b\d+\s*beat|\d+[’‘'.]\d\b|\b\d+['’‘]?s(?=\s|[A-Z]|$)|\b((Open|Fire|Hard|Heavy|Pop|Soft|Power|Easy|Modern|Folk|Country|Acoustic|Orchestral?)\s+)?(Rock|Pop|Balled|Ballad|Bld|Disco|Shuffle|Orchestral?|Unplugged|Acoustic)(?![A-Za-z]))|_).*$/;
+const waTitle = t => clean(t).replace(/\s*\bB\d+-\d+\b/g, '').replace(TECH_TAIL, '').replace(/\s+-\s*$/, '').trim();
 const codeOf = t => (String(t || '').match(/\s([A-Z])\d+/) || [])[1];  // "日升之处 C24" → "C"
 // 曲库＋排过的弥撒里出现过、但曲库已经没有的歌（例如「弥撒前后祷文」）
 let EXTRA = [];
@@ -328,7 +331,7 @@ $('btn-copy').addEventListener('click', async () => {
   const [, mm, dd] = (M.date || '').split('-');
   const lines = [`*${Number(dd) || ''}/${Number(mm) || ''} ${M.title || ''}*`];
   M.slots.filter(s => !QUIET.has(s.key) && s.songs.length).forEach(s => {
-    lines.push(`${s.label}：${s.songs.map(x => clean(x.title)).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
+    lines.push(`${s.label}：${s.songs.map(x => waTitle(x.title)).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
   });
   const text = lines.join('\n');
   try { await navigator.clipboard.writeText(text); $('status').textContent = '✅ 已复制，可以贴到 WhatsApp'; }
