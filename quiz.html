@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>乐韵歌咏团 - 团员小测验</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+    .tap-pad { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+    .opt[aria-pressed="true"] { background: rgb(79 70 229 / .25); border-color: rgb(129 140 248); color: #fff; }
+    .chip[aria-pressed="true"] { background: rgb(79 70 229 / .25); border-color: rgb(129 140 248); color: #fff; }
+    .tap-pad.hit { transform: scale(.96); background: rgb(79 70 229 / .35); }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-200 min-h-[100dvh] font-sans">
+  <main class="max-w-xl mx-auto px-4 py-6 pb-24">
+
+    <!-- 顶部 -->
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <div class="text-xs text-zinc-500 tracking-widest">SIC 乐韵歌咏团</div>
+        <h1 class="text-lg font-semibold text-white">团员小测验</h1>
+      </div>
+      <a href="/" class="text-xs text-zinc-500 hover:text-zinc-300">← 回乐谱</a>
+    </header>
+
+    <!-- 进度条 -->
+    <div id="progress-wrap" class="hidden mb-5">
+      <div class="flex justify-between text-xs text-zinc-500 mb-1.5">
+        <span id="progress-label"></span><span id="progress-count"></span>
+      </div>
+      <div class="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+        <div id="progress-bar" class="h-full bg-indigo-500 transition-all duration-300" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- ① 开始 -->
+    <section id="s-start" class="space-y-5">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl p-5 space-y-3 text-sm leading-relaxed text-zinc-300">
+        <p>这个小测验是让大家<b class="text-white">看看自己学到哪里</b>，不是考试，没有排名，别人看不到你的分数。</p>
+        <p>一共三部分，大约 <b class="text-white">25 分钟</b>：</p>
+        <ol class="list-decimal pl-5 space-y-1">
+          <li>40 道选择题（12 堂课＋课前视频的内容）</li>
+          <li>5 道小问题（你想不想当领唱、指挥，你唱什么声部）</li>
+          <li>听拍子小测（跟着钢琴点屏幕）</li>
+        </ol>
+        <p class="text-zinc-400">选项有几个看起来都对，选你觉得<b class="text-zinc-200">最对</b>的那个。不会的就猜，不要去翻笔记——这样结果才准。</p>
+      </div>
+      <label class="block">
+        <span class="text-sm text-zinc-400">你的名字（团里大家怎么叫你）</span>
+        <input id="name-input" type="text" maxlength="30" autocomplete="name"
+          class="mt-1.5 w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：Agnes">
+      </label>
+      <button id="btn-start" class="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40">开始</button>
+      <p id="resume-note" class="hidden text-xs text-amber-400/90 text-center"></p>
+    </section>
+
+    <!-- ② 选择题 -->
+    <section id="s-quiz" class="hidden">
+      <div class="text-xs text-indigo-300/80 mb-2" id="q-cat"></div>
+      <h2 id="q-text" class="text-[17px] leading-relaxed text-white mb-5"></h2>
+      <div id="q-options" class="space-y-2.5"></div>
+      <div class="flex gap-3 mt-7">
+        <button id="btn-prev" class="px-5 py-3 rounded-xl bg-zinc-800 text-zinc-300 disabled:opacity-30">上一题</button>
+        <button id="btn-next" class="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40">下一题</button>
+      </div>
+    </section>
+
+    <!-- ③ 意愿题 -->
+    <section id="s-intent" class="hidden">
+      <p class="text-sm text-zinc-400 mb-5">选择题做完了 👍 下面几题没有对错，照实选就好。</p>
+      <div id="intent-list" class="space-y-6"></div>
+      <button id="btn-intent-next" class="w-full mt-8 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40">下一步：听拍子小测</button>
+    </section>
+
+    <!-- ④ 听拍子小测 -->
+    <section id="s-tap" class="hidden">
+      <div id="tap-info" class="bg-zinc-900 border border-white/10 rounded-2xl p-5 text-sm leading-relaxed text-zinc-300 space-y-2 mb-5"></div>
+      <button id="tap-pad" class="tap-pad hidden w-full aspect-square max-h-[46vh] rounded-3xl border-2 border-indigo-400/40 bg-zinc-900 text-indigo-200 text-xl font-semibold transition-transform duration-75">点这里</button>
+      <div id="tap-status" class="text-center text-sm text-zinc-400 mt-4 min-h-[1.5rem]"></div>
+      <div id="tap-actions" class="flex gap-3 mt-5"></div>
+    </section>
+
+    <!-- ⑤ 送出中 -->
+    <section id="s-saving" class="hidden text-center py-16 text-zinc-400">
+      <div class="animate-pulse">正在送出结果…</div>
+      <div id="save-error" class="hidden mt-6 text-sm text-red-400"></div>
+      <button id="btn-retry-save" class="hidden mt-4 px-6 py-3 rounded-xl bg-indigo-600 text-white">再送一次</button>
+    </section>
+
+    <!-- ⑥ 结果 -->
+    <section id="s-result" class="hidden space-y-6">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+        <div class="text-sm text-zinc-400 mb-1"><span id="r-name"></span>，谢谢你做完 🙏</div>
+        <div id="r-summary" class="text-white text-[17px] leading-relaxed"></div>
+      </div>
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+        <h3 class="text-sm font-semibold text-white mb-4">四个部分，你答对几题</h3>
+        <div id="r-bars" class="space-y-4"></div>
+      </div>
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+        <h3 class="text-sm font-semibold text-white mb-3">听拍子</h3>
+        <div id="r-tap" class="space-y-2 text-sm text-zinc-300"></div>
+      </div>
+      <details class="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+        <summary class="text-sm font-semibold text-white cursor-pointer">看我答错的题</summary>
+        <div id="r-wrong" class="mt-4 space-y-4 text-sm"></div>
+      </details>
+      <p class="text-xs text-zinc-500 text-center">结果已经送给 Ronald。只有你和 Ronald 看得到，不会公开排名。</p>
+    </section>
+  </main>
+
+  <script type="module" src="src/quiz.js"></script>
+</body>
+</html>
