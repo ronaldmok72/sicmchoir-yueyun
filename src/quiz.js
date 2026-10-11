@@ -334,7 +334,7 @@ async function startTap() {
     <p class="text-white font-semibold">听拍子小测（约 5 分钟）</p>
     <p>🔈 <b class="text-white">请用手机喇叭或有线耳机</b>，<b class="text-red-300">不要用蓝牙耳机</b>——蓝牙会让声音慢 0.15–0.3 秒，结果会全部不准。</p>
     <p>找个安静的地方，把音量开到听得清楚。</p>
-    <p class="text-zinc-400">每一段开始前会说明要做什么。每段最多可以重来一次。</p>`,
+    <p class="text-zinc-400">每一段开始前会说明要做什么。<b class="text-zinc-200">每段只有一次机会</b>，听清楚说明再按开始。</p>`,
     [['现在不方便，跳过', 'skip'], ['开始', 'go', true]]);
   if (go === 'skip') { T.skipped = true; return finishTap(); }
   await unlock();
@@ -354,41 +354,31 @@ async function startTap() {
   }
   const lat = T.latencyMs / 1000;
 
-  // 第一关
+  // 第一关（每段只有一次机会：练的就是一听就抓到）
   for (const tr of BEAT_TRIALS) {
-    for (let tries = 1; tries <= 2; tries++) {
-      await waitClick(`
-        <p class="text-white font-semibold">第一关：跟拍子（${tr.label}）</p>
-        <p>钢琴会先弹 1 小节给你听，然后<b class="text-white">跟着拍子一直点</b>。</p>
-        <p>过一会儿<b class="text-white">钢琴会停</b>——不要停，<b class="text-white">继续照同样的速度点</b>，直到屏幕说结束。</p>`,
-        [['开始', true, true]]);
-      const r = await beatTrial(tr.bpb, tr.bpm, lat);
-      r.tries = tries;
-      T.results[tr.key] = r;
-      saveDraft();
-      const lines = describeBeat(r).map(l => `<p>${l}</p>`).join('');
-      const again = await waitClick(`<p class="text-white font-semibold">${tr.label}：结束</p>${lines}`,
-        tries < 2 ? [['重来一次', true], ['下一段', false, true]] : [['下一段', false, true]]);
-      if (!again) break;
-    }
+    await waitClick(`
+      <p class="text-white font-semibold">第一关：跟拍子（${tr.label}）</p>
+      <p>钢琴会先弹 1 小节给你听，然后<b class="text-white">跟着拍子一直点</b>。</p>
+      <p>过一会儿<b class="text-white">钢琴会停</b>——不要停，<b class="text-white">继续照同样的速度点</b>，直到屏幕说结束。</p>`,
+      [['开始', true, true]]);
+    const r = await beatTrial(tr.bpb, tr.bpm, lat);
+    T.results[tr.key] = r;
+    saveDraft();
+    const lines = describeBeat(r).map(l => `<p>${l}</p>`).join('');
+    await waitClick(`<p class="text-white font-semibold">${tr.label}：结束</p>${lines}`, [['下一段', true, true]]);
   }
 
   // 第二关
   for (const tr of ENTRY_TRIALS) {
-    for (let tries = 1; tries <= 2; tries++) {
-      await waitClick(`
-        <p class="text-white font-semibold">第二关：进歌（${tr.label}）</p>
-        <p>钢琴会弹一段 <b class="text-white">4 小节的前奏</b>，弹完就停，不会有人唱。</p>
-        <p>你觉得<b class="text-white">"现在该开口唱第一个字了"</b>，就按一下大圆圈。只按一次。</p>`,
-        [['开始', true, true]]);
-      const r = await entryTrial(tr.bpb, tr.bpm, tr.style, lat);
-      r.tries = tries;
-      T.results[tr.key] = r;
-      saveDraft();
-      const again = await waitClick(`<p class="text-white font-semibold">结束</p><p>${describeEntry(tr.label, r)}</p>`,
-        tries < 2 ? [['重来一次', true], ['下一段', false, true]] : [['下一段', false, true]]);
-      if (!again) break;
-    }
+    await waitClick(`
+      <p class="text-white font-semibold">第二关：进歌（${tr.label}）</p>
+      <p>钢琴会弹一段 <b class="text-white">4 小节的前奏</b>，弹完就停，不会有人唱。</p>
+      <p>你觉得<b class="text-white">"现在该开口唱第一个字了"</b>，就按一下大圆圈。只按一次。</p>`,
+      [['开始', true, true]]);
+    const r = await entryTrial(tr.bpb, tr.bpm, tr.style, lat);
+    T.results[tr.key] = r;
+    saveDraft();
+    await waitClick(`<p class="text-white font-semibold">结束</p><p>${describeEntry(tr.label, r)}</p>`, [['下一段', true, true]]);
   }
   finishTap();
 }
