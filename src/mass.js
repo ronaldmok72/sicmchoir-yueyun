@@ -404,13 +404,23 @@ $('btn-copy').addEventListener('click', async () => {
     lines.push(`${s.label}：${s.songs.map(x => waTitle(x.title)).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
   });
   if (M.note) lines.push('', M.note);
+  // 职务表有排这一场：带上谁指挥、谁答唱咏…
+  {
+    const d = DUTY[M.date] || {};
+    const duty = [['conductor', '指挥'], ['cantor', '答唱咏'], ['piano', '钢琴'], ['organ', '风琴'], ['guitar', '吉他'], ['drums', '鼓手']]
+      .filter(([k]) => d[k]).map(([k, l]) => `${l}：${d[k]}`);
+    if (duty.length) lines.push('', ...duty);
+  }
   const text = lines.join('\n');
   try { await navigator.clipboard.writeText(text); $('status').textContent = '✅ 已复制，可以贴到 WhatsApp'; }
   catch { prompt('复制下面这段：', text); }
 });
 
 // ───────── 读取 ─────────
+// 职务表（复制歌单文字时带上谁指挥、谁答唱咏）
+let DUTY = {};
 async function loadMasses() {
+  getDocs(collection(db, 'duties')).then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
   const snap = await getDocs(collection(db, MASSES));
   masses = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date));
   const seen = new Set(LIBRARY_DATA.map(x => x.id));
