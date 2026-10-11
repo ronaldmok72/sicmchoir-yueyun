@@ -52,6 +52,12 @@ async function init() {
   ctx = canvas.getContext('2d', { willReadFrequently: true });
   slideContainer = document.getElementById('slide-container');
   setlistSelect = document.getElementById('setlist-select');
+  setlistSelect.addEventListener('change', () => {
+    if (setlistSelect.value !== '__past') return;
+    showPastSetlists = true;
+    renderSetlistOptions();
+    setlistSelect.value = setlistSelect.querySelector('optgroup option')?.value || '';
+  });
   const btnSongList = document.getElementById('btn-song-list');
   const btnCloseSongList = document.getElementById('btn-close-song-list');
   if (btnSongList) btnSongList.addEventListener('click', openSongList);
@@ -170,6 +176,37 @@ function startLiveSyncListener(selectedId) {
   });
 }
 
+// 排单列表只显示今天和以后的（最近的排最前面），以前的收在最下面「看以前的排单」
+let allSetlists = [];
+let showPastSetlists = false;
+// 排单的日期：排歌页存的 date；旧的从名称「1018 常年29主日」的月日 + 建立年份推算
+function setlistDate(d) {
+  if (d.date) return d.date;
+  const m = String(d.name || '').match(/^(\d{2})(\d{2})(?!\d)/);
+  if (!m) return null;
+  const c = d.createdAt ? new Date(d.createdAt) : new Date();
+  let y = c.getFullYear();
+  if (Number(m[1]) < c.getMonth() + 1 - 6) y++;   // 12 月建 1 月的排单
+  return `${y}-${m[1]}-${m[2]}`;
+}
+function renderSetlistOptions() {
+  const keep = setlistSelect.value;
+  const saved = localStorage.getItem('offline_playlist_name');
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  // 没有日期的：两星期内建的当作还要用
+  const isPast = o => o.date ? o.date < today : (now - new Date(o.createdAt || 0)) > 14 * 864e5;
+  const upcoming = allSetlists.filter(o => !isPast(o) || o.id === saved).sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  const past = allSetlists.filter(o => isPast(o) && o.id !== saved).sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
+  const opt = (o) => `<option value="${o.id.replace(/"/g, '&quot;')}">${String(o.name || o.id).replace(/</g, '&lt;')}</option>`;
+  let html = upcoming.map(opt).join('') || '<option value="">接下来还没有排单</option>';
+  if (past.length) html += showPastSetlists
+    ? `<optgroup label="以前的排单">${past.map(opt).join('')}</optgroup>`
+    : `<option value="__past">… 看以前的排单（${past.length}）</option>`;
+  setlistSelect.innerHTML = html;
+  if (keep && setlistSelect.querySelector(`option[value="${CSS.escape(keep)}"]`)) setlistSelect.value = keep;
+}
+
 async function loadSetlistOptions() {
   try {
     const querySnapshot = await getDocs(collection(db, "setlists"));
@@ -180,20 +217,12 @@ async function loadSetlistOptions() {
       return;
     }
 
-    let options = [];
+    allSetlists = [];
     querySnapshot.forEach((doc) => {
-      options.push({ id: doc.id, name: doc.data().name, createdAt: doc.data().createdAt });
+      const d = doc.data();
+      allSetlists.push({ id: doc.id, name: d.name, createdAt: d.createdAt, date: setlistDate(d) });
     });
-
-    options.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    options.forEach(opt => {
-      const optionEl = document.createElement('option');
-      optionEl.value = opt.id;
-      optionEl.textContent = opt.name;
-      setlistSelect.appendChild(optionEl);
-    });
-
+    renderSetlistOptions();
   } catch (error) {
     console.error("获取排单列表失败:", error);
     setlistSelect.innerHTML = '<option value="">网络错误</option>';

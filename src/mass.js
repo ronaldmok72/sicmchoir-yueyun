@@ -375,7 +375,7 @@ async function save() {
     // 乐谱排单：同名就更新歌单（保留原本建立时间和直播翻页），没有就新建
     const ref = doc(db, SETLISTS, name);
     const existing = await getDoc(ref);
-    await setDoc(ref, { name, items, ...(existing.exists() ? {} : { createdAt: now }) }, { merge: true });
+    await setDoc(ref, { name, items, date: M.date, ...(existing.exists() ? {} : { createdAt: now }) }, { merge: true });
 
     // 改了日期或名称：把这一场以前生成的旧排单／旧记录收掉，免得乐谱里出现两份
     if (oldSetlist && oldSetlist !== name) await deleteDoc(doc(db, SETLISTS, oldSetlist));
@@ -438,7 +438,8 @@ const serialize = slots => slots.map(s => ({ key: s.key, label: s.label, songs: 
   ? { id: null, title: x.title, imageUrl: '', missing: true }
   : { id: x.id, title: x.title, imageUrl: x.imageUrl || '' }) }));
 $('btn-bulk').addEventListener('click', async () => {
-  const n = Number(prompt('要自动排后面几个主日？（已经排过的日期会跳过）', '8'));
+  const last = masses[0]?.date;
+  const n = Number(prompt(`${last ? `已经排到 ${Number(last.slice(5, 7))}/${Number(last.slice(8))}（包括还没保存的草稿），从这之后` : ''}再往后自动排几个主日？`, '8'));
   if (!n || n < 1) return;
   const start = new Date(Math.max(masses[0] ? new Date(masses[0].date + 'T12:00').getTime() : 0, Date.now()));
   // 后面 n 个主日，加上中间遇到的圣诞前夕／圣诞节
