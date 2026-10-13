@@ -4,7 +4,7 @@
 import { collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
-import { genderOf, VOICE_SHORT } from "./people.js";
+import { genderOf, VOICE_SHORT, normVoice } from "./people.js";
 
 const $ = id => document.getElementById(id);
 const SEATINGS = 'seatings';
@@ -31,7 +31,7 @@ const STAGE = [['conductor', '指挥'], ['piano', '钢琴'], ['organ', '风琴']
 const VOICE_STYLE = {
   S: ['bg-rose-50 border-rose-200', '女高'], A: ['bg-amber-50 border-amber-200', '女低'],
   T: ['bg-sky-50 border-sky-200', '男高'], B: ['bg-indigo-50 border-indigo-200', '男低'],
-  M: ['bg-slate-100 border-slate-300', '主旋律'], '': ['bg-white border-slate-300', '还不知道声部'],
+  '': ['bg-white border-slate-300', '主旋律'],
 };
 
 let members = [], byName = {}, allCapes = [];   // allCapes：名单上所有人的号码（没在来的也算，披肩还在）
@@ -43,7 +43,8 @@ let saveTimer = null;
 const memberOf = name => byName[String(name || '').toLowerCase()];
 const splitNames = v => String(v || '').split(/[\/、,，&]+/).map(s => s.trim()).filter(Boolean);
 // 这一场唱的声部、穿的披肩：座位表这一天改过的先算，不然照团员名单
-const voiceOf = name => cur?.voices?.[name] ?? memberOf(name)?.voice ?? '';
+const voiceOf = name => normVoice(cur?.voices?.[name] ?? memberOf(name)?.voice);
+const voiceChanged = name => !!cur?.voices && name in cur.voices;
 const capeOf = name => cur?.capes?.[name] || memberOf(name)?.cape || null;
 // 女声 F／男声 M：名单写了照写的；不然看这场的声部；再不然看披肩号码
 const gender = name => genderOf(memberOf(name), voiceOf(name));
@@ -152,15 +153,13 @@ function findEmpty(from) {
 
 // 重新排：坐着的人照现在的先后分组，从前面排起，每一组开新的一排
 //   gender：女生 → 男生 → 不知道男女的
-//   voice ：S → A（+女声主旋律）→ T → B（+男声主旋律）→ 不知道的
+//   voice ：S → A → 女声主旋律 → T → B → 男声主旋律 → 不知道男女的（大家都唱主旋律，没有声部的照男女排）
 function groupOf(name, mode) {
   const g = gender(name), v = voiceOf(name);
   if (mode === 'gender') return [{ F: 0, M: 1, '': 2 }[g], 0];
-  if (v === 'S') return [0, 0];
-  if (v === 'A') return [1, 0];
-  if (v === 'T') return [2, 0];
-  if (v === 'B') return [3, 0];
-  return g === 'F' ? [1, 1] : g === 'M' ? [3, 1] : [4, 0];
+  const order = { S: 0, A: 1, T: 3, B: 4 };
+  if (v in order) return [order[v], 0];
+  return [g === 'F' ? 2 : g === 'M' ? 5 : 6, 0];
 }
 function rearrange(mode) {
   const people = cur.rows.flat().filter(Boolean);
@@ -227,12 +226,12 @@ function renderGrid() {
         const v = voiceOf(n), cape = capeOf(n);
         return `<button data-seat="${r}-${c}" draggable="${n ? 'true' : 'false'}" class="seat relative flex-1 min-w-0 h-12 rounded-lg border text-center px-0.5 ${n ? VOICE_STYLE[v][0] : 'border-dashed border-slate-200 bg-slate-50'} ${on ? 'ring-2 ring-indigo-500' : ''} ${sel && !on ? 'hover:border-indigo-400' : ''}">
           ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block text-[11px] leading-tight ${dup.has(cape) ? 'text-red-600 font-semibold' : 'text-slate-400'}">${cape ? `#${cape}` : '没号码'}</span>` : ''}
-          ${n && cur.voices?.[n] ? `<span class="absolute -top-1.5 -left-1 px-1 rounded bg-slate-700 text-white text-[10px]">${VOICE_SHORT[cur.voices[n]] || '?'}</span>` : ''}
+          ${n && voiceChanged(n) ? `<span class="absolute -top-1.5 -left-1 px-1 rounded bg-slate-700 text-white text-[10px]">${v || '主'}</span>` : ''}
           ${n && cant.has(n.toLowerCase()) ? '<span class="absolute -top-1.5 -right-1 px-1 rounded bg-emerald-600 text-white text-[10px]">答</span>' : ''}
         </button>`;
       }).join('')}
     </div>`).join('') || '<div class="text-sm text-slate-400 text-center py-4">还没有座位，按「＋ 一排」</div>';
-  $('legend').innerHTML = ['S', 'A', 'T', 'B', 'M', ''].map(k => `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded border ${VOICE_STYLE[k][0]}"></span>${VOICE_STYLE[k][1]}</span>`).join('');
+  $('legend').innerHTML = ['S', 'A', 'T', 'B', ''].map(k => `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded border ${VOICE_STYLE[k][0]}"></span>${VOICE_STYLE[k][1]}</span>`).join('');
 }
 
 function renderTray() {
@@ -276,10 +275,10 @@ function renderAction() {
   // 坐好之后：这一场穿几号、唱什么声部（只改这一场）
   $('act-edit').classList.toggle('hidden', sel.kind !== 'seat');
   if (sel.kind !== 'seat') return;
-  const m = memberOf(name), main = m?.voice || '';
+  const m = memberOf(name), main = normVoice(m?.voice);
   $('act-cape').value = capeOf(name) || '';
   $('act-cape-hint').textContent = cur.capes?.[name] ? (m?.cape ? `名单上是 #${m.cape}` : '名单上没号码') : (m?.cape ? '照名单' : '');
-  $('act-voices').innerHTML = ['S', 'A', 'T', 'B', 'M'].map(v => `<button data-voice="${v}" class="px-2 py-0.5 rounded-md ${voiceOf(name) === v ? 'bg-white text-indigo-700 font-semibold' : 'bg-white/15 hover:bg-white/25'}">${VOICE_SHORT[v]}${v === main ? '<span class="text-[10px] opacity-70">·平常</span>' : ''}</button>`).join('');
+  $('act-voices').innerHTML = ['', 'S', 'A', 'T', 'B'].map(v => `<button data-voice="${v}" class="px-2 py-0.5 rounded-md ${voiceOf(name) === v ? 'bg-white text-indigo-700 font-semibold' : 'bg-white/15 hover:bg-white/25'}">${VOICE_SHORT[v]}${v === main ? '<span class="text-[10px] opacity-70">·平常</span>' : ''}</button>`).join('');
 }
 
 // ───────── 改动 ─────────
@@ -363,7 +362,7 @@ $('act-voices').addEventListener('click', e => {
   const b = e.target.closest('[data-voice]'); const name = selName();
   if (!b || !name) return;
   cur.voices ||= {};
-  if (b.dataset.voice === (memberOf(name)?.voice || '')) delete cur.voices[name];
+  if (b.dataset.voice === normVoice(memberOf(name)?.voice)) delete cur.voices[name];
   else cur.voices[name] = b.dataset.voice;
   changed(true);
 });
