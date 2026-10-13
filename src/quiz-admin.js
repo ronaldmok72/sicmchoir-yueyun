@@ -3,7 +3,6 @@ import { db, RESULTS } from "./firebase.js";
 import { QUESTIONS, CATEGORIES, INTENT } from "./quiz-data.js";
 
 const $ = id => document.getElementById(id);
-const PASSWORD = 'sic';
 const QMAP = Object.fromEntries(QUESTIONS.map(q => [q.id, q]));
 const CATS = Object.keys(CATEGORIES);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -14,11 +13,12 @@ const worst = (...g) => g.filter(Boolean).sort((a, b) => RANK[b] - RANK[a])[0] |
 let ALL = [];
 
 // ───────── 密码 ─────────
-$('gate-form').addEventListener('submit', e => {
+// 要有「测验结果」那一区的密码（在密码管理设）
+$('gate-form').addEventListener('submit', async e => {
   e.preventDefault();
-  if ($('gate-pwd').value !== PASSWORD) { $('gate-err').classList.remove('hidden'); return; }
-  try { sessionStorage.setItem('quizAdmin', '1'); } catch { /* 没关系 */ }
-  window.sicStaff?.remember();
+  let areas = null;
+  try { areas = await window.sicStaff?.tryPassword($('gate-pwd').value); } catch (err) { console.error(err); }
+  if (!areas?.includes('quiz')) { $('gate-err').classList.remove('hidden'); return; }
   enter();
 });
 function enter() {
@@ -26,7 +26,7 @@ function enter() {
   $('app').classList.remove('hidden');
   load();
 }
-try { if (sessionStorage.getItem('quizAdmin') === '1' || window.sicStaff?.isStaff()) enter(); } catch { /* 没关系 */ }
+if (window.sicStaff?.can('quiz')) enter();
 
 $('btn-reload').addEventListener('click', load);
 $('latest-only').addEventListener('change', render);

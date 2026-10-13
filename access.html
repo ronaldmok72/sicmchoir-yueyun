@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>密码管理 - 乐韵歌咏团</title>
+  <script src="src/gate.js" data-require="access"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
+  <main class="max-w-2xl mx-auto px-4 py-5 pb-16">
+
+    <header class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
+        <h1 class="text-xl font-semibold">密码管理</h1>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <a href="/" class="text-slate-500 hover:text-indigo-600">← 回乐谱</a>
+      </div>
+    </header>
+
+    <p class="text-sm text-slate-600 mb-4">每个密码可以开不同的页面。负责排歌的给一个、负责职务的给一个，各自只进得了自己那几页。
+      <span class="text-slate-400">密码存进去之后，这里也看不到原本是什么，开好要自己记下来、发给负责的人。</span></p>
+
+    <!-- 还在用旧密码 sic -->
+    <section id="boot-box" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 text-sm space-y-3">
+      <div class="font-semibold text-amber-900">现在还在用旧密码 sic，先换成你自己的最高权限密码</div>
+      <div class="text-amber-800">换了之后 sic 就不能用了，所有手机都要用新密码重新输一次。</div>
+      <form id="boot-form" class="space-y-2">
+        <input name="p1" type="password" autocomplete="new-password" placeholder="新的最高权限密码" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+        <input name="p2" type="password" autocomplete="new-password" placeholder="再输一次" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+        <button class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold">设好最高权限密码</button>
+      </form>
+    </section>
+
+    <section id="list" class="space-y-3 mb-4"></section>
+
+    <!-- 开一个新的 -->
+    <section id="add-box" class="hidden bg-white rounded-2xl border border-slate-200 p-4 text-sm space-y-3">
+      <div class="font-semibold">＋ 开一个新密码</div>
+      <form id="add-form" class="space-y-3">
+        <input name="name" placeholder="给谁用（例如：排歌组、职务组）" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+        <input name="pwd" type="text" autocomplete="off" placeholder="密码（至少 4 个字）" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+        <div>
+          <div class="text-slate-500 mb-1.5">可以进哪几页</div>
+          <div id="add-areas" class="grid sm:grid-cols-2 gap-1.5"></div>
+        </div>
+        <button class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">开这个密码</button>
+      </form>
+    </section>
+
+    <div id="status" class="text-xs text-slate-400 text-center mt-6"></div>
+  </main>
+
+  <script type="module" src="src/access.js"></script>
+</body>
+</html>

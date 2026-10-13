@@ -83,19 +83,11 @@ async function init() {
   
   // --- 新增：指挥模式切换逻辑 ---
     if (btnConductor) {
-    btnConductor.addEventListener('click', () => {
+    btnConductor.addEventListener('click', async () => {
       // 如果当前是关闭状态，准备开启，则需要验证密码
       // 这部手机已经输过指挥密码（菜单或指挥后台）就不用再问
-      if (!isConductor && !window.sicStaff?.isStaff()) {
-        const pwd = prompt("🔒 请输入指挥专属密码：");
-
-        // 如果点击了取消，或者密码不对，就拒绝开启
-        if (pwd !== "sic") {
-          if (pwd !== null) alert("❌ 密码错误，无法开启指挥模式！");
-          return; // 直接退出，不执行后面的开启逻辑
-        }
-        window.sicStaff?.remember();
-      }
+      // 要有「乐谱指挥模式」那一区的密码（在密码管理设）
+      if (!isConductor && !(await window.sicStaff?.unlock('conduct', '🔒 指挥模式，请输入密码：'))) return;
 
       // 密码正确（或准备关闭），切换状态
       isConductor = !isConductor;

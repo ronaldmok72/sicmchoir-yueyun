@@ -324,7 +324,7 @@
 
   <script>
     // ==========================================
-    // 【D】菜单：所有页面的入口。🔒 的要指挥密码（同一部手机输过一次就记住）
+    // 【D】菜单：所有页面的入口。🔒 的要后台区密码，不同密码开不同页面（同一部手机输过一次就记住）
     // ==========================================
     (function () {
       const QUIZ_OPEN = new Date('2026-10-17T00:00:00+08:00');   // 测验 10/17 当天才对全团显示
@@ -333,29 +333,30 @@
         { href: '/', icon: '🎼', title: '乐谱', sub: '你现在在这里', here: true },
         { href: 'day.html', icon: '📅', title: '这台弥撒', sub: '这个主日唱什么、谁指挥、我坐哪里' },
         { href: 'quiz.html', icon: '📝', title: '团员小测验', sub: '自我了解用，不影响职位', quiz: true },
-        { group: '指挥专用 🔒' },
-        { href: 'mass.html', icon: '⛪', title: '弥撒排歌', sub: '按位置选歌，保存就更新乐谱', staff: true },
-        { href: 'duties.html', icon: '🗓️', title: '职务表', sub: '每场谁指挥、答唱咏、弹琴', staff: true },
-        { href: 'seating.html', icon: '🪑', title: '座位表', sub: '谁坐哪里、今天要拿哪些披肩', staff: true },
-        { href: 'members.html', icon: '👥', title: '团员名单', sub: '声部、披肩号码、会做的职务', staff: true },
-        { href: 'admin.html', icon: '🗂️', title: '排单后台', sub: '曲库、改图、排单历史', staff: true },
-        { href: 'quiz-admin.html', icon: '📊', title: '测验结果', sub: '全团水平、谁想当领唱/指挥', staff: true },
+        { group: '后台区 🔒' },
+        { href: 'mass.html', icon: '⛪', title: '弥撒排歌', sub: '按位置选歌，保存就更新乐谱', staff: 'mass' },
+        { href: 'duties.html', icon: '🗓️', title: '职务表', sub: '每场谁指挥、答唱咏、弹琴', staff: 'duties' },
+        { href: 'seating.html', icon: '🪑', title: '座位表', sub: '谁坐哪里、今天要拿哪些披肩', staff: 'seating' },
+        { href: 'members.html', icon: '👥', title: '团员名单', sub: '声部、披肩号码、会做的职务', staff: 'members' },
+        { href: 'admin.html', icon: '🗂️', title: '排单后台', sub: '曲库、改图、排单历史', staff: 'admin' },
+        { href: 'quiz-admin.html', icon: '📊', title: '测验结果', sub: '全团水平、谁想当领唱/指挥', staff: 'quiz' },
+        { href: 'access.html', icon: '🔑', title: '密码管理', sub: '谁的密码可以进哪几页', staff: 'access', masterOnly: true },
       ];
       const modal = document.getElementById('menu-modal');
       const list = document.getElementById('menu-list');
 
       function render() {
-        const staff = window.sicStaff?.isStaff();
+        const gate = window.sicStaff, staff = gate?.isStaff();
         const quizOpen = new Date() >= QUIZ_OPEN;
-        list.innerHTML = PAGES.filter(p => !p.quiz || quizOpen || staff).map(p => p.group
+        list.innerHTML = PAGES.filter(p => (!p.quiz || quizOpen || staff) && (!p.masterOnly || gate?.isMaster())).map(p => p.group
           ? `<div class="px-2 pt-3 pb-1 text-[11px] tracking-widest text-zinc-500">${p.group}${p.group.includes('🔒') && staff ? '　已解锁' : ''}</div>`
-          : `<a href="${p.href}" data-staff="${p.staff ? 1 : ''}" class="menu-link flex items-center gap-3 px-3 py-3 rounded-xl ${p.here ? 'bg-white/5' : 'hover:bg-white/10'} transition-colors">
+          : `<a href="${p.href}" data-staff="${p.staff || ''}" class="menu-link flex items-center gap-3 px-3 py-3 rounded-xl ${p.here ? 'bg-white/5' : 'hover:bg-white/10'} transition-colors">
               <span class="text-xl w-7 text-center">${p.icon}</span>
               <span class="flex-1 min-w-0">
                 <span class="block text-white font-semibold text-sm">${p.title}</span>
                 <span class="block text-zinc-500 text-xs truncate">${p.quiz && !quizOpen ? '10/17 才对全团显示' : p.sub}</span>
               </span>
-              ${p.staff && !staff ? '<span class="text-zinc-600 text-sm">🔒</span>' : '<span class="text-zinc-600">›</span>'}
+              ${p.staff && !gate?.can(p.staff) ? '<span class="text-zinc-600 text-sm">🔒</span>' : '<span class="text-zinc-600">›</span>'}
             </a>`).join('');
       }
 
@@ -369,7 +370,10 @@
         const a = e.target.closest('.menu-link');
         if (!a) return;
         if (a.getAttribute('href') === '/') { e.preventDefault(); close(); return; }
-        if (a.dataset.staff && !window.sicStaff?.unlock()) e.preventDefault();
+        if (a.dataset.staff && !window.sicStaff?.can(a.dataset.staff)) {
+          e.preventDefault();
+          window.sicStaff?.unlock(a.dataset.staff).then(ok => { if (ok) location.href = a.getAttribute('href'); });
+        }
       });
     })();
   </script>

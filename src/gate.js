@@ -1,27 +1,100 @@
-// 指挥专用页面的密码（跟乐谱「指挥模式」同一个）。只是防团员误入，不是真正的保安。
-// 普通 <script> 载入；加 data-require 的页面一打开就要密码，错了送回乐谱首页。
+// 后台区的密码：不同的密码开不同的页面。密码在「🔑 密码管理」页自己设（Firestore config/access，只存打乱过的样子，看不到原本的密码）。
+// 只是防团员误入，不是真正的保安。
+// 普通 <script> 载入；页面加 data-require="mass" 这种，一打开就要有那一区的密码，不然送回乐谱首页。
 (function () {
-  const PASSWORD = 'sic';
-  const KEY = 'sicStaff';
+  // 每一区 = 一个（或几个）页面
+  const AREAS = [
+    { key: 'conduct', label: '乐谱指挥模式', sub: '翻页同步给团员、改歌名' },
+    { key: 'mass', label: '弥撒排歌', sub: 'mass.html' },
+    { key: 'duties', label: '职务表', sub: 'duties.html' },
+    { key: 'seating', label: '座位表', sub: 'seating.html' },
+    { key: 'members', label: '团员名单', sub: 'members.html' },
+    { key: 'admin', label: '排单后台', sub: '曲库、改图、排单历史' },
+    { key: 'quiz', label: '测验结果', sub: 'quiz-admin.html' },
+  ];
+  const ALL = AREAS.map(a => a.key).concat('access');   // access = 密码管理，只有最高权限
+  const KEY = 'sicAccess';                               // 这部手机输过哪些密码：[{ h: 打乱后的密码, areas }]
+  const DOC_URL = 'https://firestore.googleapis.com/v1/projects/sicmchoir-yueyun/databases/(default)/documents/config/access?key=AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U';
+  // 还没在「密码管理」设过任何密码之前，暂时用旧密码 sic 当最高权限，第一次进去就要换掉
+  const BOOT = [{ id: 'boot', name: '最高权限（暂时）', hash: '', plain: 'sic', master: true, areas: ALL }];
 
-  const isStaff = () => { try { return localStorage.getItem(KEY) === '1'; } catch { return false; } };
-  const remember = () => { try { localStorage.setItem(KEY, '1'); } catch { /* 没关系 */ } };
+  const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
+  const write = g => { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* 没关系 */ } };
+  const areasNow = () => new Set(read().flatMap(g => g.areas || []));
+  const can = area => area ? areasNow().has(area) : areasNow().size > 0;
+  const isMaster = () => areasNow().has('access');
 
-  // 已经输过就不用再问（同一部手机记住）
-  function unlock() {
-    if (isStaff()) return true;
-    const p = prompt('🔒 指挥专用，请输入密码：');
+  async function hash(pwd) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('sicmchoir|' + pwd.trim()));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  // 读密码表（不用等 Firebase 载入）；还没设过 → null
+  let keysCache = null;
+  async function loadKeys(fresh) {
+    if (keysCache && !fresh) return keysCache;
+    const r = await fetch(DOC_URL, { cache: 'no-store' });
+    if (r.status === 404) return (keysCache = null);
+    if (!r.ok) throw new Error('读不到密码表 ' + r.status);
+    const j = await r.json();
+    return (keysCache = JSON.parse(j.fields?.json?.stringValue || '[]'));
+  }
+  const areasOf = k => k.master ? ALL : (k.areas || []);
+
+  // 试一个密码：对了就记在这部手机，回传它开的区
+  async function tryPassword(pwd) {
+    if (!pwd || !pwd.trim()) return null;
+    const h = await hash(pwd);
+    const keys = await loadKeys(true);
+    const k = keys ? keys.find(k => k.hash === h) : BOOT.find(k => k.plain === pwd.trim());
+    if (!k) return null;
+    const g = read().filter(x => x.h !== h);
+    g.push({ h, areas: areasOf(k), boot: !keys });
+    write(g);
+    return areasOf(k);
+  }
+
+  // 要进某一区：这部手机有了就直接进；没有就问密码
+  async function unlock(area, msg) {
+    if (can(area)) return true;
+    const p = prompt(msg || '🔒 后台区，请输入密码：');
     if (p === null) return false;
-    if (p.trim() !== PASSWORD) { alert('❌ 密码错误'); return false; }
-    remember();
+    let got;
+    try { got = await tryPassword(p); } catch (err) { alert('读不到密码表，检查一下网络。\n' + err.message); return false; }
+    if (!got) { alert('❌ 密码错误'); return false; }
+    if (area && !got.includes(area)) { alert('这个密码没有开这一页。要的话请 Ronald 在「密码管理」帮你的密码勾上。'); return false; }
     return true;
   }
 
-  window.sicStaff = { isStaff, unlock, remember, PASSWORD };
+  // 每次打开都对一下密码表：密码被改掉或拿掉权限的，这部手机也跟着拿掉
+  async function refresh() {
+    const g = read();
+    if (!g.length) return;
+    let keys;
+    try { keys = await loadKeys(true); } catch { return; }   // 没网络就先照旧
+    const next = g.map(x => {
+      const k = keys ? keys.find(k => k.hash === x.h) : (x.boot ? BOOT[0] : null);
+      return k ? { h: x.h, areas: areasOf(k), boot: !keys } : null;
+    }).filter(Boolean);
+    write(next);
+    return next;
+  }
+  function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } }
+
+  window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys };
+
+  try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
 
   const me = document.currentScript;
-  if (me && me.hasAttribute('data-require') && !unlock()) {
-    document.documentElement.style.display = 'none';
-    location.replace('/');
+  const need = me && me.hasAttribute('data-require') ? (me.getAttribute('data-require') || '') : null;
+  if (need === null) { refresh(); return; }
+  const kick = () => { document.documentElement.style.display = 'none'; location.replace('/'); };
+  if (can(need)) {
+    refresh().then(g => { if (g && !g.some(x => x.areas.includes(need))) { alert('你的密码已经换了或拿掉了这一页，请重新输入。'); kick(); } });
+  } else {
+    document.documentElement.style.visibility = 'hidden';
+    setTimeout(async () => {
+      if (await unlock(need)) document.documentElement.style.visibility = '';
+      else kick();
+    }, 0);
   }
 })();

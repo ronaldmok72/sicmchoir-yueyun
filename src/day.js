@@ -243,6 +243,6 @@ function renderSeats(isStaff) {
   });
 }
 
-$('btn-staff').addEventListener('click', () => { if (window.sicStaff?.unlock()) render(); });
+$('btn-staff').addEventListener('click', async () => { if (await window.sicStaff?.unlock()) render(); });
 
 load().catch(err => { console.error(err); $('loading').textContent = '读取失败：' + (err.code || err.message); });
