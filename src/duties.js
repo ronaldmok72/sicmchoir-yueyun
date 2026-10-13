@@ -25,6 +25,8 @@ const YEAR = TODAY.slice(0, 4);
 const md = date => `${Number(date.slice(8))}/${Number(date.slice(5, 7))}`;
 const week = date => '日一二三四五六'[new Date(date + 'T12:00').getDay()];
 
+// 从「这台弥撒」总览点进来：?d=2026-10-18 → 那一天一定列出来，并且滚到那里
+const WANT = (new URLSearchParams(location.search).get('d') || '').match(/^\d{4}-\d{2}-\d{2}$/)?.[0] || null;
 let D = {};          // date → 职务
 let members = [];
 let massTitle = {};  // 排歌页排过的弥撒名称
@@ -39,6 +41,7 @@ async function load() {
   massTitle = Object.fromEntries(ma.docs.map(d => [d.id, d.data().title]));
   $('status').textContent = '';
   render();
+  if (WANT) document.getElementById(`d-${WANT}`)?.scrollIntoView({ block: 'center' });
 }
 
 const titleOf = date => D[date]?.title || massTitle[date] || litDay(date).name;
@@ -53,6 +56,7 @@ function dates() {
   const s = new Date(TODAY + 'T12:00');
   s.setDate(s.getDate() + (7 - s.getDay()) % 7);
   for (let i = 0; i < 8; i++, s.setDate(s.getDate() + 7)) set.add(iso(s));
+  if (WANT) set.add(WANT);
   return [...set].sort();
 }
 
@@ -80,7 +84,7 @@ function render() {
     const x = D[date] || {};
     const past = date < TODAY;
     return `
-      <div class="bg-white rounded-xl border ${date === list.find(d => d >= TODAY) ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200'} px-3 py-2.5 ${past ? 'opacity-60' : ''}">
+      <div id="d-${date}" class="bg-white rounded-xl border ${date === (WANT || list.find(d => d >= TODAY)) ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200'} px-3 py-2.5 ${past ? 'opacity-60' : ''}">
         <div class="flex items-baseline gap-2 mb-2">
           <span class="font-semibold text-sm">${md(date)}</span>
           <span class="text-xs text-slate-400">星期${week(date)}</span>
@@ -263,3 +267,6 @@ $('btn-seed').addEventListener('click', async () => {
 });
 
 load().catch(err => { console.error(err); $('status').textContent = '读取失败：' + (err.code || err.message); });
+
+// 「📅 总览」带着现在这一天过去
+document.querySelector('[data-day-link]')?.addEventListener('click', e => { const d = WANT; if (d) e.currentTarget.href = `day.html?d=${d}`; });

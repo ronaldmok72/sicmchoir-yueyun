@@ -2,6 +2,7 @@
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
+import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
 import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER } from "./autofill.js";
 
 const $ = id => document.getElementById(id);
@@ -50,19 +51,8 @@ function normalizeSlots(slots) {
 }
 // 礼仪固定、每台都一样的部分：复制文字时不列出来
 const QUIET = new Set(['pre', 'post', 'pater', 'doxology']);
-// 礼仪曲（一整套）：复制文字时合成一行「弥撒曲：…」
-const ORDINARY = ['kyrie', 'gloria', 'alleluia', 'sanctus', 'mystery', 'agnus'];
-const MASS_SETS = [
-  [/常年期/, '常年期'], [/四旬期/, '四旬期'], [/将临期/, '将临期'], [/圣诞期/, '圣诞期'], [/复活期/, '复活期'],
-  [/光明弥撒/, '光明弥撒曲'], [/青年(版)?弥撒/, '青年弥撒曲'], [/生命树/, '在生命树下弥撒曲'],
-];
-const massSetOf = t => (MASS_SETS.find(([re]) => re.test(t)) || [])[1] || null;
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const clean = t => String(t || '').replace(/^[a-z]\s+/, '');           // 去掉排序用的开头字母 "r 日升之处" → "日升之处"
-// WA 文字只留歌名和编号：去掉 B4-2、S84、142bpm、V1、In-3、Key、Pop Balled 这类给乐手看的尾巴
-const TECH_TAIL = /(\s*[-_]?\s*(\bS\d+[\w-]*|\b\d+\s*bpm|\bV\d+\b|\bIn[-\d]|\bGuitar|\b[A-G][#b]?\s*Key|\bStandard|\bMedium|\bBigBand|\bfull\b|\b\d+\s*beat|\d+[’‘'.]\d\b|\b\d+['’‘]?s(?=\s|[A-Z]|$)|\b((Open|Fire|Hard|Heavy|Pop|Soft|Power|Easy|Modern|Folk|Country|Acoustic|Orchestral?)\s+)?(Rock|Pop|Balled|Ballad|Bld|Disco|Shuffle|Orchestral?|Unplugged|Acoustic)(?![A-Za-z]))|_).*$/;
-const waTitle = t => clean(t).replace(/\s*\bB\d+-\d+\b/g, '').replace(TECH_TAIL, '').replace(/\s+-\s*$/, '').trim();
 const codeOf = t => (String(t || '').match(/\s([A-Z])\d+/) || [])[1];  // "日升之处 C24" → "C"
 // 曲库＋排过的弥撒里出现过、但曲库已经没有的歌（例如「弥撒前后祷文」）
 let EXTRA = [];
@@ -573,6 +563,14 @@ $('btn-new').addEventListener('click', () => {
   // 默认打开：最近一场还没过的；没有就开新的
   const today = isoDate(new Date());
   const upcoming = [...masses].reverse().find(m => m.date >= today);
-  if (upcoming) openMass(upcoming); else newMass();
+  // 从「这台弥撒」总览点进来：?d=2026-10-18 直接打开那一天
+  const want = new URLSearchParams(location.search).get('d');
+  const wanted = want && masses.find(m => m.date === want);
+  if (wanted) openMass(wanted);
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(want || '')) { M = emptyMass(want); M.autoTitle = true; applyAuto(); }
+  else if (upcoming) openMass(upcoming); else newMass();
   warmHistory(LIBRARY_DATA);
 })();
+
+// 「📅 总览」带着现在这一天过去
+document.querySelector('[data-day-link]')?.addEventListener('click', e => { const d = M?.date; if (d) e.currentTarget.href = `day.html?d=${d}`; });

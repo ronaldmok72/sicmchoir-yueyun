@@ -5,7 +5,8 @@ import { litDay, keyOfTitle, SEASON_OF, cycleOf } from './liturgy.js';
 import { HISTORY } from './songlist-history.js';
 import { matchBlock } from './songlist-import.js';
 
-export const PROPER = ['entrance', 'psalm', 'offertory', 'communion', 'thanks', 'recessional'];
+export { PROPER_KEYS as PROPER } from './mass-common.js';
+import { PROPER_KEYS as PROPER } from './mass-common.js';
 
 // 这一场是哪个礼仪日：名称认得出来就用名称（例如手动改成「主保庆典」），不然看日期
 export function whichDay(date, title) {

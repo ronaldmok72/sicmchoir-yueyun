@@ -80,8 +80,11 @@ function renderDates() {
   const s = new Date(TODAY + 'T12:00');
   s.setDate(s.getDate() + (7 - s.getDay()) % 7);
   for (let i = 0; i < 6; i++, s.setDate(s.getDate() + 7)) set.add(iso(s));
+  // 从「这台弥撒」总览点进来：?d=2026-10-18
+  const want = (new URLSearchParams(location.search).get('d') || '').match(/^\d{4}-\d{2}-\d{2}$/)?.[0];
+  if (want) set.add(want);
   const list = [...set].sort();
-  const keep = $('date').value;
+  const keep = $('date').value || want;
   $('date').innerHTML = list.map(d => `<option value="${d}">${md(d)} 星期${week(d)}　${esc(D[d]?.title || litDay(d).name)}${S[d] ? '　✓ 排好了' : ''}</option>`).join('');
   $('date').value = keep && list.includes(keep) ? keep : (list.find(d => d >= TODAY) || list.at(-1));
 }
@@ -379,3 +382,6 @@ $('btn-seed').addEventListener('click', async () => {
 });
 
 load().catch(err => { console.error(err); $('status').textContent = '读取失败：' + (err.code || err.message); });
+
+// 「📅 总览」带着现在这一天过去
+document.querySelector('[data-day-link]')?.addEventListener('click', e => { const d = cur?.date; if (d) e.currentTarget.href = `day.html?d=${d}`; });

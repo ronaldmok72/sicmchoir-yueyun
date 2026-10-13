@@ -141,6 +141,14 @@ resizeCanvas();
 
   await loadSetlistOptions();
   loadLocalPlaylist();
+  // 从「这台弥撒」总览点「打开乐谱」：?setlist=1018 常年29主日 → 直接下载那份排单
+  const want = new URLSearchParams(location.search).get('setlist');
+  if (want && allSetlists.some(o => o.id === want)) {
+    if (!setlistSelect.querySelector(`option[value="${CSS.escape(want)}"]`)) { showPastSetlists = true; renderSetlistOptions(); }
+    setlistSelect.value = want;
+    history.replaceState(null, '', location.pathname);
+    if (localStorage.getItem('offline_playlist_name') !== want) syncSelectedSetlist();
+  }
 }
 
 // --- 新增：推送当前页码到 Firebase ---
