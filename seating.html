@@ -36,7 +36,12 @@
 
     <div class="flex flex-wrap gap-2 items-center mb-2">
       <select id="date" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white flex-1 min-w-[12rem]"></select>
-      <button id="btn-auto" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm">⚡ 照上一次排</button>
+      <select id="rearrange" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm border-0">
+        <option value="">⚡ 重新排…</option>
+        <option value="prev">照上一次的座位</option>
+        <option value="gender">女生在前、男生在后</option>
+        <option value="voice">按声部一排一排（S／A／T／B）</option>
+      </select>
     </div>
     <div id="stage" class="text-sm text-slate-600 mb-3"></div>
 
@@ -60,10 +65,17 @@
 
     <!-- 选中一个人时的动作 -->
     <div id="action-bar" class="hidden sticky top-2 z-20 bg-indigo-600 text-white rounded-xl px-3 py-2 mb-3 text-sm flex flex-wrap items-center gap-2 shadow-lg">
-      <span id="action-text" class="flex-1 min-w-0 truncate"></span>
+      <span id="action-text" class="basis-full sm:basis-auto sm:flex-1 min-w-0"></span>
       <button id="act-unseat" class="px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25">放回去</button>
       <button id="act-absent" class="px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25">今天没来</button>
       <button id="act-cancel" class="px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25">取消</button>
+      <div id="act-edit" class="hidden w-full flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1.5 border-t border-white/20 text-xs">
+        <label class="flex items-center gap-1.5">这场披肩 #
+          <input id="act-cape" type="number" min="1" inputmode="numeric" class="w-14 rounded-md px-1.5 py-0.5 text-slate-800 text-sm">
+          <span id="act-cape-hint" class="opacity-70"></span>
+        </label>
+        <span class="flex items-center gap-1">这场唱 <span id="act-voices" class="flex gap-1"></span></span>
+      </div>
     </div>
 
     <!-- 还没排的 -->

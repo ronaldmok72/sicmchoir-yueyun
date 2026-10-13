@@ -3,17 +3,12 @@
 import { collection, getDocs, doc, setDoc, addDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, RESULTS } from "./firebase.js";
 import { SEED } from "./members-seed.js";
+import { VOICES, VOICE_NAME, VOICE_SHORT, genderOf, genderFromVoice } from "./people.js";
 
 const $ = id => document.getElementById(id);
 const MEMBERS = 'members';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const VOICES = [
-  { key: 'S', label: '女高音 S' }, { key: 'A', label: '女低音 A' },
-  { key: 'T', label: '男高音 T' }, { key: 'B', label: '男低音 B' },
-  { key: 'M', label: '主旋律' }, { key: '', label: '还不知道' },
-];
-const VOICE_NAME = Object.fromEntries(VOICES.map(v => [v.key, v.label]));
 const ROLES = ['指挥', '答唱咏', '钢琴', '风琴', '吉他', '鼓手'];
 // 测验第 E 题的答案 → 声部
 const QUIZ_VOICE = { '女高音 S': 'S', '女低音 A': 'A', '男高音 T': 'T', '男低音 B': 'B', '主旋律': 'M' };
@@ -67,6 +62,7 @@ function renderSummary() {
     <div class="flex flex-wrap gap-1.5">
       ${['S', 'A', 'T', 'B', 'M'].map(k => `<span class="px-2 py-0.5 rounded-md bg-slate-100">${VOICE_NAME[k]} <b>${cnt(k)}</b></span>`).join('')}
     </div>
+    <div class="text-slate-600">女声 <b>${act.filter(m => genderOf(m) === 'F').length}</b>　男声 <b>${act.filter(m => genderOf(m) === 'M').length}</b>${act.some(m => !genderOf(m)) ? `　<span class="text-amber-700">还不知道男女：${act.filter(m => !genderOf(m)).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
     ${noVoice ? `<div class="text-amber-700">⏳ ${noVoice} 位还没填声部${quiz.length ? '' : '（10/17 测验答完会自动出现建议）'}</div>` : '<div class="text-emerald-700">✅ 每一位都有声部</div>'}
     ${dup.length ? `<div class="text-red-600">🔴 披肩号码重复：${dup.map(([c, n]) => `#${c} ${n.map(esc).join('、')}`).join('；')}</div>` : ''}`;
 }
@@ -109,6 +105,7 @@ function renderList() {
             <span class="w-10 shrink-0 text-center text-xs ${m.cape ? 'text-slate-700 font-semibold' : 'text-slate-300'}">${m.cape ? `#${m.cape}` : '—'}</span>
             <span class="flex-1 min-w-0">
               <span class="block truncate text-sm ${m.active === false ? 'text-slate-400' : ''}">${esc(m.name)}${m.fullName ? `<span class="text-slate-400 text-xs">　${esc(m.fullName)}</span>` : ''}</span>
+              ${(m.voices2 || []).length || (!genderFromVoice(m.voice) && m.gender) ? `<span class="block truncate text-xs text-slate-400">${(m.voices2 || []).length ? `也唱 ${m.voices2.map(v => VOICE_SHORT[v]).join('、')}` : ''}${!genderFromVoice(m.voice) && m.gender ? `${(m.voices2 || []).length ? '　' : ''}${m.gender === 'F' ? '女声' : '男声'}` : ''}</span>` : ''}
               ${m.note ? `<span class="block truncate text-xs text-amber-600">${esc(m.note)}</span>` : ''}
             </span>
             <span class="shrink-0 flex flex-wrap justify-end gap-1 max-w-[45%]">${(m.roles || []).map(r => `<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[11px]">${esc(r)}</span>`).join('')}</span>
@@ -125,7 +122,7 @@ $('filter').addEventListener('change', renderList);
 
 // ───────── 编辑 ─────────
 const form = $('edit-form');
-let pickVoice = '', pickRoles = new Set();
+let pickVoice = '', pickRoles = new Set(), pickVoices2 = new Set(), pickGender = '';
 function openEditor(m) {
   editing = m || {};
   $('edit-title').textContent = m ? `改：${m.name}` : '加团员';
@@ -136,6 +133,8 @@ function openEditor(m) {
   form.note.value = editing.note || '';
   pickVoice = editing.voice || '';
   pickRoles = new Set(editing.roles || []);
+  pickVoices2 = new Set(editing.voices2 || []);
+  pickGender = editing.gender || '';
   const q = m && quizFor(m);
   $('quiz-hint').textContent = q ? `测验（${q.name}）写：${q.raw || '没答'}` : '';
   $('edit-delete').classList.toggle('hidden', !m);
@@ -148,8 +147,20 @@ function renderChips() {
   const chip = (on, label, attr) => `<button type="button" ${attr} class="px-2.5 py-1.5 rounded-lg border text-sm ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:border-indigo-300'}">${esc(label)}</button>`;
   $('voice-btns').innerHTML = VOICES.map(v => chip(pickVoice === v.key, v.label, `data-voice="${v.key}"`)).join('');
   $('role-btns').innerHTML = ROLES.map(r => chip(pickRoles.has(r), r, `data-role="${r}"`)).join('');
+  $('voice2-btns').innerHTML = VOICES.filter(v => v.key && v.key !== pickVoice).map(v => chip(pickVoices2.has(v.key), v.label, `data-voice2="${v.key}"`)).join('');
+  // S A T B 已经知道男女；主旋律／还不知道才要选
+  const auto = genderFromVoice(pickVoice);
+  $('gender-btns').innerHTML = auto
+    ? `<span class="text-slate-400">${auto === 'F' ? '女声' : '男声'}（照主要声部）</span>`
+    : [['F', '女声'], ['M', '男声'], ['', '还不知道']].map(([k, l]) => chip(pickGender === k, l, `data-gender="${k}"`)).join('');
 }
-$('voice-btns').addEventListener('click', e => { const b = e.target.closest('[data-voice]'); if (!b) return; pickVoice = b.dataset.voice; renderChips(); });
+$('voice-btns').addEventListener('click', e => { const b = e.target.closest('[data-voice]'); if (!b) return; pickVoice = b.dataset.voice; pickVoices2.delete(pickVoice); renderChips(); });
+$('voice2-btns').addEventListener('click', e => {
+  const b = e.target.closest('[data-voice2]'); if (!b) return;
+  pickVoices2.has(b.dataset.voice2) ? pickVoices2.delete(b.dataset.voice2) : pickVoices2.add(b.dataset.voice2);
+  renderChips();
+});
+$('gender-btns').addEventListener('click', e => { const b = e.target.closest('[data-gender]'); if (!b) return; pickGender = b.dataset.gender; renderChips(); });
 $('role-btns').addEventListener('click', e => {
   const b = e.target.closest('[data-role]'); if (!b) return;
   pickRoles.has(b.dataset.role) ? pickRoles.delete(b.dataset.role) : pickRoles.add(b.dataset.role);
@@ -174,6 +185,8 @@ form.addEventListener('submit', async e => {
   if (members.some(m => m.id !== editing.id && m.name.toLowerCase() === name.toLowerCase()) && !confirm(`已经有一位叫「${name}」，还是要存？（同名的话，建议在名字后面加姓）`)) return;
   const data = {
     name, fullName: form.fullName.value.trim(), voice: pickVoice,
+    voices2: VOICES.map(v => v.key).filter(k => k && k !== pickVoice && pickVoices2.has(k)),
+    gender: genderFromVoice(pickVoice) || pickGender,
     cape: Number(form.cape.value) || null, roles: ROLES.filter(r => pickRoles.has(r)),
     active: form.active.checked, note: form.note.value.trim(), updatedAt: new Date().toISOString(),
   };

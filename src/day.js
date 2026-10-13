@@ -79,7 +79,7 @@ function issues(d) {
   if (noDuty.length) out.push({ level: noDuty.includes('指挥') || noDuty.includes('答唱咏') ? 'red' : 'wait', text: `还没排：${noDuty.join('、')}`, ...go('duties.html', '去排') });
   if (!se) out.push({ level: 'wait', text: '座位还没排（进去会照上一次自动排好，看一下动一下就保存）', ...go('seating.html', '去排') });
   else {
-    const noCape = seatedNames(d).concat(stageNames(d)).filter(n => members[n.toLowerCase()] && !members[n.toLowerCase()].cape);
+    const noCape = seatedNames(d).concat(stageNames(d)).filter(n => members[n.toLowerCase()] && !capeOn(d, n));
     if (noCape.length) out.push({ level: 'info', text: `${noCape.length} 位还没有披肩号码：${noCape.join('、')}`, href: 'members.html', label: '去填' });
   }
   return out;
@@ -191,7 +191,9 @@ function renderPeople(isStaff) {
     </div>`;
 }
 
-const capeOf = n => members[String(n).toLowerCase()]?.cape || null;
+// 披肩号码：座位表这一天改过的先算，不然照团员名单
+const capeOn = (d, n) => seatings[d]?.capes?.[n] || members[String(n).toLowerCase()]?.cape || null;
+const capeOf = n => capeOn(date, n);
 function renderSeats(isStaff) {
   const s = seatings[date];
   if (!s) {

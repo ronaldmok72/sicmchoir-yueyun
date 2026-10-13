@@ -1,9 +1,10 @@
 // 座位表：每个礼拜谁坐哪里、今天要拿哪些披肩
-// Firestore seatings/{YYYY-MM-DD}：{ cols, nRows, seats: { 'r-c': 名字 }, absent: [名字] }
+// Firestore seatings/{YYYY-MM-DD}：{ cols, nRows, seats: { 'r-c': 名字 }, absent: [名字], capes: { 名字: 这场穿的号码 }, voices: { 名字: 这场唱的声部 } }
 // 人从团员名单拿；指挥、琴师、乐手从职务表拿（他们在台前，不排座位）
 import { collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
+import { genderOf, VOICE_SHORT } from "./people.js";
 
 const $ = id => document.getElementById(id);
 const SEATINGS = 'seatings';
@@ -33,24 +34,19 @@ const VOICE_STYLE = {
   M: ['bg-slate-100 border-slate-300', '主旋律'], '': ['bg-white border-slate-300', '还不知道声部'],
 };
 
-let members = [], byName = {};
+let members = [], byName = {}, allCapes = [];   // allCapes：名单上所有人的号码（没在来的也算，披肩还在）
 let D = {}, S = {};
-let cur = null;      // { date, cols, rows: [[名字|'']], absent: [], draftFrom }
+let cur = null;      // { date, cols, rows: [[名字|'']], absent: [], capes: {}, voices: {}, draftFrom }
 let sel = null;      // { kind: 'tray', name } | { kind: 'seat', r, c }
 let saveTimer = null;
 
 const memberOf = name => byName[String(name || '').toLowerCase()];
 const splitNames = v => String(v || '').split(/[\/、,，&]+/).map(s => s.trim()).filter(Boolean);
-// 女声 / 男声：先看声部，再看披肩号码（女声 1–30，男声 31 起）
-function gender(name) {
-  const m = memberOf(name);
-  if (!m) return '';
-  if (m.voice === 'S' || m.voice === 'A') return 'F';
-  if (m.voice === 'T' || m.voice === 'B') return 'M';
-  if (m.cape) return m.cape <= 30 ? 'F' : 'M';
-  return '';
-}
-const capeOf = name => memberOf(name)?.cape || null;
+// 这一场唱的声部、穿的披肩：座位表这一天改过的先算，不然照团员名单
+const voiceOf = name => cur?.voices?.[name] ?? memberOf(name)?.voice ?? '';
+const capeOf = name => cur?.capes?.[name] || memberOf(name)?.cape || null;
+// 女声 F／男声 M：名单写了照写的；不然看这场的声部；再不然看披肩号码
+const gender = name => genderOf(memberOf(name), voiceOf(name));
 const label = name => `${name}${capeOf(name) ? ` ${capeOf(name)}` : ''}`;
 
 // ───────── 读取 ─────────
@@ -59,7 +55,9 @@ async function load() {
   const [ms, ds, ss] = await Promise.all([
     getDocs(collection(db, 'members')), getDocs(collection(db, 'duties')), getDocs(collection(db, SEATINGS)),
   ]);
-  members = ms.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false);
+  const all = ms.docs.map(d => ({ id: d.id, ...d.data() }));
+  members = all.filter(m => m.active !== false);
+  allCapes = all.filter(m => m.cape).map(m => ({ name: m.name, cape: m.cape }));
   byName = Object.fromEntries(members.map(m => [m.name.toLowerCase(), m]));
   D = Object.fromEntries(ds.docs.map(d => [d.id, d.data()]));
   S = Object.fromEntries(ss.docs.map(d => [d.id, d.data()]));
@@ -71,7 +69,7 @@ async function load() {
 
 function fromDoc(date, s) {
   const rows = Array.from({ length: s.nRows || 0 }, (_, r) => Array.from({ length: s.cols || 5 }, (_, c) => s.seats?.[`${r}-${c}`] || ''));
-  return { date, cols: s.cols || 5, rows, absent: [...(s.absent || [])] };
+  return { date, cols: s.cols || 5, rows, absent: [...(s.absent || [])], capes: { ...(s.capes || {}) }, voices: { ...(s.voices || {}) } };
 }
 
 // 日期：排过的最近几次 + 接下来 6 个主日
@@ -93,7 +91,7 @@ function openDate(date) {
   sel = null;
   if (S[date]) cur = fromDoc(date, S[date]);
   else {
-    cur = { date, cols: 5, rows: [], absent: [] };
+    cur = { date, cols: 5, rows: [], absent: [], capes: {}, voices: {} };
     autoFill();             // 还没排过：先照上一次排好，当草稿
   }
   render();
@@ -119,12 +117,12 @@ function trayPeople() {
 // 照上一次排：没来的、在台前的拿掉；还没位子的女声从前面补，男声从后面补
 function autoFill() {
   const prevDate = Object.keys(S).filter(d => d < cur.date).sort().at(-1) || Object.keys(S).filter(d => d !== cur.date).sort().at(-1);
-  const absent = cur.absent;
+  const { absent, capes, voices } = cur;   // 这一天自己改过的披肩、声部留着，不照上一次
   if (prevDate) {
     const p = fromDoc(prevDate, S[prevDate]);
-    cur = { date: cur.date, cols: p.cols, rows: p.rows, absent, draftFrom: prevDate };
+    cur = { date: cur.date, cols: p.cols, rows: p.rows, absent, capes, voices, draftFrom: prevDate };
   } else {
-    cur = { date: cur.date, cols: 5, rows: Array.from({ length: 5 }, () => Array(5).fill('')), absent, draftFrom: null };
+    cur = { date: cur.date, cols: 5, rows: Array.from({ length: 5 }, () => Array(5).fill('')), absent, capes, voices, draftFrom: null };
   }
   const stage = new Set(stagePeople(cur.date).map(p => p.name.toLowerCase()));
   const off = new Set(absent.map(n => n.toLowerCase()));
@@ -152,6 +150,50 @@ function findEmpty(from) {
   return null;
 }
 
+// 重新排：坐着的人照现在的先后分组，从前面排起，每一组开新的一排
+//   gender：女生 → 男生 → 不知道男女的
+//   voice ：S → A（+女声主旋律）→ T → B（+男声主旋律）→ 不知道的
+function groupOf(name, mode) {
+  const g = gender(name), v = voiceOf(name);
+  if (mode === 'gender') return [{ F: 0, M: 1, '': 2 }[g], 0];
+  if (v === 'S') return [0, 0];
+  if (v === 'A') return [1, 0];
+  if (v === 'T') return [2, 0];
+  if (v === 'B') return [3, 0];
+  return g === 'F' ? [1, 1] : g === 'M' ? [3, 1] : [4, 0];
+}
+function rearrange(mode) {
+  const people = cur.rows.flat().filter(Boolean);
+  const groups = [];
+  people.forEach((n, i) => { const [g, sub] = groupOf(n, mode); (groups[g] ||= []).push({ n, sub, i }); });
+  const rows = [];
+  for (const grp of groups.filter(Boolean)) {
+    const names = grp.sort((a, b) => a.sub - b.sub || a.i - b.i).map(x => x.n);
+    for (let i = 0; i < names.length; i += cur.cols) rows.push(names.slice(i, i + cur.cols).concat(Array(cur.cols).fill('')).slice(0, cur.cols));
+  }
+  cur.rows = rows.length ? rows : cur.rows;   // 后面空的排不留，要多一排再按「＋ 一排」
+}
+
+// 今天在场的人（坐着的 + 台前的），披肩重复、谁可以借哪件
+function present() {
+  const people = [...cur.rows.flat().filter(Boolean), ...stagePeople(cur.date).map(p => p.name)];
+  return [...new Map(people.map(n => [n.toLowerCase(), n])).values()];
+}
+function dupCapes() {
+  const by = {};
+  present().forEach(n => { const c = capeOf(n); if (c) (by[c] ||= []).push(n); });
+  return Object.entries(by).filter(([, l]) => l.length > 1).map(([c, l]) => [Number(c), l]);
+}
+// 同一组（女 1–30／男 31 起）里，今天没人穿的号码；越接近原本号码越前面
+function freeCapes(near) {
+  const here = new Set(present().map(n => n.toLowerCase()));
+  const used = new Set(present().map(capeOf).filter(Boolean));
+  const female = near <= 30;
+  return [...new Set(allCapes.filter(m => !here.has(m.name.toLowerCase())).map(m => m.cape))]
+    .filter(c => !used.has(c) && (c <= 30) === female)
+    .sort((a, b) => Math.abs(a - near) - Math.abs(b - near) || a - b);
+}
+
 // ───────── 画面 ─────────
 function render() {
   const stage = stagePeople(cur.date);
@@ -170,20 +212,22 @@ function render() {
 }
 
 function chip(name, attrs, extra = '') {
-  const v = memberOf(name)?.voice || '';
+  const v = voiceOf(name);
   return `<button ${attrs} draggable="true" class="px-2 py-1 rounded-lg border text-sm ${VOICE_STYLE[v][0]} ${extra}">${esc(name)}${capeOf(name) ? `<span class="text-slate-400 text-xs"> ${capeOf(name)}</span>` : ''}</button>`;
 }
 
 function renderGrid() {
   const cant = cantors(cur.date);
+  const dup = new Set(dupCapes().map(([c]) => c));
   $('grid').innerHTML = cur.rows.map((row, r) => `
     <div class="flex items-stretch gap-1">
       <div class="w-4 shrink-0 text-[11px] text-slate-400 flex items-center justify-center" title="第${r + 1}排">${r + 1}</div>
       ${row.map((n, c) => {
         const on = sel?.kind === 'seat' && sel.r === r && sel.c === c;
-        const v = memberOf(n)?.voice || '';
+        const v = voiceOf(n), cape = capeOf(n);
         return `<button data-seat="${r}-${c}" draggable="${n ? 'true' : 'false'}" class="seat relative flex-1 min-w-0 h-12 rounded-lg border text-center px-0.5 ${n ? VOICE_STYLE[v][0] : 'border-dashed border-slate-200 bg-slate-50'} ${on ? 'ring-2 ring-indigo-500' : ''} ${sel && !on ? 'hover:border-indigo-400' : ''}">
-          ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block text-[11px] text-slate-400 leading-tight">${capeOf(n) ? `#${capeOf(n)}` : '没号码'}</span>` : ''}
+          ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block text-[11px] leading-tight ${dup.has(cape) ? 'text-red-600 font-semibold' : 'text-slate-400'}">${cape ? `#${cape}` : '没号码'}</span>` : ''}
+          ${n && cur.voices?.[n] ? `<span class="absolute -top-1.5 -left-1 px-1 rounded bg-slate-700 text-white text-[10px]">${VOICE_SHORT[cur.voices[n]] || '?'}</span>` : ''}
           ${n && cant.has(n.toLowerCase()) ? '<span class="absolute -top-1.5 -right-1 px-1 rounded bg-emerald-600 text-white text-[10px]">答</span>' : ''}
         </button>`;
       }).join('')}
@@ -202,19 +246,25 @@ function renderTray() {
 
 // 今天要拿的披肩：坐着的 + 台前的
 function renderCapes() {
-  const people = [...cur.rows.flat().filter(Boolean), ...stagePeople(cur.date).map(p => p.name)];
-  const uniq = [...new Map(people.map(n => [n.toLowerCase(), n])).values()];
+  const uniq = present();
   const withCape = uniq.filter(capeOf).sort((a, b) => capeOf(a) - capeOf(b));
   const none = uniq.filter(n => !capeOf(n));
   const f = withCape.filter(n => capeOf(n) <= 30).length;
-  const byCape = {};
-  withCape.forEach(n => (byCape[capeOf(n)] ||= []).push(n));
-  const dup = Object.entries(byCape).filter(([, l]) => l.length > 1);
+  // 重复的：这场特别改过号码的人留着，不然名单上本来就是这个号码的人留着，其他人建议换
+  const fixes = dupCapes().map(([c, l]) => {
+    const keep = l.find(n => cur.capes?.[n] === c) || l.find(n => memberOf(n)?.cape === c) || l[0];
+    const free = freeCapes(c);
+    const moves = l.filter(n => n !== keep).map((n, i) => free[i]
+      ? `<button data-cape-fix="${esc(n)}" data-cape="${free[i]}" class="px-2 py-0.5 rounded-md bg-red-600 text-white text-xs">${esc(n)} 改穿 #${free[i]}</button>`
+      : `<span class="text-xs">${esc(n)}：找不到空的号码，点他的座位自己填</span>`).join(' ');
+    return `<div class="flex flex-wrap items-center gap-1.5"><span>#${c}：${l.map(esc).join('、')}</span><span class="text-red-400">→</span>${moves}</div>`;
+  });
   $('capes').innerHTML = `
     <div>要拿 <b>${withCape.length}</b> 件：女声 ${f} 件、男声 ${withCape.length - f} 件</div>
-    <div class="flex flex-wrap gap-1">${withCape.map(n => `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-xs"><b>${capeOf(n)}</b> ${esc(n)}</span>`).join('')}</div>
-    ${none.length ? `<div class="text-amber-700">⏳ 还没有披肩号码：${none.map(esc).join('、')}　<a href="members.html" class="underline text-xs">去团员名单填</a></div>` : ''}
-    ${dup.length ? `<div class="text-red-600">🔴 号码重复：${dup.map(([c, l]) => `#${c} ${l.map(esc).join('、')}`).join('；')}</div>` : ''}`;
+    <div class="flex flex-wrap gap-1">${withCape.map(n => `<span class="px-1.5 py-0.5 rounded text-xs ${cur.capes?.[n] ? 'bg-amber-100' : 'bg-slate-100'}"><b>${capeOf(n)}</b> ${esc(n)}</span>`).join('')}</div>
+    ${uniq.some(n => cur.capes?.[n]) ? '<div class="text-xs text-slate-400">黄色的 = 这一场换了号码（只算这一场，名单不会变）</div>' : ''}
+    ${none.length ? `<div class="text-amber-700">⏳ 还没有披肩号码：${none.map(esc).join('、')}　<span class="text-xs">点座位上的人可以填这一场穿几号，或者<a href="members.html" class="underline">去团员名单填</a></span></div>` : ''}
+    ${fixes.length ? `<div class="text-red-600 space-y-1"><div>🔴 号码重复了（点一下就帮他换成今天没人穿的号码）</div>${fixes.join('')}</div>` : ''}`;
 }
 
 function renderAction() {
@@ -223,12 +273,19 @@ function renderAction() {
   const name = sel.kind === 'tray' ? sel.name : cur.rows[sel.r][sel.c];
   $('action-text').textContent = sel.kind === 'tray' ? `${name}：点一个座位放进去` : `${name}：点另一个座位对调`;
   $('act-unseat').classList.toggle('hidden', sel.kind !== 'seat');
+  // 坐好之后：这一场穿几号、唱什么声部（只改这一场）
+  $('act-edit').classList.toggle('hidden', sel.kind !== 'seat');
+  if (sel.kind !== 'seat') return;
+  const m = memberOf(name), main = m?.voice || '';
+  $('act-cape').value = capeOf(name) || '';
+  $('act-cape-hint').textContent = cur.capes?.[name] ? (m?.cape ? `名单上是 #${m.cape}` : '名单上没号码') : (m?.cape ? '照名单' : '');
+  $('act-voices').innerHTML = ['S', 'A', 'T', 'B', 'M'].map(v => `<button data-voice="${v}" class="px-2 py-0.5 rounded-md ${voiceOf(name) === v ? 'bg-white text-indigo-700 font-semibold' : 'bg-white/15 hover:bg-white/25'}">${VOICE_SHORT[v]}${v === main ? '<span class="text-[10px] opacity-70">·平常</span>' : ''}</button>`).join('');
 }
 
 // ───────── 改动 ─────────
-function changed() {
+function changed(keepSel = false) {
   delete cur.draftFrom;
-  sel = null;
+  if (!keepSel) sel = null;
   render();
   clearTimeout(saveTimer);
   $('status').textContent = '保存中…';
@@ -237,7 +294,7 @@ function changed() {
 async function save() {
   const seats = {};
   cur.rows.forEach((row, r) => row.forEach((n, c) => { if (n) seats[`${r}-${c}`] = n; }));
-  const data = { date: cur.date, cols: cur.cols, nRows: cur.rows.length, seats, absent: cur.absent, updatedAt: new Date().toISOString() };
+  const data = { date: cur.date, cols: cur.cols, nRows: cur.rows.length, seats, absent: cur.absent, capes: cur.capes || {}, voices: cur.voices || {}, updatedAt: new Date().toISOString() };
   try {
     await setDoc(doc(db, SEATINGS, cur.date), data);
     const first = !S[cur.date];
@@ -291,6 +348,32 @@ $('act-absent').addEventListener('click', () => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sel) { sel = null; render(); } });
 
+// 这一场的披肩号码、声部
+const selName = () => sel?.kind === 'seat' ? cur.rows[sel.r][sel.c] : null;
+$('act-cape').addEventListener('change', () => {
+  const name = selName(); if (!name) return;
+  const n = Number($('act-cape').value) || 0;
+  cur.capes ||= {};
+  if (!n || n === memberOf(name)?.cape) delete cur.capes[name];
+  else cur.capes[name] = n;
+  changed(true);
+});
+$('act-cape').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+$('act-voices').addEventListener('click', e => {
+  const b = e.target.closest('[data-voice]'); const name = selName();
+  if (!b || !name) return;
+  cur.voices ||= {};
+  if (b.dataset.voice === (memberOf(name)?.voice || '')) delete cur.voices[name];
+  else cur.voices[name] = b.dataset.voice;
+  changed(true);
+});
+$('capes').addEventListener('click', e => {
+  const b = e.target.closest('[data-cape-fix]'); if (!b) return;
+  cur.capes ||= {};
+  cur.capes[b.dataset.capeFix] = Number(b.dataset.cape);
+  changed();
+});
+
 // 电脑拖拉
 let dragFrom = null;
 document.addEventListener('dragstart', e => {
@@ -337,13 +420,21 @@ $('cols').addEventListener('change', () => {
 });
 
 $('date').addEventListener('change', () => { clearTimeout(saveTimer); openDate($('date').value); });
-$('btn-auto').addEventListener('click', () => {
-  if (cur.rows.flat().some(Boolean) && !confirm('照上一次的座位重新排？现在这一页排的会被盖掉（「今天没来」的会保留）。')) return;
-  autoFill();
-  if (!cur.draftFrom) { alert('还没有更早的座位可以照。'); return; }
-  const from = cur.draftFrom;
-  changed();
-  $('status').textContent = `照 ${md(from)} 排好了，保存中…`;
+$('rearrange').addEventListener('change', () => {
+  const mode = $('rearrange').value;
+  $('rearrange').value = '';
+  if (mode === 'prev') {
+    if (cur.rows.flat().some(Boolean) && !confirm('照上一次的座位重新排？现在这一页排的会被盖掉（「今天没来」和这一场改过的披肩、声部会保留）。')) return;
+    autoFill();
+    if (!cur.draftFrom) { alert('还没有更早的座位可以照。'); return; }
+    const from = cur.draftFrom;
+    changed();
+    $('status').textContent = `照 ${md(from)} 排好了，保存中…`;
+  } else if (mode) {
+    rearrange(mode);
+    changed();
+    $('status').textContent = (mode === 'voice' ? '按声部一排一排排好了' : '女生在前、男生在后排好了') + '，保存中…';
+  }
 });
 
 // ───────── 复制文字 ─────────
