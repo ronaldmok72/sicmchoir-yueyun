@@ -29,6 +29,13 @@ const SLOT_TEMPLATE = [
 const TPL = Object.fromEntries(SLOT_TEMPLATE.map(s => [s.key, s]));
 // 礼仪固定、每台都一样的部分：复制文字时不列出来
 const QUIET = new Set(['pre', 'post', 'pater', 'doxology']);
+// 礼仪曲（一整套）：复制文字时合成一行「弥撒曲：…」
+const ORDINARY = ['kyrie', 'alleluia', 'sanctus', 'agnus'];
+const MASS_SETS = [
+  [/常年期/, '常年期'], [/四旬期/, '四旬期'], [/将临期/, '将临期'], [/圣诞期/, '圣诞期'], [/复活期/, '复活期'],
+  [/光明弥撒/, '光明弥撒曲'], [/青年(版)?弥撒/, '青年弥撒曲'], [/生命树/, '在生命树下弥撒曲'],
+];
+const massSetOf = t => (MASS_SETS.find(([re]) => re.test(t)) || [])[1] || null;
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clean = t => String(t || '').replace(/^[a-z]\s+/, '');           // 去掉排序用的开头字母 "r 日升之处" → "日升之处"
@@ -418,7 +425,14 @@ async function save() {
 $('btn-copy').addEventListener('click', async () => {
   const [, mm, dd] = (M.date || '').split('-');
   const lines = [`*${Number(dd) || ''}/${Number(mm) || ''} ${M.title || ''}*`];
-  M.slots.filter(s => !QUIET.has(s.key) && s.songs.length).forEach(s => {
+  // 礼仪曲（垂怜曲、圣圣圣…）是一整套的：只写一行「弥撒曲：常年期」
+  const sets = M.slots.filter(s => ORDINARY.includes(s.key)).flatMap(s => s.songs.map(x => massSetOf(x.title)));
+  const named = [...new Set(sets.filter(Boolean))];
+  if (named.length) lines.push(`弥撒曲：${named.join('、')}`);
+  // 只列每台会换的歌（进堂、答唱、奉献、领主、谢主、礼成）和自己加的位置
+  //（礼仪曲认不出是哪一套的，照旧写出来）
+  const odd = s => ORDINARY.includes(s.key) && s.songs.some(x => !massSetOf(x.title));
+  M.slots.filter(s => (PROPER.includes(s.key) || !TPL[s.key] || odd(s)) && s.songs.length).forEach(s => {
     lines.push(`${s.label}：${s.songs.map(x => waTitle(x.title)).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
   });
   if (M.note) lines.push('', M.note);
