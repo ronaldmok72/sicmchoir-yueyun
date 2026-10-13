@@ -199,6 +199,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
     import { getFirestore, doc, setDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
     import { LIBRARY_DATA } from "./src/library.js";
+    import { renameSong } from "./src/rename.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -309,6 +310,7 @@
             <button class="p-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors shadow-sm" onclick="window.addToSetlist('${song.id}')" title="添加到排单">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
             </button>
+            <button class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" onclick="event.stopPropagation(); window.renameLibrarySong('${song.id}')" title="改歌名（会留记录）">✏️</button>
             <!-- 🌟 删除按钮开放给所有歌曲 -->
             <button class="p-2 text-slate-400 hover:text-white hover:bg-red-500 rounded-lg transition-colors shadow-sm" onclick="event.stopPropagation(); window.deleteLibrarySong('${song.id}')" title="永久删除此歌">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -567,7 +569,8 @@
             if(doc.id === id) {
               const data = doc.data();
               document.getElementById('setlist-name').value = data.name;
-              currentSetlist = data.items.map(song => ({ ...song, uuid: Date.now().toString() + Math.random() }));
+              // 歌名以曲库为准（改过名的会跟上）
+              currentSetlist = data.items.map(song => ({ ...song, title: LIBRARY_DATA.find(s => s.id === song.id)?.title || song.title, uuid: Date.now().toString() + Math.random() }));
               window.renderSetlist();
             }
           });
@@ -732,6 +735,27 @@
       alert(`✅ 批量处理完成！\n新增: ${successCount} 首\n覆盖更新: ${updateCount} 首`);
     };
 
+
+    // --- 改歌名：存进曲库，每次都留记录（密码管理旁边的「改名记录」看得到、改得回去）---
+    window.renameLibrarySong = async function(id) {
+      const song = LIBRARY_DATA.find(s => s.id === id);
+      if (!song) return;
+      const v = prompt('✏️ 改歌名（风格、拍子、Key、页码也可以写在这）：', song.title);
+      if (v === null) return;
+      const newTitle = v.trim();
+      if (!newTitle || newTitle === song.title) return;
+      const oldTitle = song.title;
+      try {
+        await renameSong(db, { id, imageUrl: song.imageUrl, oldTitle, newTitle, where: '排单后台' });
+        song.title = newTitle;
+        currentSetlist.forEach(x => { if (x.id === id) x.title = newTitle; });
+        window.renderLibrary();
+        window.renderSetlist();
+      } catch (error) {
+        console.error('改名失败:', error);
+        alert('❌ 改名没存到，检查一下网络再改一次。\n' + (error.code || error.message));
+      }
+    };
 
     // --- 删除曲库歌曲逻辑 ---
     window.deleteLibrarySong = async function(id) {

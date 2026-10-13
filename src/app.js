@@ -1,6 +1,7 @@
 // 1. 引入新增了 updateDoc、onSnapshot、setDoc(改名功能要用)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { freshTitles, queueRename, flushRenames, applyPending } from "./rename.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -133,6 +134,8 @@ resizeCanvas();
 
   await loadSetlistOptions();
   loadLocalPlaylist();
+  flushRenames(db).then(() => refreshLocalTitles());
+  window.addEventListener('online', () => flushRenames(db));
   // 从「这台弥撒」总览点「打开乐谱」：?setlist=1018 常年29主日 → 直接下载那份排单
   const want = new URLSearchParams(location.search).get('setlist');
   if (want && allSetlists.some(o => o.id === want)) {
@@ -145,7 +148,7 @@ resizeCanvas();
 
 // --- 新增：推送当前页码到 Firebase ---
 async function pushLiveSync() {
-  const selectedId = setlistSelect.value || localStorage.getItem('offline_playlist_name');
+  const selectedId = localStorage.getItem('offline_playlist_name') || setlistSelect.value;
   if (!selectedId) return;
   try {
     await updateDoc(doc(db, "setlists", selectedId), { 
@@ -242,11 +245,12 @@ async function syncSelectedSetlist() {
   btnSync.disabled = true;
 
   try {
+    await flushRenames(db);
     const docRef = doc(db, "setlists", selectedId);
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-      PLAYLIST = docSnap.data().items;
+      PLAYLIST = applyPending(await freshTitles(db, docSnap.data().items || []));
       
       localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
       localStorage.setItem('offline_playlist_name', selectedId);
@@ -294,6 +298,18 @@ async function syncSelectedSetlist() {
     btnSync.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg> Sync`;
     btnSync.disabled = false;
   }
+}
+
+// 本地存着的排单：歌名跟曲库对一下（别的手机改过名，这里也跟上）
+async function refreshLocalTitles() {
+  if (!PLAYLIST?.length) return;
+  try {
+    const next = applyPending(await freshTitles(db, PLAYLIST));
+    if (next.every((x, i) => x.title === PLAYLIST[i].title)) return;
+    PLAYLIST = next;
+    localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
+    loadSong(currentIndex);
+  } catch (err) { console.error('对歌名失败', err); }
 }
 
 function loadLocalPlaylist( ) {
@@ -417,21 +433,14 @@ async function renameCurrentSong() {
   // 更新离线缓存，就算不联网/直接refresh，改的名字也不会丢
   localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
 
-  const selectedId = setlistSelect.value || localStorage.getItem('offline_playlist_name');
-
-  try {
-    // 1) 写回「当前这份排单」，下次任何人打开这份排单都会看到新名字
-    if (selectedId) {
-      await updateDoc(doc(db, "setlists", selectedId), { items: PLAYLIST });
-    }
-    // 2) 写回「曲库」母本（用同一个 id 覆盖），以后这首歌被加进任何新排单，用的都是最新名字
-    await setDoc(doc(db, "custom_songs", song.id), {
-      id: song.id, title: song.title, imageUrl: song.imageUrl
-    }, { merge: true });
-  } catch (error) {
-    console.error('改名同步失败:', error);
-    alert(`⚠️ 改名已经在这台设备生效，但同步到云端失败，请检查网络后重新改一次。\n(${oldTitle} → ${song.title})`);
-  }
+  // 先记在这部手机「还没送出去」，送成功才拿掉——没网络、按 Sync、关掉 app 都不会丢
+  // 只改手上这份排单里的这一首（不是下拉框选着的那份，也不会把整份排单盖回去）
+  queueRename({
+    id: song.id, imageUrl: song.imageUrl, oldTitle, newTitle: trimmed,
+    where: '乐谱指挥模式', setlistId: localStorage.getItem('offline_playlist_name') || '',
+  });
+  const left = await flushRenames(db);
+  if (left) alert(`⚠️ 这部手机已经改好了，但还没送到云端（网络不好）。\n有网络时会自动补送，不用重改。\n(${oldTitle} → ${song.title})`);
 }
 
 

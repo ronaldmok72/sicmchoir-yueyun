@@ -29,8 +29,11 @@ let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 
 async function load() {
-  const [ma, du, se, mb] = await Promise.all(['masses', 'duties', 'seatings', 'members'].map(c => getDocs(collection(db, c))));
+  const [ma, du, se, mb, cs] = await Promise.all(['masses', 'duties', 'seatings', 'members', 'custom_songs'].map(c => getDocs(collection(db, c))));
   masses = Object.fromEntries(ma.docs.map(d => [d.data().date || d.id, { id: d.id, ...d.data() }]));
+  // 歌名以曲库为准（改过名的歌显示新名字）
+  const title = Object.fromEntries(cs.docs.map(d => [d.id, d.data().title]));
+  Object.values(masses).forEach(m => (m.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   duties = Object.fromEntries(du.docs.map(d => [d.id, d.data()]));
   seatings = Object.fromEntries(se.docs.map(d => [d.id, d.data()]));
   members = Object.fromEntries(mb.docs.map(d => d.data()).filter(m => m.active !== false).map(m => [m.name.toLowerCase(), m]));

@@ -483,7 +483,8 @@ async function loadMasses() {
   getDocs(collection(db, 'duties')).then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
   const snap = await getDocs(collection(db, MASSES));
   masses = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date));
-  masses.forEach(m => { m.slots = normalizeSlots(m.slots); });
+  // 歌名以曲库为准：改过名的歌，旧弥撒里也显示新名字
+  masses.forEach(m => { m.slots = normalizeSlots(m.slots); m.slots.forEach(sl => sl.songs.forEach(x => { const t = songById(x.id)?.title; if (t) x.title = t; })); });
   const seen = new Set(LIBRARY_DATA.map(x => x.id));
   EXTRA = [];
   masses.forEach(m => m.slots.forEach(sl => sl.songs.forEach(x => {
