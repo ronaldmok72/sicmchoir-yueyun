@@ -219,6 +219,9 @@ function renderSeats(isStaff) {
     if (capeOf(me)) where += `　·　披肩 <b>#${capeOf(me)}</b>`;
   }
   const withCape = seated.concat(stage.map(p => p.n)).filter(capeOf);
+  // 这一场来一起唱的 guest（慕道班、主日学…）：座位下面写他是哪里来的
+  const guestGroup = n => (s.guests || []).find(g => g.name === n)?.group || '';
+  const guests = seated.filter(guestGroup);
   $('seats').innerHTML = card('🪑 座位', editLink(isStaff, 'seating.html')) + `
     <div class="flex flex-wrap items-center gap-2 mb-3 text-sm">
       <select id="me" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white text-sm">
@@ -233,10 +236,11 @@ function renderSeats(isStaff) {
         <div class="flex gap-1">
           <div class="w-4 shrink-0 text-[11px] text-slate-400 flex items-center justify-center">${r + 1}</div>
           ${row.map(n => `<div class="flex-1 min-w-0 h-11 rounded-lg border text-center px-0.5 flex flex-col justify-center ${!n ? 'border-dashed border-slate-100' : n.toLowerCase() === meKey ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200'}">
-            ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block text-[10px] leading-tight ${n.toLowerCase() === meKey ? 'text-indigo-100' : 'text-slate-400'}">${capeOf(n) ? `#${capeOf(n)}` : ''}</span>` : ''}
+            ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block truncate text-[10px] leading-tight ${n.toLowerCase() === meKey ? 'text-indigo-100' : 'text-slate-400'}">${capeOf(n) ? `#${capeOf(n)}` : esc(guestGroup(n))}</span>` : ''}
           </div>`).join('')}
         </div>`).join('')}
     </div>
+    ${guests.length ? `<div class="text-xs text-violet-700 mt-2">🙋 Guest：${guests.map(n => `${esc(n)}（${esc(guestGroup(n))}）`).join('、')}</div>` : ''}
     ${stage.length ? `<div class="text-xs text-slate-500 mt-2">台前：${stage.map(p => `${p.role} ${esc(p.n)}`).join('　')}</div>` : ''}
     ${isStaff ? `<div class="text-xs text-slate-500 mt-1">要带 <b>${withCape.length}</b> 件披肩${(s.absent || []).length ? `　·　没来：${(s.absent || []).map(esc).join('、')}` : ''}</div>` : ''}`;
   $('me').addEventListener('change', e => {

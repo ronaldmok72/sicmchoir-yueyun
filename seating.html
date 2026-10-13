@@ -85,6 +85,20 @@
       <div class="text-xs text-slate-400 mt-1.5">点一个人，再点座位就放进去。点两个座位会对调。电脑可以直接拖。</div>
     </section>
 
+    <!-- Guest：慕道班、主日学、天使团、公青/专青… -->
+    <section class="bg-white rounded-2xl border border-slate-200 p-3 mb-3 text-sm space-y-2">
+      <div class="font-semibold">🙋 Guest <span class="font-normal text-xs text-slate-400">　不是团员、这一场来一起唱的人（只算这一场）</span></div>
+      <form id="guest-form" class="flex flex-wrap gap-2">
+        <input id="guest-name" placeholder="名字（几个人用 、 隔开）" class="flex-1 min-w-[10rem] border border-slate-300 rounded-lg px-2.5 py-1.5">
+        <select id="guest-group" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white"></select>
+        <select id="guest-gender" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white">
+          <option value="">男女？</option><option value="F">女声</option><option value="M">男声</option>
+        </select>
+        <button class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold">＋ 加</button>
+      </form>
+      <div id="guest-list" class="flex flex-wrap gap-1.5"></div>
+    </section>
+
     <section id="absent-box" class="hidden mb-3">
       <div class="text-xs font-semibold text-slate-500 mb-1.5">今天没来（点一下放回来）</div>
       <div id="absent" class="flex flex-wrap gap-1.5"></div>
