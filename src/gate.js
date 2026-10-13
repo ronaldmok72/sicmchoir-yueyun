@@ -5,12 +5,13 @@
   // 每一区 = 一个（或几个）页面
   const AREAS = [
     { key: 'conduct', label: '乐谱指挥模式', sub: '翻页同步给团员、改歌名' },
-    { key: 'mass', label: '弥撒排歌', sub: 'mass.html' },
-    { key: 'duties', label: '职务表', sub: 'duties.html' },
-    { key: 'seating', label: '座位表', sub: 'seating.html' },
-    { key: 'members', label: '团员名单', sub: 'members.html' },
+    { key: 'mass', label: '弥撒排歌', sub: '按位置选歌、保存就更新乐谱' },
+    { key: 'duties', label: '职务表', sub: '每场谁指挥、答唱咏、弹琴' },
+    { key: 'seating', label: '座位表', sub: '谁坐哪里、拿哪件披肩' },
+    { key: 'members', label: '团员名单', sub: '声部、披肩号码、会做的职务' },
+    { key: 'attendance', label: '点名 / 出席率', sub: '每次点名、3 个月出席够不够' },
     { key: 'admin', label: '排单后台', sub: '曲库、改图、排单历史' },
-    { key: 'quiz', label: '测验结果', sub: 'quiz-admin.html' },
+    { key: 'quiz', label: '测验结果', sub: '全团测验成绩' },
   ];
   const ALL = AREAS.map(a => a.key).concat('access');   // access = 密码管理，只有最高权限
   const KEY = 'sicAccess';                               // 这部手机输过哪些密码：[{ h: 打乱后的密码, areas }]
