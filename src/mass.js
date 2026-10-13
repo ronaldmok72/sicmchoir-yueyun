@@ -181,7 +181,8 @@ function renderSlots() {
       <div class="flex items-center gap-1.5 py-1 group">
         ${s.missing
           ? `<span class="flex-1 min-w-0 truncate text-sm text-amber-600" title="曲库里还没有这首的谱：先到排单后台上传，再回来按 ＋ 选歌换掉它">⚠ 还没有谱：${esc(s.title)}</span>`
-          : `<a href="${esc(s.imageUrl)}" target="_blank" rel="noopener" class="flex-1 min-w-0 truncate text-sm text-slate-800 hover:text-indigo-600" title="看乐谱">${esc(clean(s.title))}</a>`}
+          : `<span class="flex-1 min-w-0"><a href="${esc(s.imageUrl)}" target="_blank" rel="noopener" class="block truncate text-sm text-slate-800 hover:text-indigo-600" title="看乐谱">${esc(clean(s.title))}</a>${s.note ? `<span class="block text-xs text-indigo-600">✎ ${esc(s.note)}</span>` : ''}</span>`}
+        ${s.missing ? '' : `<button data-act="note" data-si="${si}" data-k="${k}" class="px-1.5 ${s.note ? 'text-indigo-500' : 'text-slate-300'} hover:text-indigo-600" title="这一台唱哪几段／特别歌词">✎</button>`}
         ${slot.songs.length > 1 ? `<button data-act="up" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-slate-600 ${k === 0 ? 'invisible' : ''}" title="上移">↑</button>` : ''}
         <button data-act="rm" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-red-500" title="拿掉">✕</button>
       </div>`).join('');
@@ -203,6 +204,12 @@ $('slots').addEventListener('click', e => {
   const slot = M.slots[si];
   if (b.dataset.act === 'add') return openPicker(si);
   if (b.dataset.act === 'rm') slot.songs.splice(k, 1);
+  if (b.dataset.act === 'note') {
+    const x = slot.songs[k];
+    const v = prompt('这首歌这一台唱哪几段／特别歌词？（例如：唱 1、3 段；圣诞节歌词）\n空白 = 不用注明', x.note || '');
+    if (v === null) return;
+    if (v.trim()) x.note = v.trim(); else delete x.note;
+  }
   if (b.dataset.act === 'up' && k > 0) [slot.songs[k - 1], slot.songs[k]] = [slot.songs[k], slot.songs[k - 1]];
   if (b.dataset.act === 'del-slot') {
     if (slot.songs.length && !confirm(`删掉「${slot.label}」这个位置和里面的歌？`)) return;
@@ -243,6 +250,7 @@ $('btn-add-slot').addEventListener('click', () => {
 
 // ───────── 选歌 ─────────
 let pickSlot = null;
+let pickSug = null;   // 这次选歌的推荐（拿以前这个主日的备注用）
 function openPicker(si) {
   pickSlot = si;
   const slot = M.slots[si];
@@ -281,7 +289,7 @@ function renderPicker() {
   const onlyFit = $('picker-suggest').checked && !q;
   const used = usedCount(slot.key);
   // 推荐：以前这个主日唱过的、这个季节常唱的；前后几个礼拜已经排了的会提醒
-  const sug = M.date ? suggestFor(M.date, M.title, slot.key, masses.filter(m => m.id !== M.id), LIBRARY_DATA) : null;
+  const sug = pickSug = M.date ? suggestFor(M.date, M.title, slot.key, masses.filter(m => m.id !== M.id), LIBRARY_DATA) : null;
   const recent = sug && PROPER.includes(slot.key) && slot.key !== 'psalm' ? sug.recent : {};
   const inSlot = new Set(slot.songs.map(x => x.id));
   const when = d => d === 0 ? '' : d < 0 ? `${Math.round(-d / 7) || 1} 周前刚唱过` : `${Math.round(d / 7) || 1} 周后已经排了`;
@@ -315,7 +323,9 @@ $('picker-list').addEventListener('click', e => {
   if (!b || pickSlot === null) return;
   const s = allSongs().find(x => x.id === b.dataset.id);
   if (!s) return;
-  M.slots[pickSlot].songs.push({ id: s.id, title: s.title, imageUrl: s.imageUrl });
+  // 以前这个主日唱这首时有注明唱哪几段，就照抄过来
+  const note = pickSug?.sameDay.find(e => e.song.id === s.id)?.song.note;
+  M.slots[pickSlot].songs.push({ id: s.id, title: s.title, imageUrl: s.imageUrl, ...(note ? { note } : {}) });
   M.manual = true;
   setDirty();
   renderSlots();
@@ -410,7 +420,7 @@ async function save() {
       date: M.date, title: M.title, note: M.note || '', setlistName: name,
       slots: M.slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => x.missing
         ? { id: null, title: x.title, imageUrl: '', missing: true }
-        : { id: x.id, title: (songById(x.id) || x).title, imageUrl: (songById(x.id) || x).imageUrl }) })),
+        : { id: x.id, title: (songById(x.id) || x).title, imageUrl: (songById(x.id) || x).imageUrl, ...(x.note ? { note: x.note } : {}) }) })),
       createdAt: M.createdAt || now, savedAt: now,
     };
     await setDoc(doc(db, MASSES, newId), data);
@@ -451,7 +461,7 @@ $('btn-copy').addEventListener('click', async () => {
   //（礼仪曲认不出是哪一套的，照旧写出来）
   const odd = s => ORDINARY.includes(s.key) && s.songs.some(x => !massSetOf(x.title));
   M.slots.filter(s => (PROPER.includes(s.key) || !TPL[s.key] || odd(s)) && s.songs.length).forEach(s => {
-    lines.push(`${s.label}：${s.songs.map(x => waTitle(x.title)).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
+    lines.push(`${s.label}：${s.songs.map(x => waTitle(x.title) + (x.note ? `（${x.note}）` : '')).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
   });
   if (M.note) lines.push('', M.note);
   // 职务表有排这一场：带上谁指挥、谁答唱咏…
@@ -497,7 +507,7 @@ function newMass() {
 // ───────── 一次排好后面几周（存成草稿，不会出现在乐谱 App）─────────
 const serialize = slots => slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => x.missing || !x.id
   ? { id: null, title: x.title, imageUrl: '', missing: true }
-  : { id: x.id, title: x.title, imageUrl: x.imageUrl || '' }) }));
+  : { id: x.id, title: x.title, imageUrl: x.imageUrl || '', ...(x.note ? { note: x.note } : {}) }) }));
 $('btn-bulk').addEventListener('click', async () => {
   const last = masses[0]?.date;
   const n = Number(prompt(`${last ? `已经排到 ${Number(last.slice(5, 7))}/${Number(last.slice(8))}（包括还没保存的草稿），从这之后` : ''}再往后自动排几个主日？`, '8'));
