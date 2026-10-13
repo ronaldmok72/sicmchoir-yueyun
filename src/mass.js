@@ -12,11 +12,13 @@ const SETLISTS = 'setlists';
 const SLOT_TEMPLATE = [
   { key: 'pre',         label: '弥撒前祷文',          hint: ['祷文'] },
   { key: 'entrance',    label: '进堂咏',              code: 'C' },
-  { key: 'kyrie',       label: '垂怜曲 & 光荣颂',     hint: ['垂怜', '光荣颂'] },
+  { key: 'kyrie',       label: '垂怜曲',              hint: ['垂怜'] },
+  { key: 'gloria',      label: '光荣颂',              hint: ['光荣颂'] },
   { key: 'psalm',       label: '答唱咏',              hint: ['圣咏'] },
   { key: 'alleluia',    label: '福音前欢呼',          hint: ['阿肋路亚', '福音前'] },
   { key: 'offertory',   label: '奉献咏',              code: 'D' },
-  { key: 'sanctus',     label: '圣圣圣 & 信德的奥迹', hint: ['圣圣圣', '欢呼词', '信德的奥迹'] },
+  { key: 'sanctus',     label: '圣圣圣',              hint: ['圣圣圣'] },
+  { key: 'mystery',     label: '信德的奥迹',          hint: ['信德的奥迹', '欢呼词'] },
   { key: 'pater',       label: '天主经',              hint: ['天主经'] },
   { key: 'doxology',    label: '天下万国',            hint: ['天下万国'] },
   { key: 'agnus',       label: '羔羊颂',              hint: ['羔羊'] },
@@ -27,10 +29,29 @@ const SLOT_TEMPLATE = [
   { key: 'post',        label: '弥撒后祷文',          hint: ['祷文'] },
 ];
 const TPL = Object.fromEntries(SLOT_TEMPLATE.map(s => [s.key, s]));
+// 两个位置常常印在同一张谱（例如「垂怜曲 A1 & 光荣颂 A8」）：后面那个位置写「跟上面同一张谱」
+const PAIR = { gloria: 'kyrie', mystery: 'sanctus' };
+const hasHint = (t, key) => TPL[key].hint.some(h => String(t || '').includes(h));
+
+// 以前存的弥撒「垂怜曲 & 光荣颂」「圣圣圣 & 信德的奥迹」是一个位置 → 拆成两个
+function normalizeSlots(slots) {
+  const out = [];
+  (slots || []).forEach(s => {
+    const sl = { ...s, label: TPL[s.key]?.label || s.label, songs: [...s.songs] };
+    out.push(sl);
+    const second = Object.keys(PAIR).find(k => PAIR[k] === s.key);
+    if (!second || (slots || []).some(x => x.key === second)) return;
+    // 只有后半段的谱（例如「光明弥撒 之 光荣颂 1」）搬过去
+    const move = sl.songs.filter(x => hasHint(x.title, second) && !hasHint(x.title, s.key));
+    sl.songs = sl.songs.filter(x => !move.includes(x));
+    out.push({ key: second, label: TPL[second].label, songs: move });
+  });
+  return out;
+}
 // 礼仪固定、每台都一样的部分：复制文字时不列出来
 const QUIET = new Set(['pre', 'post', 'pater', 'doxology']);
 // 礼仪曲（一整套）：复制文字时合成一行「弥撒曲：…」
-const ORDINARY = ['kyrie', 'alleluia', 'sanctus', 'agnus'];
+const ORDINARY = ['kyrie', 'gloria', 'alleluia', 'sanctus', 'mystery', 'agnus'];
 const MASS_SETS = [
   [/常年期/, '常年期'], [/四旬期/, '四旬期'], [/将临期/, '将临期'], [/圣诞期/, '圣诞期'], [/复活期/, '复活期'],
   [/光明弥撒/, '光明弥撒曲'], [/青年(版)?弥撒/, '青年弥撒曲'], [/生命树/, '在生命树下弥撒曲'],
@@ -154,6 +175,12 @@ function addTool(box, label, fn) {
   box.appendChild(b);
 }
 
+// 这个位置空着，但上一个配对位置的谱已经包含它 → 回传那个位置的名称
+function sharedWith(si) {
+  const slot = M.slots[si];
+  const first = PAIR[slot.key] && M.slots.find(s => s.key === PAIR[slot.key]);
+  return first && first.songs.some(x => hasHint(x.title, slot.key)) ? first.label : null;
+}
 function renderSlots() {
   const box = $('slots');
   box.innerHTML = '';
@@ -171,7 +198,7 @@ function renderSlots() {
     el.innerHTML = `
       <div class="flex items-center gap-2">
         <div class="text-xs font-semibold text-slate-500 w-28 shrink-0">${esc(slot.label)}</div>
-        <div class="flex-1 min-w-0">${songs || '<span class="text-sm text-slate-300">—</span>'}</div>
+        <div class="flex-1 min-w-0">${songs || (sharedWith(si) ? `<span class="text-sm text-slate-400">✓ 跟上面「${esc(sharedWith(si))}」同一张谱</span>` : '<span class="text-sm text-slate-300">—</span>')}</div>
         <button data-act="add" data-si="${si}" class="shrink-0 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-xs">＋ 选歌</button>
         ${TPL[slot.key] ? '' : `<button data-act="del-slot" data-si="${si}" class="shrink-0 px-1 text-xs text-slate-300 hover:text-red-500" title="删掉这个位置">删</button>`}
       </div>`;
@@ -340,7 +367,7 @@ function assignToSlots(items) {
   const slots = SLOT_TEMPLATE.map(s => ({ key: s.key, label: s.label, songs: [] }));
   const S = Object.fromEntries(slots.map(s => [s.key, s]));
   const order = SLOT_TEMPLATE.map(s => s.key);
-  const hintOrder = ['psalm', 'kyrie', 'alleluia', 'sanctus', 'pater', 'doxology', 'agnus', 'welcome'];
+  const hintOrder = ['psalm', 'kyrie', 'gloria', 'alleluia', 'sanctus', 'mystery', 'pater', 'doxology', 'agnus', 'welcome'];
   let last = -1;
   const put = (key, it) => { S[key].songs.push({ id: it.id, title: it.title, imageUrl: it.imageUrl }); last = Math.max(last, order.indexOf(key)); };
   items.forEach(it => {
@@ -372,6 +399,7 @@ async function save() {
   let missing = 0;
   M.slots.forEach(s => s.songs.forEach(x => {
     if (x.missing) { missing++; return; }   // 还没有谱的，乐谱里先跳过
+    if (items.some(i => i.id === x.id && PAIR[s.key])) return;   // 同一张谱放了两个位置：乐谱只出现一次
     const lib = songById(x.id) || x;   // 用曲库最新的歌名和图片
     items.push({ id: x.id, order: items.length + 1, title: lib.title, imageUrl: lib.imageUrl });
   }));
@@ -455,6 +483,7 @@ async function loadMasses() {
   getDocs(collection(db, 'duties')).then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
   const snap = await getDocs(collection(db, MASSES));
   masses = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date));
+  masses.forEach(m => { m.slots = normalizeSlots(m.slots); });
   const seen = new Set(LIBRARY_DATA.map(x => x.id));
   EXTRA = [];
   masses.forEach(m => m.slots.forEach(sl => sl.songs.forEach(x => {
