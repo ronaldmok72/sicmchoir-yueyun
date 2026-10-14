@@ -6,6 +6,7 @@ import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
 import { loadNotices, noticeHtml } from "./notices-common.js";
+import { loadSpecials, timeText, findMember } from "./weddings-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,6 +27,8 @@ const LABEL = { entrance: '进堂咏', psalm: '答唱咏', offertory: '奉献咏
 
 let masses = {}, duties = {}, seatings = {}, members = {};
 let notices = [], songTitles = {};
+let specials = {};   // 婚礼弥撒 { 日期: [几台] }
+let memberList = [];
 let date = null;
 let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
@@ -33,6 +36,7 @@ try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 async function load() {
   const [ma, du, se, mb, cs] = await Promise.all(['masses', 'duties', 'seatings', 'members', 'custom_songs'].map(c => getDocs(collection(db, c))));
   notices = (await loadNotices(db).catch(() => ({ active: [] }))).active;
+  specials = await loadSpecials(db).catch(() => ({}));
   masses = Object.fromEntries(ma.docs.map(d => [d.data().date || d.id, { id: d.id, ...d.data() }]));
   // 歌名以曲库为准（改过名的歌显示新名字）
   const title = songTitles = Object.fromEntries(cs.docs.map(d => [d.id, d.data().title]));
@@ -40,6 +44,8 @@ async function load() {
   duties = Object.fromEntries(du.docs.map(d => [d.id, d.data()]));
   seatings = Object.fromEntries(se.docs.map(d => [d.id, d.data()]));
   members = Object.fromEntries(mb.docs.map(d => d.data()).filter(m => m.active !== false).map(m => [m.name.toLowerCase(), m]));
+  memberList = Object.values(members);
+  Object.values(specials).flat().forEach(w => (w.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   const list = dates();
   const want = new URLSearchParams(location.search).get('d');
   date = list.includes(want) ? want : (list.find(d => d >= TODAY) || list.at(-1));
@@ -51,7 +57,7 @@ async function load() {
 // 可以看的日期：最近过去的一个主日 + 接下来有排东西的 + 接下来 8 个主日
 function dates() {
   const set = new Set();
-  [masses, duties, seatings].forEach(o => Object.keys(o).filter(d => d >= TODAY).forEach(d => set.add(d)));
+  [masses, duties, seatings, specials].forEach(o => Object.keys(o).filter(d => d >= TODAY).forEach(d => set.add(d)));
   const s = new Date(TODAY + 'T12:00');
   s.setDate(s.getDate() + (7 - s.getDay()) % 7);
   for (let i = 0; i < 8; i++, s.setDate(s.getDate() + 7)) set.add(iso(s));
@@ -63,7 +69,9 @@ function dates() {
   const far = new Date(TODAY + 'T12:00'); far.setDate(far.getDate() + 92);
   return [...set].filter(d => d <= iso(far) || d === want).sort();
 }
-const titleOf = d => masses[d]?.title || duties[d]?.title || litDay(d).name;
+// 只有婚礼弥撒的那天（星期六）：不算主日，不用排座位、职务表
+const onlySpecial = d => !!specials[d]?.length && !masses[d] && !duties[d] && !seatings[d];
+const titleOf = d => onlySpecial(d) ? specials[d].map(w => `💒 ${timeText(w.time)}`).join(' ') : masses[d]?.title || duties[d]?.title || litDay(d).name;
 
 // ───────── 还要处理的（指挥才看到）─────────
 // level: red = 一定要处理；wait = 还没做完
@@ -103,6 +111,10 @@ function render() {
   document.querySelectorAll('#staff-links a').forEach(a => { a.href = `${a.getAttribute('href').split('?')[0]}?d=${date}`; });
   renderDates(isStaff);
   renderHead();
+  renderSpecials(isStaff);
+  const only = onlySpecial(date);
+  ['todo', 'songs', 'people', 'seats'].forEach(id => $(id).classList.toggle('hidden', only));
+  if (only) { renderNotices(isStaff); return; }
   renderTodo(isStaff);
   renderSongs(isStaff);
   renderPeople(isStaff);
@@ -115,7 +127,7 @@ function renderDates(isStaff) {
   $('dates').innerHTML = dates().map(d => {
     const on = d === date;
     return `<button data-date="${d}" class="shrink-0 text-left rounded-xl border px-3 py-2 ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 hover:border-indigo-300'} ${d < TODAY && !on ? 'opacity-60' : ''}">
-      <div class="text-sm font-semibold whitespace-nowrap">${md(d)} <span class="font-normal text-xs ${on ? 'text-indigo-100' : 'text-slate-400'}">星期${week(d)}</span>${isStaff && d >= TODAY ? ` <span class="text-xs">${dot[statusOf(d)]}</span>` : ''}</div>
+      <div class="text-sm font-semibold whitespace-nowrap">${md(d)} <span class="font-normal text-xs ${on ? 'text-indigo-100' : 'text-slate-400'}">星期${week(d)}</span>${specials[d] && !onlySpecial(d) ? ' 💒' : ''}${isStaff && d >= TODAY && !onlySpecial(d) ? ` <span class="text-xs">${dot[statusOf(d)]}</span>` : ''}</div>
       <div class="text-[11px] max-w-[9rem] truncate ${on ? 'text-indigo-100' : 'text-slate-500'}">${esc(titleOf(d))}</div>
     </button>`;
   }).join('');
@@ -134,8 +146,8 @@ function renderHead() {
   const notes = [masses[date]?.note, duties[date]?.note].filter(Boolean);
   $('head').innerHTML = `
     <div class="text-sm text-slate-500">${y} 年 ${mo} 月 ${dd} 日　星期${week(date)}${date === TODAY ? '　<span class="text-indigo-600 font-semibold">今天</span>' : ''}</div>
-    <div class="text-lg font-semibold mt-0.5">${esc(titleOf(date))}</div>
-    <div class="text-xs text-slate-400 mt-0.5">${lit.cycle}年</div>
+    <div class="text-lg font-semibold mt-0.5">${onlySpecial(date) ? `💒 婚礼弥撒${specials[date].length > 1 ? ` × ${specials[date].length} 台` : ''}` : esc(titleOf(date))}</div>
+    ${onlySpecial(date) ? '' : `<div class="text-xs text-slate-400 mt-0.5">${lit.cycle}年</div>`}
     ${notes.length ? `<div class="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">📌 ${notes.map(esc).join('<br>📌 ')}</div>` : ''}`;
 }
 
@@ -254,6 +266,39 @@ function renderSeats(isStaff) {
     try { me ? localStorage.setItem('sicMyName', me) : localStorage.removeItem('sicMyName'); } catch { /* 没关系 */ }
     renderSeats(staff());
   });
+}
+
+// 💒 婚礼弥撒：唱什么、谁做什么、谁来唱；登录了的人有份就标出来
+function renderSpecials(isStaff) {
+  const list = specials[date] || [];
+  const box = $('specials');
+  box.classList.toggle('hidden', !list.length);
+  const meM = me ? findMember(me, memberList) || { name: me } : null;
+  const isMe = n => meM && findMember(n, [meM]) === meM;
+  const song = x => `<a href="${esc(x.imageUrl)}" target="_blank" rel="noopener" class="text-slate-800 hover:text-indigo-600 underline decoration-slate-200 underline-offset-4" title="${esc(x.title)}">${esc(waTitle(x.title))}</a>`;
+  box.innerHTML = list.map(w => {
+    const roles = (w.roles || []).filter(r => r.name);
+    const mine = roles.filter(r => isMe(r.name)).map(r => r.role).concat((w.singers || []).some(isMe) ? ['唱'] : []);
+    return `<section class="bg-white rounded-2xl border border-rose-200 p-4">
+      ${card(`💒 ${esc(timeText(w.time))}　${esc(w.title)}`, isStaff ? `<a href="weddings.html?id=${encodeURIComponent(w.id)}" class="shrink-0 text-xs text-indigo-600 hover:underline">改 →</a>` : '')}
+      ${mine.length ? `<div class="mb-2 text-sm rounded-lg bg-rose-50 text-rose-800 px-3 py-2">🙋 你这台有份：<b>${esc(mine.join('、'))}</b></div>` : ''}
+      ${w.note ? `<div class="mb-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">📌 ${esc(w.note)}</div>` : ''}
+      <div class="divide-y divide-slate-100">
+        ${(w.slots || []).filter(s => s.songs?.length).map(s => `
+          <div class="flex gap-3 py-2 text-sm">
+            <div class="w-20 shrink-0 text-slate-500">${esc(s.label)}</div>
+            <div class="flex-1 min-w-0 space-y-0.5">${s.songs.map(x => `<div class="truncate">${song(x)}</div>`).join('')}</div>
+          </div>`).join('')}
+      </div>
+      ${w.setlistName ? `<a href="/?setlist=${encodeURIComponent(w.setlistName)}" class="mt-2 mb-3 block text-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 text-sm">🎼 打开乐谱（翻页看）</a>` : ''}
+      ${roles.length ? `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">${roles.map(r => `
+        <div class="rounded-lg px-2.5 py-2 ${isMe(r.name) ? 'bg-rose-100' : 'bg-slate-50'}">
+          <div class="text-[11px] text-slate-400">${esc(r.role)}</div>
+          <div class="text-sm truncate">${esc(r.name)}</div>
+        </div>`).join('')}</div>` : ''}
+      ${(w.singers || []).length ? `<div class="mt-3 text-sm"><span class="text-slate-500">🎤 来唱（${w.singers.length}）：</span>${w.singers.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : ''}
+    </section>`;
+  }).join('');
 }
 
 // 公告 + 要练的歌（还在显示的公告都放这里，不管选哪一天）
