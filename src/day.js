@@ -5,6 +5,7 @@ import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/
 import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
+import { loadNotices, noticeHtml } from "./notices-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -24,15 +25,17 @@ const MUST_ORD = ['kyrie', 'alleluia', 'sanctus', 'agnus'];
 const LABEL = { entrance: '进堂咏', psalm: '答唱咏', offertory: '奉献咏', communion: '领主咏', thanks: '谢主咏', recessional: '礼成咏', kyrie: '垂怜曲', alleluia: '福音前欢呼', sanctus: '圣圣圣', agnus: '羔羊颂' };
 
 let masses = {}, duties = {}, seatings = {}, members = {};
+let notices = [], songTitles = {};
 let date = null;
 let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 
 async function load() {
   const [ma, du, se, mb, cs] = await Promise.all(['masses', 'duties', 'seatings', 'members', 'custom_songs'].map(c => getDocs(collection(db, c))));
+  notices = (await loadNotices(db).catch(() => ({ active: [] }))).active;
   masses = Object.fromEntries(ma.docs.map(d => [d.data().date || d.id, { id: d.id, ...d.data() }]));
   // 歌名以曲库为准（改过名的歌显示新名字）
-  const title = Object.fromEntries(cs.docs.map(d => [d.id, d.data().title]));
+  const title = songTitles = Object.fromEntries(cs.docs.map(d => [d.id, d.data().title]));
   Object.values(masses).forEach(m => (m.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   duties = Object.fromEntries(du.docs.map(d => [d.id, d.data()]));
   seatings = Object.fromEntries(se.docs.map(d => [d.id, d.data()]));
@@ -104,6 +107,7 @@ function render() {
   renderSongs(isStaff);
   renderPeople(isStaff);
   renderSeats(isStaff);
+  renderNotices(isStaff);
 }
 
 function renderDates(isStaff) {
@@ -248,6 +252,16 @@ function renderSeats(isStaff) {
     try { me ? localStorage.setItem('sicMyName', me) : localStorage.removeItem('sicMyName'); } catch { /* 没关系 */ }
     renderSeats(staff());
   });
+}
+
+// 公告 + 要练的歌（还在显示的公告都放这里，不管选哪一天）
+function renderNotices(isStaff) {
+  const box = $('notices');
+  box.classList.toggle('hidden', !notices.length && !isStaff);
+  box.innerHTML = card('📢 公告 · 要练的歌', `<a href="notices.html" class="text-xs text-indigo-600 hover:underline">${isStaff ? '发 / 改 →' : '全部 →'}</a>`) + (notices.length
+    ? `<div class="divide-y divide-slate-100">${notices.map(n => `<div class="py-3 first:pt-0 last:pb-0">${noticeHtml(n, { titles: songTitles, compact: true })}</div>`).join('')}</div>
+       ${notices.some(n => (n.songs || []).length) ? '<a href="songs.html?f=practice" class="mt-3 block text-center rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold py-2.5 text-sm">📚 在歌单目录看全部要练的歌</a>' : ''}`
+    : '<div class="text-sm text-slate-400">现在没有公告</div>');
 }
 
 $('btn-staff').addEventListener('click', async () => { if (await window.sicStaff?.unlock()) render(); });

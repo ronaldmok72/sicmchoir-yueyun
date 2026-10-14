@@ -6,6 +6,7 @@ import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { clean, waTitle } from "./mass-common.js";
+import { loadNotices } from "./notices-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -16,12 +17,14 @@ const md = date => `${Number(date.slice(8))}/${Number(date.slice(5, 7))}`;
 const norm = s => String(s || '').toLowerCase().replace(/[\s_\-（）()，,。.、:：'’]+/g, '');
 
 let songs = [];          // [{id, title, imageUrl, name, letter, next:[{date,label}], past:[date]}]
-let filter = 'all';
+let filter = new URLSearchParams(location.search).get('f') || 'all';   // songs.html?f=practice = 先看公告要练的
 let shown = [];          // 现在列出来的（看谱时上一首/下一首照这个顺序）
 let open = null;
 
 async function load() {
-  const [, ma] = await Promise.all([loadLibrary(db), getDocs(collection(db, 'masses'))]);
+  const [, ma, no] = await Promise.all([loadLibrary(db), getDocs(collection(db, 'masses')), loadNotices(db).catch(() => ({ active: [] }))]);
+  const practice = {};   // 歌 id → 哪几个公告要练
+  no.active.forEach(n => (n.songs || []).forEach(x => (practice[x.id] ||= []).push(n.title)));
   const use = {};        // 歌 id → 哪几台用到
   ma.docs.forEach(d => {
     const m = d.data(), date = m.date || d.id;
@@ -40,6 +43,7 @@ async function load() {
       key: norm(s.title),
       next: u.filter(x => x.date >= TODAY),
       past: [...new Set(u.filter(x => x.date < TODAY).map(x => x.date))],
+      practice: practice[s.id] || [],
     };
   }).sort((a, b) => a.letter === b.letter ? clean(a.title).localeCompare(clean(b.title), 'zh') : ORDER(a.letter) - ORDER(b.letter));
   $('loading').classList.add('hidden');
@@ -53,18 +57,20 @@ const GROUP = { '咏': '圣咏 · 答唱咏', '#': '其他' };
 
 const FILTERS = [
   ['all', '全部', () => true],
+  ['practice', '📢 公告要练的', s => s.practice.length],
   ['next', '📅 接下来要唱', s => s.next.length],
   ['sung', '🔁 唱过的', s => s.past.length],
 ];
 
 function render() {
   const q = norm($('q').value);
+  if (!FILTERS.some(x => x[0] === filter)) filter = 'all';
   const f = FILTERS.find(x => x[0] === filter)[2];
   shown = songs.filter(s => f(s) && (!q || s.key.includes(q)));
   if (filter === 'next') shown.sort((a, b) => a.next[0].date.localeCompare(b.next[0].date));
   if (filter === 'sung') shown.sort((a, b) => b.past.length - a.past.length || b.past.at(-1).localeCompare(a.past.at(-1)));
 
-  $('filters').innerHTML = FILTERS.map(([k, label, fn]) => `
+  $('filters').innerHTML = FILTERS.filter(([k, , fn]) => k !== 'practice' || songs.some(fn)).map(([k, label, fn]) => `
     <button data-f="${k}" class="shrink-0 px-3 py-1.5 rounded-full border ${k === filter ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}">${label} <span class="${k === filter ? 'text-indigo-100' : 'text-slate-400'}">${songs.filter(fn).length}</span></button>`).join('');
 
   const groups = filter === 'all' ? [...new Set(shown.map(s => s.letter))] : [];
@@ -73,7 +79,9 @@ function render() {
 
   $('empty').classList.toggle('hidden', shown.length > 0);
   const row = s => {
-    const tag = s.next.length
+    const tag = s.practice.length
+      ? `<span class="text-amber-600">📢 ${esc(s.practice.join('、'))}</span>`
+      : s.next.length
       ? `<span class="text-indigo-600">📅 ${md(s.next[0].date)} ${esc(s.next[0].label)}</span>`
       : s.past.length ? `<span class="text-slate-400">唱过 ${s.past.length} 次 · 上次 ${md(s.past.at(-1))}</span>` : '';
     const extra = clean(s.title) !== s.name ? clean(s.title).replace(s.name, '').replace(/^[\s\-_]+/, '') : '';
@@ -118,6 +126,7 @@ function show(id, push = true) {
   $('v-body').scrollTo(0, 0);
   setZoom(false);
   const info = [
+    s.practice.length ? `📢 要练：${s.practice.join('、')}` : '',
     s.next.length ? `接下来：${s.next.slice(0, 3).map(x => `${md(x.date)} ${x.label}`).join('、')}${s.next.length > 3 ? ` 等 ${s.next.length} 台` : ''}` : '',
     s.past.length ? `唱过 ${s.past.length} 次，上次 ${md(s.past.at(-1))}` : '',
   ].filter(Boolean).join('　·　');

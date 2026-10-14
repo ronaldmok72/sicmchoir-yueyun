@@ -10,6 +10,7 @@
     { key: 'seating', label: '座位表', sub: '谁坐哪里、拿哪件披肩' },
     { key: 'members', label: '团员名单', sub: '声部、披肩号码、会做的职务' },
     { key: 'attendance', label: '点名 / 出席率', sub: '每次点名、3 个月出席够不够' },
+    { key: 'notice', label: '公告', sub: '发公告、写要练哪几首歌' },
     { key: 'admin', label: '排单后台', sub: '曲库、改图、排单历史' },
     { key: 'quiz', label: '测验结果', sub: '全团测验成绩' },
   ];

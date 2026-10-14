@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>公告 - 乐韵歌咏团</title>
+  <script src="src/gate.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
+  <main class="max-w-2xl mx-auto px-4 py-5 pb-24">
+
+    <header class="flex flex-wrap items-end justify-between gap-3 mb-4">
+      <div>
+        <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
+        <h1 class="text-xl font-semibold">公告</h1>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <a href="day.html" class="text-slate-500 hover:text-indigo-600">这台弥撒</a>
+        <a href="songs.html" class="text-slate-500 hover:text-indigo-600">歌单目录</a>
+        <a href="/" class="text-slate-500 hover:text-indigo-600">← 回乐谱</a>
+      </div>
+    </header>
+
+    <button id="btn-new" class="hidden w-full mb-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 text-sm">＋ 发公告</button>
+
+    <!-- 发公告 / 改公告 -->
+    <section id="form" class="hidden bg-white rounded-2xl border border-indigo-200 p-4 mb-3 text-sm space-y-3">
+      <div class="font-semibold" id="f-head">发公告</div>
+      <input id="f-title" placeholder="标题，例如：报佳音练歌" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+      <textarea id="f-body" rows="4" placeholder="内容：什么时候、在哪里、要准备什么…" class="w-full border border-slate-300 rounded-lg px-3 py-2"></textarea>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label class="flex items-center gap-2">活动日期 <input id="f-event" type="date" class="border border-slate-300 rounded-lg px-2 py-1.5"></label>
+        <label class="flex items-center gap-2">显示到 <input id="f-until" type="date" class="border border-slate-300 rounded-lg px-2 py-1.5"></label>
+      </div>
+      <div class="text-xs text-slate-400 -mt-1">活动日期可以空着。「显示到」那天过了，公告就收进「以前的公告」。</div>
+
+      <div>
+        <div class="font-medium mb-1.5">要练的歌</div>
+        <div id="f-songs" class="space-y-1.5 mb-2"></div>
+        <input id="f-q" placeholder="找歌名，点一下加进来…" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+        <div id="f-hits" class="mt-1 rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-56 overflow-y-auto hidden"></div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 pt-1">
+        <button id="f-save" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">保存</button>
+        <button id="f-cancel" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">取消</button>
+        <button id="f-del" class="hidden ml-auto px-3 py-2 rounded-lg text-red-500 hover:bg-red-50">删掉这个公告</button>
+      </div>
+    </section>
+
+    <div id="loading" class="text-sm text-slate-400 text-center py-10">读取中…</div>
+    <div id="list" class="space-y-3"></div>
+    <details id="past-box" class="hidden mt-6">
+      <summary class="text-sm text-slate-500 cursor-pointer select-none">以前的公告（<span id="past-n"></span>）</summary>
+      <div id="past" class="space-y-3 mt-3 opacity-80"></div>
+    </details>
+
+    <div class="text-center mt-8">
+      <button id="btn-staff" class="text-xs text-slate-400 hover:text-indigo-600">🔒 后台登入（发公告）</button>
+    </div>
+
+    <div id="status" class="fixed bottom-3 left-1/2 -translate-x-1/2 text-xs bg-slate-800 text-white rounded-full px-3 py-1.5 opacity-0 transition-opacity pointer-events-none"></div>
+  </main>
+
+  <script type="module" src="src/notices.js"></script>
+</body>
+</html>
