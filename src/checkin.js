@@ -61,7 +61,7 @@ async function run() {
   const early = kind === 'out' && e.end && hm(next.out) < e.end;
   if (kind === 'in') {
     show(late ? '⏰' : '✅', `${esc(who.name)}，签到好了`,
-      `${timeLine(next)}${late ? `<br><span class="text-amber-700">${ampm(e.start)} 开始，这次算迟到</span>` : ''}<br>回家前再扫一次，就是签退。`, late ? 'amber' : 'emerald');
+      `${timeLine(next)}${late ? `<br><span class="text-amber-700">${ampm(e.start)} 后才到，这次算迟到</span>` : ''}<br>回家前再扫一次，就是签退。`, late ? 'amber' : 'emerald');
   } else {
     show(early ? '⏰' : '👋', `${esc(who.name)}，签退好了`,
       `${timeLine(next)}${early ? `<br><span class="text-amber-700">${ampm(e.end)} 前走，这次算早退</span>` : '<br>辛苦了，路上小心 🙏'}`, early ? 'amber' : 'emerald');

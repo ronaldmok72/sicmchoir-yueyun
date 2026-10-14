@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>扫描签到 - 乐韵歌咏团</title>
+  <script src="src/gate.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+    #reader video { border-radius: 1rem; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-200 min-h-[100dvh] font-sans">
+  <main class="max-w-sm mx-auto px-4 py-6 text-center">
+    <div class="flex items-center justify-between mb-4 text-sm">
+      <a href="/" class="text-zinc-400 hover:text-white">← 回乐谱</a>
+      <span class="text-xs text-zinc-500 tracking-widest">SIC 乐韵歌咏团</span>
+    </div>
+    <h1 class="text-xl font-semibold text-white">📷 扫描签到</h1>
+    <div class="text-sm text-zinc-400 mt-1">对准现场屏幕上的 QR</div>
+    <div id="reader" class="mt-4 rounded-2xl overflow-hidden bg-black aspect-square"></div>
+    <div id="msg" class="mt-4 text-sm text-zinc-400 min-h-[2.5rem]"></div>
+    <button id="retry" class="hidden mt-2 w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 text-sm">再试一次</button>
+    <div class="mt-6 text-[11px] text-zinc-500 leading-relaxed">到了扫一次 = 签到，回家前再扫一次 = 签退。<br>第一次用会问可不可以开相机，请按「允许」。</div>
+  </main>
+  <script src="src/login.js"></script>
+  <script type="module" src="src/scan.js"></script>
+</body>
+</html>

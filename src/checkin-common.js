@@ -1,10 +1,11 @@
 // 现场 QR 签到：点名页开 QR，团员用手机扫 → checkin.html?e=点名id&k=时段.暗号
 // QR 每 30 秒换一次，暗号 = SHA-256(这次点名的 qr 密码 | 时段) 前 10 码；
 // 截图传给没来的人也没用（过 1–2 分钟就失效）
-// attendance/{id} 多了：qr（密码）、start / end（'20:00' / '22:00'，开始后才到 = 迟到，结束前走 = 早退）、
+// attendance/{id} 多了：qr（密码）、start / end（'20:30' / '22:00'：start 后才到 = 迟到，end 前走 = 早退）、
 // times: { 团员id: { in: ISO, out: ISO } }
 export const STEP = 30000;
-export const DEFAULT_TIME = { practice: ['20:00', '22:00'] };   // 星期四、六练歌 8pm–10pm
+// 星期四、六练歌 8pm–10.30pm，前后各留半小时：8.30pm 后才到算迟到、10pm 前走算早退
+export const DEFAULT_TIME = { practice: ['20:30', '22:00'] };
 
 export const slotNow = () => Math.floor(Date.now() / STEP);
 export async function tokenOf(secret, slot) {
