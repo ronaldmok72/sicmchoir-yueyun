@@ -1,5 +1,6 @@
-// 婚礼弥撒（以后丧礼等特别弥撒也放这里）：Firestore special_masses/{日期_时间}，例如 2026-10-17_0930
-// { date, time: '09:30', kind: 'wedding', title, note, setlistName,
+// 婚礼：跟主日弥撒一起在排歌页排，存 masses/{日期_时间}，例如 2026-10-17_0930
+// kind = 'rite' 婚配礼仪（其中一方不是教友）／'wedding' 婚姻弥撒（全套）
+// { date, time: '09:30', kind, title, note, setlistName,
 //   slots: [{ key, label, short, songs: [{ id, title, imageUrl }] }],
 //   roles: [{ role, name }], singers: [名字], createdAt, savedAt }
 // 一天可以有好几台（9.30am、11.30am、1.30pm），所以 id 带时间；排歌页、这台弥撒都用这里
@@ -32,11 +33,11 @@ export const setlistNameOf = w => {
   return `${mm || ''}${dd || ''} ${timeText(w.time)} ${w.title || '婚礼'}`.replace(/\s+/g, ' ').trim();
 };
 
-// { 日期: [这一天的几台，照时间排] }
+// { 日期: [这一天的几台婚礼，照时间排] }：婚礼现在跟主日弥撒一起存在 masses（有 kind 的就是婚礼）
 export async function loadSpecials(db) {
-  const snap = await getDocs(collection(db, SPECIAL));
+  const snap = await getDocs(collection(db, 'masses'));
   const by = {};
-  snap.docs.map(d => ({ id: d.id, ...d.data() })).forEach(w => (by[w.date] = by[w.date] || []).push(w));
+  snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(w => w.kind).forEach(w => (by[w.date] = by[w.date] || []).push(w));
   Object.values(by).forEach(l => l.sort((a, b) => (a.time || '').localeCompare(b.time || '')));
   return by;
 }

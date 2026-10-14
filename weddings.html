@@ -3,99 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>婚礼弥撒 - 乐韵歌咏团</title>
-  <script src="src/gate.js" data-require="mass"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body { -webkit-tap-highlight-color: transparent; }
-  </style>
+  <title>婚礼 - 乐韵歌咏团</title>
+  <!-- 婚礼已经并进「弥撒排歌」（种类选 💒）；旧链接转过去 -->
+  <script>
+    const id = new URLSearchParams(location.search).get('id');
+    location.replace('mass.html' + (id ? '?id=' + encodeURIComponent(id) : ''));
+  </script>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
-  <main class="max-w-2xl mx-auto px-4 py-5 pb-32">
-
-    <header class="flex flex-wrap items-end justify-between gap-3 mb-4">
-      <div>
-        <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
-        <h1 class="text-xl font-semibold">💒 婚礼弥撒</h1>
-      </div>
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <a href="day.html" data-day-link class="text-indigo-600 hover:text-indigo-500 font-medium">📅 总览</a>
-        <a href="mass.html" class="text-slate-500 hover:text-indigo-600">主日排歌</a>
-        <a href="/" class="text-slate-500 hover:text-indigo-600">← 回乐谱</a>
-      </div>
-    </header>
-
-    <!-- 选哪一台 -->
-    <section class="bg-white rounded-2xl border border-slate-200 p-4 mb-3 space-y-3 text-sm">
-      <div class="flex flex-wrap gap-2">
-        <select id="sel" class="flex-1 min-w-[12rem] border border-slate-300 rounded-lg px-3 py-2 bg-white"></select>
-        <button id="btn-new" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">＋ 新的一台</button>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <label class="block"><span class="text-xs text-slate-500">日期</span>
-          <input id="f-date" type="date" class="mt-0.5 w-full border border-slate-300 rounded-lg px-3 py-2"></label>
-        <label class="block"><span class="text-xs text-slate-500">时间</span>
-          <input id="f-time" type="time" step="900" class="mt-0.5 w-full border border-slate-300 rounded-lg px-3 py-2"></label>
-      </div>
-      <div id="time-quick" class="flex flex-wrap gap-1.5 -mt-1"></div>
-      <label class="block"><span class="text-xs text-slate-500">名称</span>
-        <input id="f-title" placeholder="例如：婚配礼仪~ Jason Tan & Yap Phui Khei" class="mt-0.5 w-full border border-slate-300 rounded-lg px-3 py-2"></label>
-      <label class="block"><span class="text-xs text-slate-500">备注（可以空着）</span>
-        <input id="f-note" placeholder="例如：8.45am 到，先在侧堂练一次" class="mt-0.5 w-full border border-slate-300 rounded-lg px-3 py-2"></label>
-      <div class="text-xs text-slate-400">乐谱排单名称：<span id="setlist-name" class="text-slate-600 font-medium"></span></div>
-    </section>
-
-    <!-- 唱的歌 -->
-    <section class="bg-white rounded-2xl border border-slate-200 p-4 mb-3 text-sm">
-      <h2 class="font-semibold mb-2">🎵 唱的歌</h2>
-      <div id="slots" class="divide-y divide-slate-100"></div>
-      <button id="btn-add-slot" class="mt-2 text-slate-500 hover:text-indigo-600">＋ 加一个位置（例如圣母歌、点烛）</button>
-    </section>
-
-    <!-- 职务 -->
-    <section class="bg-white rounded-2xl border border-slate-200 p-4 mb-3 text-sm">
-      <h2 class="font-semibold mb-2">👥 谁做什么</h2>
-      <div id="roles" class="space-y-1.5"></div>
-      <button id="btn-add-role" class="mt-2 text-slate-500 hover:text-indigo-600">＋ 加一个职务</button>
-      <div class="text-xs text-slate-400 mt-1">不是团员的（例如投影的）也可以直接打名字。</div>
-    </section>
-
-    <!-- 歌咏团 -->
-    <section class="bg-white rounded-2xl border border-slate-200 p-4 mb-3 text-sm">
-      <h2 class="font-semibold mb-2">🎤 来唱的团员 <span id="singer-n" class="text-slate-400 font-normal"></span></h2>
-      <div id="singers" class="flex flex-wrap gap-1.5 mb-2"></div>
-      <form id="singer-form" class="flex gap-2">
-        <input id="singer-q" list="names" placeholder="打名字，按 Enter 加进来" class="flex-1 border border-slate-300 rounded-lg px-3 py-2">
-        <button class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">加</button>
-      </form>
-    </section>
-
-    <datalist id="names"></datalist>
-    <button id="btn-del" class="hidden text-xs text-red-500 hover:underline">删掉这一台</button>
-
-    <div class="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200">
-      <div class="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
-        <span id="status" class="text-xs text-slate-500 flex-1 min-w-0 truncate"></span>
-        <button id="btn-copy" class="px-3 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm whitespace-nowrap">复制 WA 文字</button>
-        <button id="btn-save" class="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold whitespace-nowrap">保存并更新乐谱</button>
-      </div>
-    </div>
-  </main>
-
-  <!-- 选歌 -->
-  <div id="picker" class="hidden fixed inset-0 z-50 bg-slate-900/40 flex items-end sm:items-center justify-center">
-    <div class="bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[85dvh] flex flex-col">
-      <div class="p-4 border-b border-slate-100 space-y-2">
-        <div class="flex items-center justify-between">
-          <h2 id="picker-title" class="font-semibold"></h2>
-          <button id="picker-close" class="text-slate-400 hover:text-slate-700 px-2 text-lg">✕</button>
-        </div>
-        <input id="picker-q" type="search" placeholder="搜歌名、编号（例如 E1）" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-      </div>
-      <div id="picker-list" class="overflow-y-auto p-2 text-sm"></div>
-    </div>
-  </div>
-
-  <script type="module" src="src/weddings.js"></script>
-</body>
+<body><a href="mass.html">去弥撒排歌</a></body>
 </html>

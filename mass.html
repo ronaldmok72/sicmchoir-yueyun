@@ -20,7 +20,6 @@
       </div>
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         <a href="day.html" data-day-link class="text-indigo-600 hover:text-indigo-500 font-medium">📅 总览</a>
-        <a href="weddings.html" class="text-slate-500 hover:text-indigo-600">💒 婚礼</a>
         <a href="duties.html" class="text-slate-500 hover:text-indigo-600">职务表</a>
         <a href="seating.html" class="text-slate-500 hover:text-indigo-600">座位表</a>
         <a href="members.html" class="text-slate-500 hover:text-indigo-600">团员名单</a>
@@ -37,8 +36,19 @@
         <button id="btn-bulk" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm" title="照以前同一个主日的歌单，一次排好后面几周（草稿）">⚡ 自动排后面几周</button>
       </div>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center text-sm">
+        <label for="mass-kind" class="text-slate-500">种类</label>
+        <select id="mass-kind" class="border border-slate-300 rounded-lg px-3 py-2 w-full sm:w-72 bg-white">
+          <option value="">主日 / 平日弥撒</option>
+          <option value="rite">💒 婚配礼仪（其中一方不是教友）</option>
+          <option value="wedding">💒 婚姻弥撒（全套弥撒）</option>
+        </select>
         <label for="mass-date" class="text-slate-500">日期</label>
         <input id="mass-date" type="date" class="border border-slate-300 rounded-lg px-3 py-2 w-full sm:w-48">
+        <label for="mass-time" class="wed-only hidden text-slate-500">时间</label>
+        <div class="wed-only hidden flex flex-wrap items-center gap-1.5">
+          <input id="mass-time" type="time" step="900" class="border border-slate-300 rounded-lg px-3 py-2">
+          <span id="time-quick" class="flex flex-wrap gap-1.5"></span>
+        </div>
         <label for="mass-title" class="text-slate-500">礼仪</label>
         <input id="mass-title" type="text" placeholder="例如：常年29主日" class="border border-slate-300 rounded-lg px-3 py-2 w-full">
         <label for="mass-note" class="text-slate-500">备注</label>
@@ -52,6 +62,27 @@
     <!-- 每个位置 -->
     <section id="slots" class="space-y-2.5"></section>
     <button id="btn-add-slot" class="mt-3 text-sm text-slate-500 hover:text-indigo-600">＋ 加一个位置（例如圣母歌、特别仪式）</button>
+
+    <!-- 💒 婚礼才有：谁做什么、来唱的人、座位 -->
+    <section id="wed-box" class="hidden mt-4 space-y-3 text-sm">
+      <div class="bg-white rounded-xl border border-rose-200 px-3 py-3">
+        <div class="font-semibold mb-2">👥 谁做什么</div>
+        <div id="roles" class="space-y-1.5"></div>
+        <button id="btn-add-role" class="mt-2 text-slate-500 hover:text-indigo-600">＋ 加一个职务</button>
+        <div class="text-xs text-slate-400 mt-1">不是团员的（例如投影的）也可以直接打名字。</div>
+      </div>
+      <div class="bg-white rounded-xl border border-rose-200 px-3 py-3">
+        <div class="font-semibold mb-2">🎤 来唱的团员 <span id="singer-n" class="font-normal text-slate-400"></span></div>
+        <div id="singers" class="flex flex-wrap gap-1.5 mb-2"></div>
+        <form id="singer-form" class="flex gap-2">
+          <input id="singer-q" list="names" placeholder="打名字，按 Enter 加（几个人用 、 隔开）" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-3 py-2">
+          <button class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">加</button>
+        </form>
+        <a id="wed-seat" href="seating.html" class="hidden mt-3 block text-center rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold py-2">🪑 排座位（要不要穿披肩在那边选）</a>
+        <div id="wed-seat-hint" class="text-xs text-slate-400 mt-2">先保存，才可以排座位。</div>
+      </div>
+    </section>
+    <datalist id="names"></datalist>
   </main>
 
   <!-- 底部按钮 -->

@@ -44,6 +44,11 @@
       </select>
     </div>
     <div id="stage" class="text-sm text-slate-600 mb-3"></div>
+    <div id="cape-toggle" class="hidden mb-3">
+      <label class="inline-flex items-center gap-2 text-sm bg-white border border-rose-200 rounded-lg px-3 py-2 cursor-pointer">
+        <input id="cape-on" type="checkbox" class="w-4 h-4"> 这台要穿披肩 <span class="text-xs text-slate-400">（大型婚礼才穿）</span>
+      </label>
+    </div>
 
     <!-- 座位 -->
     <section class="bg-white rounded-2xl border border-slate-200 p-2 sm:p-3 mb-3">
@@ -70,7 +75,7 @@
       <button id="act-absent" class="px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25">今天没来</button>
       <button id="act-cancel" class="px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25">取消</button>
       <div id="act-edit" class="hidden w-full flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1.5 border-t border-white/20 text-xs">
-        <label class="flex items-center gap-1.5">这场披肩 #
+        <label id="act-cape-box" class="flex items-center gap-1.5">这场披肩 #
           <input id="act-cape" type="number" min="1" inputmode="numeric" class="w-14 rounded-md px-1.5 py-0.5 text-slate-800 text-sm">
           <span id="act-cape-hint" class="opacity-70"></span>
         </label>
@@ -105,7 +110,7 @@
     </section>
 
     <!-- 披肩 -->
-    <section class="bg-white rounded-2xl border border-slate-200 p-4 text-sm space-y-2">
+    <section id="capes-box" class="bg-white rounded-2xl border border-slate-200 p-4 text-sm space-y-2">
       <div class="font-semibold">今天的披肩</div>
       <div id="capes"></div>
     </section>

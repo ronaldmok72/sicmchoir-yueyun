@@ -4,6 +4,7 @@ import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
 import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER } from "./autofill.js";
+import { WEDDING_ROLES, WEDDING_TIMES, timeText, findMember } from "./weddings-common.js";
 
 const $ = id => document.getElementById(id);
 const MASSES = 'masses';
@@ -30,6 +31,18 @@ const SLOT_TEMPLATE = [
   { key: 'post',        label: '弥撒后祷文',          hint: ['祷文'] },
 ];
 const TPL = Object.fromEntries(SLOT_TEMPLATE.map(s => [s.key, s]));
+
+// 💒 婚礼也在这里排：kind = rite 婚配礼仪（其中一方不是教友，没有感恩经）／wedding 婚姻弥撒（全套）；主日、平日弥撒没有 kind
+// 婚礼一天可以几台，id = 日期_时间（2026-10-17_0930），多了 time、roles [{role,name}]、singers [团员名字]
+const KIND_TITLE = { rite: '婚配礼仪~ ', wedding: '婚姻弥撒~ ' };
+const RITE_KEYS = ['pre', 'entrance', 'psalm', 'alleluia', 'pater', 'communion', 'thanks', 'recessional', 'post'];
+const templateOf = kind => kind === 'rite' ? SLOT_TEMPLATE.filter(s => RITE_KEYS.includes(s.key)) : kind ? SLOT_TEMPLATE.filter(s => s.key !== 'welcome') : SLOT_TEMPLATE;
+const isWed = m => !!m?.kind;
+const regular = () => masses.filter(m => !m.kind);   // 自动排歌、推荐只看主日／平日弥撒
+const idOf = m => m.kind ? `${m.date}_${String(m.time || '0000').replace(':', '')}` : m.date;
+// 婚礼 WA 文字的简写（照平常发的：进：…／答：…；阿肋路亚、天主经只写歌名）
+const SHORT = { entrance: '进', psalm: '答', offertory: '奉', communion: '领', thanks: '谢', recessional: '礼', alleluia: '', pater: '' };
+let MEMBERS = [];
 // 两个位置常常印在同一张谱（例如「垂怜曲 A1 & 光荣颂 A8」）：后面那个位置写「跟上面同一张谱」
 const PAIR = { gloria: 'kyrie', mystery: 'sanctus' };
 const hasHint = (t, key) => TPL[key].hint.some(h => String(t || '').includes(h));
@@ -73,7 +86,7 @@ function nextSunday(after = new Date()) {
 }
 const setlistNameOf = m => {
   const [, mm, dd] = (m.date || '').split('-');
-  return `${mm || ''}${dd || ''} ${m.title || ''}`.trim();
+  return `${mm || ''}${dd || ''} ${m.kind ? timeText(m.time) + ' ' : ''}${m.title || ''}`.replace(/\s+/g, ' ').trim();
 };
 
 function emptyMass(date) {
@@ -89,6 +102,11 @@ window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); 
 
 // ───────── 画面 ─────────
 function renderHeader() {
+  $('mass-kind').value = M.kind || '';
+  $('mass-time').value = M.time || '';
+  document.querySelectorAll('.wed-only').forEach(el => el.classList.toggle('hidden', !isWed(M)));
+  $('btn-bulk').classList.toggle('hidden', isWed(M));
+  renderWed();
   $('mass-date').value = M.date;
   $('mass-title').value = M.title;
   $('mass-note').value = M.note || '';
@@ -97,7 +115,7 @@ function renderHeader() {
   $('draft-banner').textContent = `草稿：还没出现在乐谱 App。检查好按「保存并更新乐谱」才会生成排单。${missing ? `另外有 ${missing} 首曲库还没有谱（⚠ 标出来的）。` : ''}`;
   $('setlist-name-preview').textContent = setlistNameOf(M) || '—';
   const sel = $('mass-select');
-  const opts = masses.map(m => `<option value="${esc(m.id)}">${esc(m.date)}　${esc(m.title || '')}${m.setlistName ? '' : '　（草稿）'}</option>`);
+  const opts = masses.map(m => `<option value="${esc(m.id)}">${m.kind ? '💒 ' : ''}${esc(m.date)}${m.kind ? ' ' + esc(timeText(m.time)) : ''}　${esc(m.title || '')}${m.setlistName ? '' : '　（草稿）'}</option>`);
   if (M.isNew) opts.unshift(`<option value="__new">（新的一场，还没保存）</option>`);
   sel.innerHTML = opts.join('') || '<option>还没有</option>';
   sel.value = M.isNew ? '__new' : M.id;
@@ -105,10 +123,11 @@ function renderHeader() {
   // 新的一场／草稿：显示照哪一份旧歌单排的，可以换；另外两个起手方法
   const tools = $('start-tools');
   tools.innerHTML = '';
-  if (M.isNew || !M.setlistName) renderAutoBox(tools);
+  if ((M.isNew || !M.setlistName) && !isWed(M)) renderAutoBox(tools);
   if (M.isNew) {
-    const prev = masses.find(m => m.date < M.date) || masses[0];
-    if (prev) addTool(tools, `照上一场（${prev.date} ${prev.title || ''}）复制，再换歌`, () => copyFrom(prev));
+    const pool = isWed(M) ? masses.filter(isWed) : regular();
+    const prev = pool.find(m => m.date < M.date) || pool[0];
+    if (prev) addTool(tools, `照上一${isWed(M) ? '台婚礼' : '场'}（${prev.date} ${prev.title || ''}）复制歌，再换`, () => copyFrom(prev));
     addTool(tools, '从现有的乐谱排单导入', importFromSetlist);
   }
 }
@@ -116,7 +135,7 @@ function renderHeader() {
 const SEASON_NAME = { OT: '常年期', ADV: '将临期', LENT: '四旬期', EAS: '复活期', XMAS: '圣诞期', TRIDUUM: '圣周三日' };
 function renderAutoBox(tools) {
   if (!M.date) return;
-  const { day, sources } = sourcesFor(M.date, M.title, masses, LIBRARY_DATA);
+  const { day, sources } = sourcesFor(M.date, M.title, regular(), LIBRARY_DATA);
   const box = document.createElement('div');
   box.className = 'w-full text-xs space-y-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2';
   const cur = sources.find(s => s.id === M.autoFrom);
@@ -142,7 +161,7 @@ function renderAutoBox(tools) {
 // 照以前同一个主日的歌单自动排：换歌部分照来源，固定部分（垂怜曲、圣圣圣…）照同季最近一场
 function applyAuto(sourceId, { keepOrdinary = false } = {}) {
   if (!M.title || M.autoTitle) { M.title = litDay(M.date).name; M.autoTitle = true; }
-  const a = autofill(M.date, M.title, masses, LIBRARY_DATA, SLOT_TEMPLATE, sourceId);
+  const a = autofill(M.date, M.title, regular(), LIBRARY_DATA, SLOT_TEMPLATE, sourceId);
   if (keepOrdinary) {
     // 只换会换歌的位置，其他的（包括自己加的位置）不动
     M.slots = M.slots.map(s => { const n = a.slots.find(x => x.key === s.key); return n && a.source && ['entrance', 'psalm', 'offertory', 'communion', 'thanks', 'recessional'].includes(s.key) ? n : s; });
@@ -243,7 +262,7 @@ $('btn-add-slot').addEventListener('click', () => {
 }));
 // 新的一场还没动过歌：改日期／改礼仪名称 → 重新自动排
 ['mass-date', 'mass-title'].forEach(id => $(id).addEventListener('change', () => {
-  if (!M.isNew || M.manual || !M.date) return renderHeader();
+  if (!M.isNew || M.manual || !M.date || isWed(M)) return renderHeader();
   if (id === 'mass-title' && !M.title) M.autoTitle = true;
   applyAuto();
 }));
@@ -289,7 +308,7 @@ function renderPicker() {
   const onlyFit = $('picker-suggest').checked && !q;
   const used = usedCount(slot.key);
   // 推荐：以前这个主日唱过的、这个季节常唱的；前后几个礼拜已经排了的会提醒
-  const sug = pickSug = M.date ? suggestFor(M.date, M.title, slot.key, masses.filter(m => m.id !== M.id), LIBRARY_DATA) : null;
+  const sug = pickSug = M.date && !isWed(M) ? suggestFor(M.date, M.title, slot.key, regular().filter(m => m.id !== M.id), LIBRARY_DATA) : null;
   const recent = sug && PROPER.includes(slot.key) && slot.key !== 'psalm' ? sug.recent : {};
   const inSlot = new Set(slot.songs.map(x => x.id));
   const when = d => d === 0 ? '' : d < 0 ? `${Math.round(-d / 7) || 1} 周前刚唱过` : `${Math.round(d / 7) || 1} 周后已经排了`;
@@ -395,6 +414,8 @@ async function save() {
   M.title = $('mass-title').value.trim();
   if (!M.date) return alert('请先填日期。');
   if (!M.title) return alert('请先填礼仪名称（例如：常年29主日）。');
+  if (isWed(M) && !M.time) return alert('婚礼要填时间。');
+  if (isWed(M) && Object.values(KIND_TITLE).includes(M.title + ' ')) return alert('名称要写新人的名字，例如：婚配礼仪~ Jason Tan & Yap Phui Khei');
   const items = [];
   let missing = 0;
   M.slots.forEach(s => s.songs.forEach(x => {
@@ -406,8 +427,8 @@ async function save() {
   if (!items.length) return alert('还没有选任何歌。');
   if (missing && !confirm(`有 ${missing} 首还没有谱（⚠），乐谱里会先跳过它们。继续保存？`)) return;
 
-  const newId = M.date;
-  if (M.isNew && masses.some(m => m.id === newId) && !confirm(`${newId} 已经排过一场，要覆盖吗？`)) return;
+  const newId = idOf(M);
+  if ((M.isNew || M.id !== newId) && masses.some(m => m.id === newId) && !confirm(`${M.date}${isWed(M) ? ' ' + timeText(M.time) : ''} 已经排过一场，要覆盖吗？`)) return;
   const name = setlistNameOf(M);
   const btn = $('btn-save');
   btn.disabled = true;
@@ -421,6 +442,11 @@ async function save() {
       slots: M.slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => x.missing
         ? { id: null, title: x.title, imageUrl: '', missing: true }
         : { id: x.id, title: (songById(x.id) || x).title, imageUrl: (songById(x.id) || x).imageUrl, ...(x.note ? { note: x.note } : {}) }) })),
+      ...(isWed(M) ? {
+        kind: M.kind, time: M.time,
+        roles: (M.roles || []).filter(r => r.role.trim()).map(r => ({ role: r.role.trim(), name: r.name.trim() })),
+        singers: M.singers || [],
+      } : {}),
       createdAt: M.createdAt || now, savedAt: now,
     };
     await setDoc(doc(db, MASSES, newId), data);
@@ -435,6 +461,8 @@ async function save() {
     if (oldId && oldId !== newId) await deleteDoc(doc(db, MASSES, oldId));
 
     Object.assign(M, data, { id: newId, isNew: false });
+    if (!isWed(M)) ['kind', 'time', 'roles', 'singers'].forEach(k => delete M[k]);
+    history.replaceState(null, '', `?id=${encodeURIComponent(newId)}`);
     await loadMasses();
     setDirty(false);
     renderHeader();
@@ -451,6 +479,12 @@ async function save() {
 
 // ───────── 复制歌单文字（贴 WhatsApp）─────────
 $('btn-copy').addEventListener('click', async () => {
+  if (isWed(M)) {
+    const text = waWedding();
+    try { await navigator.clipboard.writeText(text); $('status').textContent = '✅ 已复制，可以贴到 WhatsApp'; }
+    catch { prompt('复制下面这段：', text); }
+    return;
+  }
   const [, mm, dd] = (M.date || '').split('-');
   const lines = [`*${Number(dd) || ''}/${Number(mm) || ''} ${M.title || ''}*`];
   // 礼仪曲（垂怜曲、圣圣圣…）是一整套的：只写一行「弥撒曲：常年期」
@@ -481,8 +515,12 @@ $('btn-copy').addEventListener('click', async () => {
 let DUTY = {};
 async function loadMasses() {
   getDocs(collection(db, 'duties')).then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
+  getDocs(collection(db, 'members')).then(s => {
+    MEMBERS = s.docs.map(d => d.data()).filter(m => m.active !== false).sort((a, b) => a.name.localeCompare(b.name));
+    $('names').innerHTML = MEMBERS.map(m => `<option value="${esc(m.name)}">${esc(m.fullName || '')}</option>`).join('');
+  }).catch(() => {});
   const snap = await getDocs(collection(db, MASSES));
-  masses = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date));
+  masses = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || ''));
   // 歌名以曲库为准：改过名的歌，旧弥撒里也显示新名字
   masses.forEach(m => { m.slots = normalizeSlots(m.slots); m.slots.forEach(sl => sl.songs.forEach(x => { const t = songById(x.id)?.title; if (t) x.title = t; })); });
   const seen = new Set(LIBRARY_DATA.map(x => x.id));
@@ -492,13 +530,14 @@ async function loadMasses() {
   })));
 }
 function openMass(m) {
-  M = { ...m, slots: m.slots.map(s => ({ ...s, songs: s.songs.map(x => ({ ...x })) })), isNew: false };
+  M = { ...m, slots: m.slots.map(s => ({ ...s, songs: s.songs.map(x => ({ ...x })) })), isNew: false,
+    ...(m.kind ? { roles: (m.roles || []).map(r => ({ ...r })), singers: [...(m.singers || [])] } : {}) };
   setDirty(false);
   renderHeader();
   renderSlots();
 }
 function newMass() {
-  const latest = masses[0]?.date;
+  const latest = regular()[0]?.date;
   const base = latest && latest >= isoDate(new Date()) ? new Date(latest + 'T12:00') : new Date();
   M = emptyMass(nextSunday(base));
   M.autoTitle = true;
@@ -510,10 +549,11 @@ const serialize = slots => slots.map(s => ({ key: s.key, label: s.label, songs: 
   ? { id: null, title: x.title, imageUrl: '', missing: true }
   : { id: x.id, title: x.title, imageUrl: x.imageUrl || '', ...(x.note ? { note: x.note } : {}) }) }));
 $('btn-bulk').addEventListener('click', async () => {
-  const last = masses[0]?.date;
+  const last = regular()[0]?.date;
   const n = Number(prompt(`${last ? `已经排到 ${Number(last.slice(5, 7))}/${Number(last.slice(8))}（包括还没保存的草稿），从这之后` : ''}再往后自动排几个主日？`, '8'));
   if (!n || n < 1) return;
-  const start = new Date(Math.max(masses[0] ? new Date(masses[0].date + 'T12:00').getTime() : 0, Date.now()));
+  const reg = regular();
+  const start = new Date(Math.max(reg[0] ? new Date(reg[0].date + 'T12:00').getTime() : 0, Date.now()));
   // 后面 n 个主日，加上中间遇到的圣诞前夕／圣诞节
   const dates = [];
   let d = new Date(nextSunday(start) + 'T12:00');
@@ -521,7 +561,7 @@ $('btn-bulk').addEventListener('click', async () => {
   const end = dates[dates.length - 1];
   for (let y = start.getFullYear(); y <= Number(end.slice(0, 4)); y++) [`${y}-12-24`, `${y}-12-25`].forEach(x => { if (x > isoDate(start) && x <= end && !dates.includes(x)) dates.push(x); });
   dates.sort();
-  const pool = [...masses];   // 新排的也算进去，后面几周的固定部分可以接着带
+  const pool = [...reg];   // 新排的也算进去，后面几周的固定部分可以接着带
   const plan = [];
   for (const date of dates) {
     if (pool.some(m => m.date === date)) continue;
@@ -573,15 +613,129 @@ $('btn-new').addEventListener('click', () => {
   }
   // 默认打开：最近一场还没过的；没有就开新的
   const today = isoDate(new Date());
-  const upcoming = [...masses].reverse().find(m => m.date >= today);
+  const upcoming = [...regular()].reverse().find(m => m.date >= today);
   // 从「这台弥撒」总览点进来：?d=2026-10-18 直接打开那一天
-  const want = new URLSearchParams(location.search).get('d');
-  const wanted = want && masses.find(m => m.date === want);
+  const qs = new URLSearchParams(location.search);
+  const want = qs.get('d');
+  const wanted = masses.find(m => m.id === qs.get('id')) || (want && (regular().find(m => m.date === want) || masses.find(m => m.date === want)));
   if (wanted) openMass(wanted);
   else if (/^\d{4}-\d{2}-\d{2}$/.test(want || '')) { M = emptyMass(want); M.autoTitle = true; applyAuto(); }
   else if (upcoming) openMass(upcoming); else newMass();
   warmHistory(LIBRARY_DATA);
 })();
+
+// ───────── 💒 婚礼 ─────────
+// 换种类：会换的歌照原本位置留着；新开的婚礼，固定部分（祷文、天主经、阿肋路亚、垂怜曲…）先照最近一台主日弥撒
+function setKind(kind) {
+  const wasWed = isWed(M);
+  const fresh = M.isNew && !wasWed && kind;    // 新的一场从主日改成婚礼：主日自动排的歌不要
+  if (fresh) M.date = nextSaturday();
+  const old = fresh ? {} : Object.fromEntries(M.slots.map(s => [s.key, s]));
+  const near = regular().find(m => m.date <= M.date) || regular().at(-1);
+  const fixed = ['pre', 'post', 'pater', 'doxology', ...ORDINARY];
+  const custom = fresh ? [] : M.slots.filter(s => !TPL[s.key]);
+  M.slots = templateOf(kind).map(t => {
+    if (old[t.key]) return old[t.key];
+    const from = kind && fixed.includes(t.key) && near?.slots.find(s => s.key === t.key);
+    return { key: t.key, label: t.label, songs: from ? from.songs.map(x => ({ ...x })) : [] };
+  });
+  const at = M.slots.findIndex(s => s.key === 'recessional');
+  M.slots.splice(at < 0 ? M.slots.length : at, 0, ...custom);
+  if (kind) {
+    const prefix = Object.values(KIND_TITLE).find(t => M.title?.startsWith(t.trim()));
+    M.title = !M.title || M.autoTitle || !wasWed ? KIND_TITLE[kind] : prefix ? KIND_TITLE[kind] + M.title.slice(prefix.trim().length).trim() : M.title;
+    M.kind = kind;
+    M.time ||= WEDDING_TIMES[0];
+    M.roles ||= WEDDING_ROLES.map(role => ({ role, name: '' }));
+    M.singers ||= [];
+    M.autoTitle = false;
+    M.manual = true;
+  } else {
+    if (M.isNew) return newMass();   // 新的一场改回主日：重新照下一个主日自动排
+    ['kind', 'time', 'roles', 'singers'].forEach(k => delete M[k]);
+  }
+  setDirty();
+  renderSlots();
+  renderHeader();
+  if (kind) { $('mass-title').focus(); $('mass-title').setSelectionRange(99, 99); }
+}
+function nextSaturday() {
+  const d = new Date();
+  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
+  return isoDate(d);
+}
+$('mass-kind').addEventListener('change', e => setKind(e.target.value));
+$('mass-time').addEventListener('input', () => { M.time = $('mass-time').value; $('setlist-name-preview').textContent = setlistNameOf(M); renderWed(); setDirty(); });
+$('time-quick').addEventListener('click', e => {
+  const b = e.target.closest('[data-time]'); if (!b) return;
+  M.time = $('mass-time').value = b.dataset.time;
+  $('setlist-name-preview').textContent = setlistNameOf(M);
+  renderWed(); setDirty();
+});
+
+function renderWed() {
+  $('wed-box').classList.toggle('hidden', !isWed(M));
+  if (!isWed(M)) return;
+  $('time-quick').innerHTML = WEDDING_TIMES.map(t => `<button data-time="${t}" class="px-2.5 py-1 rounded-lg text-xs ${M.time === t ? 'bg-indigo-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}">${timeText(t)}</button>`).join('');
+  $('roles').innerHTML = M.roles.map((r, i) => `
+    <div class="flex items-center gap-2">
+      <input data-role="${i}" value="${esc(r.role)}" class="w-24 shrink-0 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-500">
+      <input data-name="${i}" value="${esc(r.name)}" list="names" placeholder="谁？" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-3 py-1.5">
+      <button data-rmrole="${i}" class="text-slate-300 hover:text-red-500 px-1" aria-label="拿掉">✕</button>
+    </div>`).join('');
+  $('singer-n').textContent = M.singers.length ? `（${M.singers.length} 位）` : '';
+  $('singers').innerHTML = M.singers.length ? M.singers.map((n, i) => `<span class="inline-flex items-center gap-1 rounded-lg bg-slate-100 pl-2.5 pr-1 py-1">${esc(n)}<button data-rmsinger="${i}" class="text-slate-400 hover:text-red-500 px-1" aria-label="拿掉">✕</button></span>`).join('')
+    : '<span class="text-xs text-slate-400">还没加</span>';
+  const saved = !M.isNew && M.id === idOf(M) && !dirty;
+  $('wed-seat').classList.toggle('hidden', !!M.isNew);
+  $('wed-seat').href = `seating.html?e=${encodeURIComponent(M.id || '')}`;
+  $('wed-seat-hint').textContent = M.isNew ? '先保存，才可以排座位。' : saved ? '' : '有改动的话，先保存再去排座位。';
+}
+$('roles').addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.role) M.roles[+t.dataset.role].role = t.value;
+  if (t.dataset.name) M.roles[+t.dataset.name].name = t.value;
+  setDirty();
+});
+$('roles').addEventListener('click', e => {
+  const b = e.target.closest('[data-rmrole]'); if (!b) return;
+  M.roles.splice(+b.dataset.rmrole, 1); renderWed(); setDirty();
+});
+$('btn-add-role').addEventListener('click', () => { M.roles.push({ role: '', name: '' }); renderWed(); setDirty(); });
+// 来唱的人存团员名单上的名字（座位表、披肩才对得上）；不是团员的照打的
+$('singer-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const add = $('singer-q').value.split(/[,，、\n]+/).map(s => s.trim()).filter(Boolean)
+    .map(n => findMember(n, MEMBERS)?.name || n)
+    .filter((n, i, a) => a.indexOf(n) === i && !M.singers.some(x => x.toLowerCase() === n.toLowerCase()));
+  $('singer-q').value = '';
+  if (!add.length) return;
+  M.singers.push(...add);
+  renderWed(); setDirty();
+});
+$('singers').addEventListener('click', e => {
+  const b = e.target.closest('[data-rmsinger]'); if (!b) return;
+  M.singers.splice(+b.dataset.rmsinger, 1); renderWed(); setDirty();
+});
+
+// 婚礼的 WA 文字：照平常发的格式（标题、日期时间、进：…、职务、歌咏团名单）
+const fullOf = n => { const m = MEMBERS.find(x => x.name === n); return String(m?.fullName || '').replace(/[\u3400-\u9fff]+/g, '').trim() || n; };
+function waWedding() {
+  const [y, mm, dd] = M.date.split('-');
+  const lines = [`*${M.title}*`, `${+dd}/${+mm}/${y}（${'日一二三四五六'[new Date(M.date + 'T12:00').getDay()]}）${timeText(M.time)}`, ''];
+  const ord = s => ORDINARY.includes(s.key) && s.key !== 'alleluia';
+  const sets = [...new Set(M.slots.filter(ord).flatMap(s => s.songs.map(x => massSetOf(x.title))).filter(Boolean))];
+  if (sets.length) lines.push(`弥撒曲：${sets.join('、')}`);
+  M.slots.filter(s => s.songs.length && !['pre', 'post', 'doxology'].includes(s.key) && !(ord(s) && s.songs.every(x => massSetOf(x.title)))).forEach(s => {
+    const k = s.key in SHORT ? SHORT[s.key] : s.label;
+    lines.push(`${k ? k + '：' : ''}${s.songs.map(x => waTitle(x.title) + (x.note ? `（${x.note}）` : '')).filter((t, i, a) => a.indexOf(t) === i).join(' / ')}`);
+  });
+  if (M.note) lines.push('', M.note);
+  const roles = (M.roles || []).filter(r => r.role.trim() && r.name.trim());
+  if (roles.length) lines.push('', ...roles.map(r => `${r.role.trim()}：${r.name.trim()}`));
+  if (M.singers?.length) lines.push('', '歌咏团：', ...M.singers.map(fullOf));
+  return lines.join('\n');
+}
 
 // 「📅 总览」带着现在这一天过去
 document.querySelector('[data-day-link]')?.addEventListener('click', e => { const d = M?.date; if (d) e.currentTarget.href = `day.html?d=${d}`; });

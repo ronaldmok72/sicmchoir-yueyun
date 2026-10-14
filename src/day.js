@@ -6,7 +6,7 @@ import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
 import { loadNotices, noticeHtml } from "./notices-common.js";
-import { loadSpecials, timeText, findMember } from "./weddings-common.js";
+import { timeText, findMember } from "./weddings-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -27,7 +27,8 @@ const LABEL = { entrance: '进堂咏', psalm: '答唱咏', offertory: '奉献咏
 
 let masses = {}, duties = {}, seatings = {}, members = {};
 let notices = [], songTitles = {};
-let specials = {};   // 婚礼弥撒 { 日期: [几台] }
+let specials = {};   // 婚礼 { 日期: [几台] }：排歌页 masses 里有 kind 的
+let wseats = {};     // 婚礼的座位表 seatings/{日期_时间}
 let memberList = [];
 let date = null;
 let me = '';
@@ -36,13 +37,16 @@ try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 async function load() {
   const [ma, du, se, mb, cs] = await Promise.all(['masses', 'duties', 'seatings', 'members', 'custom_songs'].map(c => getDocs(collection(db, c))));
   notices = (await loadNotices(db).catch(() => ({ active: [] }))).active;
-  specials = await loadSpecials(db).catch(() => ({}));
-  masses = Object.fromEntries(ma.docs.map(d => [d.data().date || d.id, { id: d.id, ...d.data() }]));
+  const all = ma.docs.map(d => ({ id: d.id, ...d.data() }));
+  masses = Object.fromEntries(all.filter(m => !m.kind).map(m => [m.date || m.id, m]));
+  specials = {};
+  all.filter(m => m.kind).sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach(w => (specials[w.date] ||= []).push(w));
   // 歌名以曲库为准（改过名的歌显示新名字）
   const title = songTitles = Object.fromEntries(cs.docs.map(d => [d.id, d.data().title]));
   Object.values(masses).forEach(m => (m.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   duties = Object.fromEntries(du.docs.map(d => [d.id, d.data()]));
-  seatings = Object.fromEntries(se.docs.map(d => [d.id, d.data()]));
+  seatings = Object.fromEntries(se.docs.filter(d => !d.id.includes('_')).map(d => [d.id, d.data()]));
+  wseats = Object.fromEntries(se.docs.filter(d => d.id.includes('_')).map(d => [d.id, d.data()]));
   members = Object.fromEntries(mb.docs.map(d => d.data()).filter(m => m.active !== false).map(m => [m.name.toLowerCase(), m]));
   memberList = Object.values(members);
   Object.values(specials).flat().forEach(w => (w.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
@@ -280,7 +284,7 @@ function renderSpecials(isStaff) {
     const roles = (w.roles || []).filter(r => r.name);
     const mine = roles.filter(r => isMe(r.name)).map(r => r.role).concat((w.singers || []).some(isMe) ? ['唱'] : []);
     return `<section class="bg-white rounded-2xl border border-rose-200 p-4">
-      ${card(`💒 ${esc(timeText(w.time))}　${esc(w.title)}`, isStaff ? `<a href="weddings.html?id=${encodeURIComponent(w.id)}" class="shrink-0 text-xs text-indigo-600 hover:underline">改 →</a>` : '')}
+      ${card(`💒 ${esc(timeText(w.time))}　${esc(w.title)}`, isStaff ? `<span class="shrink-0 text-xs space-x-2"><a href="mass.html?id=${encodeURIComponent(w.id)}" class="text-indigo-600 hover:underline">改歌 →</a><a href="seating.html?e=${encodeURIComponent(w.id)}" class="text-indigo-600 hover:underline">座位 →</a></span>` : '')}
       ${mine.length ? `<div class="mb-2 text-sm rounded-lg bg-rose-50 text-rose-800 px-3 py-2">🙋 你这台有份：<b>${esc(mine.join('、'))}</b></div>` : ''}
       ${w.note ? `<div class="mb-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">📌 ${esc(w.note)}</div>` : ''}
       <div class="divide-y divide-slate-100">
@@ -297,8 +301,21 @@ function renderSpecials(isStaff) {
           <div class="text-sm truncate">${esc(r.name)}</div>
         </div>`).join('')}</div>` : ''}
       ${(w.singers || []).length ? `<div class="mt-3 text-sm"><span class="text-slate-500">🎤 来唱（${w.singers.length}）：</span>${w.singers.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : ''}
+      ${wedSeats(w, isMe)}
     </section>`;
   }).join('');
+}
+
+// 婚礼排了座位：一排一排列出来，自己的位子标出来；要穿披肩的话说一声
+function wedSeats(w, isMe) {
+  const s = wseats[w.id];
+  if (!s?.seats) return '';
+  const rows = Array.from({ length: s.nRows || 0 }, (_, r) => Array.from({ length: s.cols || 5 }, (_, c) => s.seats[`${r}-${c}`]).filter(Boolean));
+  const mine = rows.findIndex(row => row.some(isMe));
+  return `<div class="mt-3 text-sm rounded-lg bg-slate-50 px-3 py-2 space-y-0.5">
+    <div class="text-slate-500">🪑 座位${s.noCapes ? '（这台不穿披肩）' : '（👘 这台要穿披肩）'}${mine >= 0 ? `　<b class="text-rose-700">你坐第 ${mine + 1} 排</b>` : ''}</div>
+    ${rows.map((row, r) => row.length ? `<div><span class="text-slate-400">第${r + 1}排：</span>${row.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : '').join('')}
+  </div>`;
 }
 
 // 公告 + 要练的歌（还在显示的公告都放这里，不管选哪一天）
