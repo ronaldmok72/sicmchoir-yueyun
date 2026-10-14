@@ -97,6 +97,47 @@
     const hit = (await r.json()).find(x => x.document);
     return hit ? { id: hit.document.name.split('/').pop(), ...plain(hit.document.fields) } : null;
   }
+  // 第一次用：自己注册（电话还没登记的人）
+  async function listMembers() {
+    const out = [];
+    let token = '';
+    do {
+      const r = await fetch(`${API}/members?key=${API_KEY}&pageSize=300${token ? '&pageToken=' + token : ''}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
+      const j = await r.json();
+      (j.documents || []).forEach(d => out.push({ id: d.name.split('/').pop(), ...plain(d.fields) }));
+      token = j.nextPageToken || '';
+    } while (token);
+    return out;
+  }
+  const fv = v => typeof v === 'boolean' ? { booleanValue: v } : { stringValue: String(v) };
+  // m = 名单上的那一位（照名字选的）；m 没有 = 新团员，info.name / fullName 新建一位
+  // info：{ phone, gender: 'F'|'M', voiceSelf: 'S'|'A'|'T'|'B'|''（还不知道）}
+  async function register(m, info) {
+    const n = normPhone(info.phone);
+    if (await findByPhone(n)) throw Object.assign(new Error('这个电话已经登记了'), { code: 'phone-taken' });
+    const now = new Date().toISOString();
+    const f = { phoneHash: await phoneHash(n), phoneTail: n.slice(-4), voiceSelf: info.voiceSelf || '', registeredAt: now, updatedAt: now };
+    if (m) {
+      const cur = await memberById(m.id);
+      if (cur?.phoneHash) throw Object.assign(new Error('这个名字已经有电话了'), { code: 'name-taken', tail: cur.phoneTail });
+      // 男女：名单没写、或者是猜的，才照他自己选的
+      if (info.gender && (!cur?.gender || cur.genderGuess)) { f.gender = info.gender; f.genderGuess = false; }
+      const r = await fetch(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&${Object.keys(f).map(k => 'updateMask.fieldPaths=' + k).join('&')}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
+      });
+      if (!r.ok) throw new Error('没存到 ' + r.status);
+      return { ...cur, ...f };
+    }
+    Object.assign(f, { name: info.name.trim(), fullName: (info.fullName || '').trim(), gender: info.gender || '', active: true, selfJoined: true, createdAt: now });
+    const r = await fetch(`${API}/members?key=${API_KEY}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
+    });
+    if (!r.ok) throw new Error('没存到 ' + r.status);
+    return { id: (await r.json()).name.split('/').pop(), ...f };
+  }
   function setMe(m) {
     try {
       localStorage.setItem(ME_KEY, JSON.stringify({ id: m.id, name: m.name }));
@@ -153,7 +194,7 @@
   function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } }
 
   window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys,
-    me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout };
+    me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById };
 
   try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
 

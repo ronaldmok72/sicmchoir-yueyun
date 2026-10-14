@@ -44,6 +44,7 @@
       <input id="search" type="search" placeholder="搜名字、披肩号码" class="flex-1 min-w-[10rem] border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
       <select id="filter" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
         <option value="active">活跃的</option>
+        <option value="nophone">还没用电话注册的</option>
         <option value="nogender">男女要确认的</option>
         <option value="inactive">没在来的</option>
         <option value="all">全部</option>
@@ -66,6 +67,7 @@
         <input name="name" required class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>
       <label class="block space-y-1"><span class="text-slate-500">全名（可以不填）</span>
         <input name="fullName" placeholder="例如：Ronald Mok 莫荣烽" class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>
+      <div id="phone-hint" class="text-xs rounded-lg px-3 py-2"></div>
       <div class="space-y-1"><span class="text-slate-500">声部（大家都会唱主旋律；另外会唱声部的选他最常唱的）</span>
         <div id="voice-btns" class="flex flex-wrap gap-1.5"></div>
         <div id="quiz-hint" class="text-xs text-emerald-700"></div>

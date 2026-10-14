@@ -32,6 +32,23 @@ const show = id => {
 
 let S = null; // 当前进度
 
+// 用电话登录过的：名字照团员名单，声部那题（E）照名单／注册时自己选的，不用再答
+const gate = window.sicStaff;
+const VOICE_E = { S: '女高音 S', A: '女低音 A', T: '男高音 T', B: '男低音 B' };
+const intents = () => S?.skipE ? INTENT.filter(it => it.id !== 'E') : INTENT;
+async function fromMember(st) {
+  const who = gate?.me();
+  if (!who) return st;
+  st.memberId = who.id;
+  try {
+    const m = await gate.memberById(who.id);
+    const v = ['S', 'A', 'T', 'B'].includes(m?.voice) ? m.voice : m?.voiceSelf;
+    st.intent.E = VOICE_E[v] || (m?.registeredAt ? '不确定' : st.intent.E);
+    st.skipE = !!st.intent.E;
+  } catch { /* 没网络就照旧问 */ }
+  return st;
+}
+
 function newState(name) {
   const order = shuffle(QUESTIONS.filter(q => q.star).map(q => q.id));
   const optOrder = {};
@@ -48,7 +65,22 @@ function setProgress(label, done, total) {
 }
 
 // ───────────── ① 开始 ─────────────
+function renderMe() {
+  const who = gate?.me();
+  $('me-note').classList.toggle('hidden', !who);
+  $('btn-login').classList.toggle('hidden', !!who);
+  $('name-box').classList.toggle('hidden', !!who);
+  if (who) {
+    $('me-note').textContent = `👋 ${who.name}（已用电话登录）`;
+    $('name-input').value = who.name;
+    $('btn-start').disabled = false;
+  }
+}
+$('btn-login').addEventListener('click', () => window.sicLogin?.open());
+document.addEventListener('sic-login', () => { window.sicLogin?.close(); renderMe(); });
+
 function initStart() {
+  renderMe();
   const draft = store.get(DRAFT_KEY);
   if (draft && draft.v === QUIZ_VERSION && draft.stage !== 'done') {
     $('name-input').value = draft.name;
@@ -59,11 +91,11 @@ function initStart() {
   const sync = () => { $('btn-start').disabled = !input.value.trim(); };
   input.addEventListener('input', sync);
   sync();
-  $('btn-start').addEventListener('click', () => {
-    const name = input.value.trim();
+  $('btn-start').addEventListener('click', async () => {
+    const name = gate?.me()?.name || input.value.trim();
     if (!name) return;
     const d = store.get(DRAFT_KEY);
-    S = (d && d.v === QUIZ_VERSION && d.name === name && d.stage !== 'done') ? d : newState(name);
+    S = (d && d.v === QUIZ_VERSION && d.name === name && d.stage !== 'done') ? d : await fromMember(newState(name));
     saveDraft();
     goStage();
   });
@@ -123,7 +155,7 @@ function renderIntent() {
   setProgress('几个小问题', 0, 0);
   const list = $('intent-list');
   list.innerHTML = '';
-  INTENT.forEach(it => {
+  intents().forEach(it => {
     const wrap = document.createElement('div');
     wrap.innerHTML = `<div class="text-white mb-3 leading-relaxed">${it.id}. ${it.q}</div>`;
     const row = document.createElement('div');
@@ -157,7 +189,7 @@ function renderIntent() {
   checkIntent();
 }
 function checkIntent() {
-  const ok = INTENT.every(it => it.type === 'multi' ? (S.intent[it.id] || []).length > 0 : !!S.intent[it.id]);
+  const ok = intents().every(it => it.type === 'multi' ? (S.intent[it.id] || []).length > 0 : !!S.intent[it.id]);
   $('btn-intent-next').disabled = !ok;
 }
 $('btn-intent-next').addEventListener('click', () => { S.stage = 'tap'; saveDraft(); startTap(); });
@@ -423,6 +455,7 @@ async function submit() {
     totalQuestions: S.order.length,
     scores,
     intent: S.intent,
+    ...(S.memberId ? { memberId: S.memberId } : {}),
     tap: S.tap || { skipped: true },
     ua: navigator.userAgent.slice(0, 200),
   };

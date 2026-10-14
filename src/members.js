@@ -63,6 +63,7 @@ function renderSummary() {
       ${['S', 'A', 'T', 'B', ''].map(k => `<span class="px-2 py-0.5 rounded-md bg-slate-100">${VOICE_NAME[k]} <b>${cnt(k)}</b></span>`).join('')}
     </div>
     <div class="text-slate-600">女声 <b>${act.filter(m => genderOf(m) === 'F').length}</b>　男声 <b>${act.filter(m => genderOf(m) === 'M').length}</b>${act.some(m => !genderOf(m)) ? `　<span class="text-amber-700">还不知道男女：${act.filter(m => !genderOf(m)).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
+    <div class="text-slate-600">📱 用电话注册了 <b>${act.filter(m => m.phoneHash).length}</b> / ${act.length} 位${act.some(m => !m.phoneHash) ? `　<span class="text-xs text-slate-400">（下面选「还没用电话注册的」看是谁）</span>` : ''}${act.some(m => m.selfJoined) ? `　<span class="text-indigo-700">🆕 自己注册的新团员：${act.filter(m => m.selfJoined).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
     <div class="text-xs text-slate-400">每个人都会唱主旋律；上面 S A T B 是另外会唱声部的人${quiz.length ? '' : '（10/17 测验答完会自动出现建议）'}</div>
     ${guessed.length ? `<div class="text-amber-700">⏳ ${guessed.length} 位的男女是照名字猜的（名单上标「猜的」），看一下对不对：${guessed.map(m => esc(m.name)).join('、')}</div>` : ''}
     ${dup.length ? `<div class="text-red-600">🔴 披肩号码重复：${dup.map(([c, n]) => `#${c} ${n.map(esc).join('、')}`).join('；')}</div>` : ''}`;
@@ -70,14 +71,16 @@ function renderSummary() {
 
 // 测验答的声部跟名单不一样（或名单还没填）→ 一键采用
 function renderQuizBox() {
-  const todo = members.map(m => ({ m, q: quizFor(m) })).filter(({ m, q }) => q?.voice && q.voice !== normVoice(m.voice));
+  // 自己注册时选的声部也算（比测验新的话用注册的）
+  const self = m => normVoice(m.voiceSelf) && { name: '注册时自己选', voice: m.voiceSelf, self: true };
+  const todo = members.filter(m => m.active !== false).map(m => ({ m, q: self(m) || quizFor(m) })).filter(({ m, q }) => q?.voice && q.voice !== normVoice(m.voice));
   const box = $('quiz-box');
   box.classList.toggle('hidden', !todo.length);
   if (!todo.length) return;
   box.innerHTML = `
-    <div class="font-semibold text-emerald-900">测验里填的声部（${todo.length} 位跟名单不一样）</div>
+    <div class="font-semibold text-emerald-900">团员自己填的声部（测验或注册时，${todo.length} 位跟名单不一样）</div>
     <div class="space-y-1">${todo.map(({ m, q }) => `
-      <div class="flex items-center gap-2"><span class="flex-1 min-w-0 truncate">${esc(m.name)} <span class="text-slate-400">（测验写「${esc(q.name)}」）</span>：${normVoice(m.voice) ? `${esc(VOICE_NAME[m.voice])} → ` : ''}<b>${esc(VOICE_NAME[q.voice])}</b></span></div>`).join('')}
+      <div class="flex items-center gap-2"><span class="flex-1 min-w-0 truncate">${esc(m.name)} <span class="text-slate-400">（${q.self ? '注册时自己选' : `测验写「${esc(q.name)}」`}）</span>：${normVoice(m.voice) ? `${esc(VOICE_NAME[m.voice])} → ` : ''}<b>${esc(VOICE_NAME[q.voice])}</b></span></div>`).join('')}
     </div>
     <button id="btn-quiz-apply" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white">全部采用</button>
     <span class="text-xs text-emerald-800">不对的话，采用后再点那个人改</span>`;
@@ -93,7 +96,7 @@ function renderList() {
   const q = $('search').value.trim().toLowerCase();
   const f = $('filter').value;
   let list = members.filter(m =>
-    (f === 'all' || (f === 'inactive' ? m.active === false : m.active !== false && (f !== 'nogender' || !genderOf(m) || m.genderGuess)))
+    (f === 'all' || (f === 'inactive' ? m.active === false : m.active !== false && (f !== 'nogender' || !genderOf(m) || m.genderGuess) && (f !== 'nophone' || !m.phoneHash)))
     && (!q || `${m.name} ${m.fullName || ''} ${m.cape || ''}`.toLowerCase().includes(q)));
   const groups = ['S', 'A', 'T', 'B', ''].map(k => ({ k, items: list.filter(m => normVoice(m.voice) === k) })).filter(g => g.items.length);
   groups.forEach(g => g.items.sort((a, b) => (a.cape || 999) - (b.cape || 999) || a.name.localeCompare(b.name)));
@@ -120,6 +123,8 @@ function subLine(m) {
   const v2 = (m.voices2 || []).filter(v => normVoice(v) && v !== normVoice(m.voice));
   if (v2.length) bits.push(`也唱 ${v2.map(v => VOICE_SHORT[v]).join('、')}`);
   const g = genderOf(m);
+  if (m.selfJoined) bits.push('<span class="text-indigo-600">🆕 自己注册</span>');
+  if (!m.phoneHash && m.active !== false) bits.push('<span class="text-slate-300">📱 还没注册</span>');
   if (!normVoice(m.voice) || m.genderGuess) bits.push(g ? `${g === 'F' ? '女声' : '男声'}${m.genderGuess ? '<span class="text-amber-600">（猜的）</span>' : ''}` : '<span class="text-amber-600">还不知道男女</span>');
   return bits.length ? `<span class="block truncate text-xs text-slate-400">${bits.join('　')}</span>` : '';
 }
@@ -146,7 +151,13 @@ function openEditor(m) {
   pickVoices2 = new Set(editing.voices2 || []);
   pickGender = editing.gender || genderOf(editing) || '';
   const q = m && quizFor(m);
-  $('quiz-hint').textContent = q ? `测验（${q.name}）写：${q.raw || '没答'}` : '';
+  $('quiz-hint').textContent = [q ? `测验（${q.name}）写：${q.raw || '没答'}` : '', m?.registeredAt ? `注册时自己选：${normVoice(m.voiceSelf) ? VOICE_NAME[m.voiceSelf] : '还不知道'}` : ''].filter(Boolean).join('　');
+  // 电话只存打乱过的样子，这里只看得到最后 4 码
+  const ph = $('phone-hint');
+  ph.className = `text-xs rounded-lg px-3 py-2 ${m?.phoneHash ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'}`;
+  ph.innerHTML = !m ? '📱 加好之后，他打开 App 用电话注册时，在名单上选自己的名字就会连起来。'
+    : m.phoneHash ? `📱 电话已登记：…${esc(m.phoneTail || '')}${m.registeredAt ? `（${new Date(m.registeredAt).toLocaleDateString('en-GB')} 自己注册）` : ''}　<span class="text-slate-400">完整号码不会存，换号码到「🔑 密码管理」</span>`
+    : '📱 还没登记电话。叫他打开 App，用自己的电话注册一次就好（或在「🔑 密码管理」帮他加）。';
   $('edit-delete').classList.toggle('hidden', !m);
   renderChips();
   capeWarn();
@@ -204,7 +215,7 @@ form.addEventListener('submit', async e => {
     voices2: pickVoice ? VOICES.map(v => v.key).filter(k => k && k !== pickVoice && pickVoices2.has(k)) : [],
     gender: pickGender || genderFromVoice(pickVoice), genderGuess: false,
     cape: Number(form.cape.value) || null, roles: ROLES.filter(r => pickRoles.has(r)),
-    active: form.active.checked, note: form.note.value.trim(), updatedAt: new Date().toISOString(),
+    active: form.active.checked, note: form.note.value.trim(), selfJoined: false, updatedAt: new Date().toISOString(),   // 改过一次 = 看过了，不再标「🆕 自己注册」
   };
   try {
     if (editing.id) await setDoc(doc(db, MEMBERS, editing.id), data, { merge: true });

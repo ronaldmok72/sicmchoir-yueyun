@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>乐韵歌咏团 - 团员小测验</title>
+  <script src="src/gate.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="manifest" href="manifest.json">
   <style>
@@ -48,7 +49,9 @@
         </ol>
         <p class="text-zinc-400">选项有几个看起来都对，选你觉得<b class="text-zinc-200">最对</b>的那个。不会的就猜，不要去翻笔记——这样结果才准。</p>
       </div>
-      <label class="block">
+      <div id="me-note" class="hidden text-sm rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 px-4 py-3"></div>
+      <button id="btn-login" class="hidden w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-sm">📱 先用电话登录／注册（声部那题就不用再答）</button>
+      <label id="name-box" class="block">
         <span class="text-sm text-zinc-400">你的名字（团里大家怎么叫你）</span>
         <input id="name-input" type="text" maxlength="30" autocomplete="name"
           class="mt-1.5 w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：Agnes">
@@ -112,6 +115,7 @@
     </section>
   </main>
 
+  <script src="src/login.js"></script>
   <script type="module" src="src/quiz.js"></script>
 </body>
 </html>
