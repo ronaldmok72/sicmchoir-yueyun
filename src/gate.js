@@ -67,27 +67,98 @@
     return true;
   }
 
+  // ───────── 团员登录（电话号码）─────────
+  // 团员名单 members/{id} 只存电话打乱过的样子 phoneHash（+ 最后 4 码 phoneTail），看不到原本的号码
+  // 有开后台的团员（members/{id}.areas）还要 4 位数 PIN（pinHash）；登入后记在 sicAccess：{ m: 团员id, h: pinHash, areas }
+  const ME_KEY = 'sicMe';                                // 这部手机是谁：{ id, name }
+  const API = 'https://firestore.googleapis.com/v1/projects/sicmchoir-yueyun/databases/(default)/documents';
+  const API_KEY = 'AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U';
+  const me = () => { try { return JSON.parse(localStorage.getItem(ME_KEY) || 'null'); } catch { return null; } };
+  // 0149212571 / +60 14-921 2571 / 149212571 都当成同一个：60149212571
+  const normPhone = p => { let d = String(p || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '6' + d; else if (!d.startsWith('60')) d = '60' + d; return d; };
+  const phoneHash = p => hash('phone|' + normPhone(p));
+  const pinHash = (id, pin) => hash('pin|' + id + '|' + pin);
+  // Firestore REST 回来的格式 → 普通物件（只取用得到的）
+  const plain = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, 'arrayValue' in v ? (v.arrayValue.values || []).map(x => Object.values(x)[0]) : Object.values(v)[0]]));
+  async function memberById(id) {
+    const r = await fetch(`${API}/members/${encodeURIComponent(id)}?key=${API_KEY}`, { cache: 'no-store' });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
+    return { id, ...plain((await r.json()).fields) };
+  }
+  // 用电话找团员；找不到 → null
+  async function findByPhone(phone) {
+    const h = await phoneHash(phone);
+    const r = await fetch(`${API}:runQuery?key=${API_KEY}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'members' }], where: { fieldFilter: { field: { fieldPath: 'phoneHash' }, op: 'EQUAL', value: { stringValue: h } } }, limit: 2 } }),
+    });
+    if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
+    const hit = (await r.json()).find(x => x.document);
+    return hit ? { id: hit.document.name.split('/').pop(), ...plain(hit.document.fields) } : null;
+  }
+  function setMe(m) {
+    try {
+      localStorage.setItem(ME_KEY, JSON.stringify({ id: m.id, name: m.name }));
+      localStorage.setItem('sicMyName', m.name);          // 「这台弥撒」找我的位子用
+      localStorage.removeItem('sicGuest');
+    } catch { /* 没关系 */ }
+  }
+  // 后台 PIN：对了就把这位团员开的区记在这部手机
+  async function memberUnlock(m, pin) {
+    const h = await pinHash(m.id, pin);
+    if (h !== m.pinHash) return null;
+    const areas = (m.areas || []).filter(a => ALL.includes(a) && a !== 'access');   // 最高权限只给 Ronald 的密码，不经电话
+    write(read().filter(x => x.m !== m.id).concat({ m: m.id, h, areas }));
+    return areas;
+  }
+  // 第一次：设 PIN（写进团员名单），然后当作已解锁
+  async function memberSetPin(m, pin) {
+    const h = await pinHash(m.id, pin);
+    const r = await fetch(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&updateMask.fieldPaths=pinHash`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { pinHash: { stringValue: h } } }),
+    });
+    if (!r.ok) throw new Error('PIN 没存到 ' + r.status);
+    m.pinHash = h;
+    return memberUnlock(m, pin);
+  }
+  function logout() {
+    const m = me();
+    try {
+      localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName');
+      if (m) write(read().filter(x => x.m !== m.id));
+    } catch { /* 没关系 */ }
+  }
+
   // 每次打开都对一下密码表：密码被改掉或拿掉权限的，这部手机也跟着拿掉
+  // 团员登入的：对一下他在团员名单的 PIN 和开的区
   async function refresh() {
     const g = read();
     if (!g.length) return;
     let keys;
     try { keys = await loadKeys(true); } catch { return; }   // 没网络就先照旧
-    const next = g.map(x => {
+    const next = (await Promise.all(g.map(async x => {
+      if (x.m) {
+        let m;
+        try { m = await memberById(x.m); } catch { return x; }   // 没网络就先照旧
+        return m && m.pinHash === x.h && (m.areas || []).length ? { m: x.m, h: x.h, areas: m.areas.filter(a => ALL.includes(a) && a !== 'access') } : null;
+      }
       const k = keys ? keys.find(k => k.hash === x.h) : (x.boot ? BOOT[0] : null);
       return k ? { h: x.h, areas: areasOf(k), boot: !keys } : null;
-    }).filter(Boolean);
+    }))).filter(Boolean);
     write(next);
     return next;
   }
   function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } }
 
-  window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys };
+  window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys,
+    me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout };
 
   try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
 
-  const me = document.currentScript;
-  const need = me && me.hasAttribute('data-require') ? (me.getAttribute('data-require') || '') : null;
+  const tag = document.currentScript;
+  const need = tag && tag.hasAttribute('data-require') ? (tag.getAttribute('data-require') || '') : null;
   if (need === null) { refresh(); return; }
   const kick = () => { document.documentElement.style.display = 'none'; location.replace('/'); };
   if (can(need)) {

@@ -233,6 +233,7 @@ function renderSeats(isStaff) {
         ${all.map(n => `<option ${n.toLowerCase() === meKey ? 'selected' : ''}>${esc(n)}</option>`).join('')}
       </select>
       ${where ? `<span class="text-slate-700">${where}</span>` : ''}
+      ${!window.sicStaff?.me() ? '<button id="btn-login" class="text-xs text-indigo-600 hover:underline">📱 用电话登录，自动找到我</button>' : ''}
     </div>
     <div class="text-center text-xs text-slate-400 mb-1.5">▲ 前面（祭台／指挥）</div>
     <div class="space-y-1">
@@ -247,6 +248,7 @@ function renderSeats(isStaff) {
     ${guests.length ? `<div class="text-xs text-violet-700 mt-2">🙋 Guest：${guests.map(n => `${esc(n)}（${esc(guestGroup(n))}）`).join('、')}</div>` : ''}
     ${stage.length ? `<div class="text-xs text-slate-500 mt-2">台前：${stage.map(p => `${p.role} ${esc(p.n)}`).join('　')}</div>` : ''}
     ${isStaff ? `<div class="text-xs text-slate-500 mt-1">要带 <b>${withCape.length}</b> 件披肩${(s.absent || []).length ? `　·　没来：${(s.absent || []).map(esc).join('、')}` : ''}</div>` : ''}`;
+  $('btn-login')?.addEventListener('click', () => window.sicLogin?.open());
   $('me').addEventListener('change', e => {
     me = e.target.value;
     try { me ? localStorage.setItem('sicMyName', me) : localStorage.removeItem('sicMyName'); } catch { /* 没关系 */ }
@@ -263,6 +265,12 @@ function renderNotices(isStaff) {
        ${notices.some(n => (n.songs || []).length) ? '<a href="songs.html?f=practice" class="mt-3 block text-center rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold py-2.5 text-sm">📚 在歌单目录看全部要练的歌</a>' : ''}`
     : '<div class="text-sm text-slate-400">现在没有公告</div>');
 }
+
+// 电话登录好了 → 马上换成他的位子
+document.addEventListener('sic-login', () => {
+  try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
+  render();
+});
 
 $('btn-staff').addEventListener('click', async () => { if (await window.sicStaff?.unlock()) render(); });
 

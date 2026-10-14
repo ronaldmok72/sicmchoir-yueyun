@@ -53,9 +53,19 @@
       </form>
     </section>
 
+    <!-- 团员权限：电话登录的人，照名字开 -->
+    <section class="mt-8">
+      <h2 class="font-semibold mb-1">👤 团员权限（电话登录）</h2>
+      <p class="text-sm text-slate-600 mb-3">团员用自己的电话号码登录。要给谁开后台，就在他名字下面勾；他第一次登录会自己设一个 4 位数 PIN。
+        <span class="text-slate-400">电话只存打乱过的样子，这里只看得到最后 4 码。</span></p>
+      <input id="m-q" type="search" placeholder="找名字…" class="w-full border border-slate-300 rounded-lg px-3 py-2 mb-2 text-sm bg-white">
+      <div id="m-list" class="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 text-sm"></div>
+    </section>
+
     <div id="status" class="text-xs text-slate-400 text-center mt-6"></div>
   </main>
 
   <script type="module" src="src/access.js"></script>
+  <script type="module" src="src/access-members.js"></script>
 </body>
 </html>
