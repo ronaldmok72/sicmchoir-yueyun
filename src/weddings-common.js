@@ -1,47 +1,19 @@
 // 婚礼：跟主日弥撒一起在排歌页排，存 masses/{日期_时间}，例如 2026-10-17_0930
 // kind = 'rite' 婚配礼仪（其中一方不是教友）／'wedding' 婚姻弥撒（全套）
 // { date, time: '09:30', kind, title, note, setlistName,
-//   slots: [{ key, label, short, songs: [{ id, title, imageUrl }] }],
+//   slots: [{ key, label, songs: [{ id, title, imageUrl }] }],
 //   roles: [{ role, name }], singers: [名字], createdAt, savedAt }
 // 一天可以有好几台（9.30am、11.30am、1.30pm），所以 id 带时间；排歌页、这台弥撒都用这里
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
-export const SPECIAL = 'special_masses';
-
-// short = 复制 WA 文字时的简写（「进：主赐幸福」），空的就只写歌名
-export const WEDDING_SLOTS = [
-  { key: 'entrance', label: '进堂咏', short: '进' },
-  { key: 'psalm', label: '答唱咏', short: '答' },
-  { key: 'alleluia', label: '阿肋路亚', short: '' },
-  { key: 'pater', label: '天主经', short: '' },
-  { key: 'communion', label: '领主咏', short: '领' },
-  { key: 'thanks', label: '谢主咏', short: '谢' },
-  { key: 'recessional', label: '礼成咏', short: '礼' },
-];
 export const WEDDING_ROLES = ['领经', '读经一', '答唱咏', '读经二', '投影', 'Pianist', 'Organist', '领唱'];
 export const WEDDING_TIMES = ['09:30', '11:30', '13:30'];
 
-export const idOf = (date, time) => `${date}_${String(time || '0000').replace(':', '')}`;
 // 09:30 → 9.30am、13:30 → 1.30pm（跟大家平常写的一样）
 export function timeText(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
   return `${h % 12 || 12}.${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
 }
-export const setlistNameOf = w => {
-  const [, mm, dd] = (w.date || '').split('-');
-  return `${mm || ''}${dd || ''} ${timeText(w.time)} ${w.title || '婚礼'}`.replace(/\s+/g, ' ').trim();
-};
-
-// { 日期: [这一天的几台婚礼，照时间排] }：婚礼现在跟主日弥撒一起存在 masses（有 kind 的就是婚礼）
-export async function loadSpecials(db) {
-  const snap = await getDocs(collection(db, 'masses'));
-  const by = {};
-  snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(w => w.kind).forEach(w => (by[w.date] = by[w.date] || []).push(w));
-  Object.values(by).forEach(l => l.sort((a, b) => (a.time || '').localeCompare(b.time || '')));
-  return by;
-}
-
 // 名字 → 团员：名字／全名一样就是他（大小写、空格、中文名不管：「Agnes Tan」= Agnes Tan 陈玉华）
 // 找不到再看第一个字：「Michael Ong」→ 团员名单里只有一个叫 Michael 的就是他
 export function findMember(name, members) {

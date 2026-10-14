@@ -230,9 +230,12 @@ window.addEventListener('resize', () => { if (qrTimer) { qrObj = null; lastSlot 
 function periods() {
   const now = new Date();
   const back = m => { const d = new Date(now); d.setMonth(d.getMonth() - m); return ymd(d); };
+  const y = now.getFullYear();
+  // 次数可以叠加：3 个月 7 次 → 一年 28 次（够了可以提名、晋升）
   const list = [
+    { key: 'y', label: `今年 ${y}`, from: `${y}-01-01`, to: `${y}-12-31`, q: 4 },
     { key: 'r3', label: '最近 3 个月', from: back(3), to: TODAY, q: 1 },
-    { key: 'r24', label: '最近 2 年（改选看这个）', from: back(24), to: TODAY, q: 8 },
+    { key: 'r12', label: '最近 12 个月', from: back(12), to: TODAY, q: 4 },
   ];
   // 有点名记录的每一季
   const qs = new Set(Object.values(events).map(e => `${e.date.slice(0, 4)}-${Math.floor((+e.date.slice(5, 7) - 1) / 3) + 1}`));
@@ -247,9 +250,9 @@ function periods() {
 }
 
 function renderPeriods() {
-  const keep = $('s-period').value || 'r3';
+  const keep = $('s-period').value || 'y';
   $('s-period').innerHTML = periods().map(p => `<option value="${p.key}">${esc(p.label)}</option>`).join('');
-  $('s-period').value = periods().some(p => p.key === keep) ? keep : 'r3';
+  $('s-period').value = periods().some(p => p.key === keep) ? keep : 'y';
 }
 
 let lastStats = null;
@@ -266,29 +269,37 @@ function renderStats() {
     const att = c.P + c.T;
     return { id, name: nameOf[id] || '（已离团）', gone: !members.some(m => m.id === id), c, att, ok: want ? att >= want : null };
   }).filter(r => !r.gone || r.att + r.c.L + r.c.A);
-  rows.sort((a, b) => (a.ok === b.ok ? 0 : a.ok ? 1 : -1) || a.att - b.att || a.name.localeCompare(b.name, 'zh'));
-  const okN = rows.filter(r => r.ok).length, badN = rows.filter(r => r.ok === false).length;
+  // 出席最多的排最前面（看谁最活跃）；一次都没出席的收在最后一行
+  rows.sort((a, b) => b.att - a.att || a.c.A - b.c.A || a.name.localeCompare(b.name, 'zh'));
+  const came = rows.filter(r => r.att), zero = rows.filter(r => !r.att);
+  const okN = rows.filter(r => r.ok).length;
   const first = Object.values(events).map(e => e.date).sort()[0];
+  const pct = r => Math.round(r.att / evs.length * 100);
+  const top = came.filter(r => r.att === came[0]?.att).map(r => r.name);
+  const rank = r => came.findIndex(x => x.att === r.att) + 1;   // 一样多次的同一名
 
   $('s-head').innerHTML = !evs.length
     ? '<div class="text-slate-500">这段时间还没有点名记录。</div>'
-    : `<div class="font-semibold text-base">${want ? `✅ ${okN} 人达标　🔴 ${badN} 人还没够` : `共 ${rows.length} 人`}</div>
-       <div class="text-slate-600">这段时间点了 <b>${evs.length}</b> 次名（${dm(evs[0].date)}–${dm(evs.at(-1).date)}）${want ? `，要出席 <b>${want}</b> 次才算达标` : ''}。</div>
-       ${want && evs.length < want ? `<div class="text-amber-700">⚠️ 这段时间只点了 ${evs.length} 次，比要求的 ${want} 次还少，现在谁都还不可能达标——等点名记录多一点再看。</div>` : ''}
-       ${first && first > p.from && p.key !== 'all' ? `<div class="text-xs text-slate-400">点名记录从 ${dm(first)} 才开始，之前纸上的没算进来。</div>` : ''}`;
+    : `<div class="font-semibold text-base">🏆 出席最多${came.length ? `（${came[0].att} 次${came[0].att === evs.length ? '，全勤' : ''}）` : ''}：${top.map(esc).join('、') || '—'}</div>
+       <div class="text-slate-600">这段时间点了 <b>${evs.length}</b> 次名（${dm(evs[0].date)}–${dm(evs.at(-1).date)}），<b>${came.length}</b> 人有来过。</div>
+       ${want ? `<div class="text-slate-600">${okN ? `✅ <b>${okN}</b> 人已经够 ${want} 次。` : ''}${p.q >= 4 ? `一年出席 <b>${want}</b> 次就可以提名、晋升` : `这段时间要 <b>${want}</b> 次`}（每 3 个月 ${need} 次，会一直累积上去）。</div>` : ''}
+       ${first && first > p.from && p.key !== 'all' ? `<div class="text-xs text-slate-400">点名记录从 ${dm(first)} 才开始，之前纸上的没算进来，次数会慢慢累积。</div>` : ''}`;
 
-  $('s-list').innerHTML = evs.length ? rows.map(r => `
+  $('s-list').innerHTML = evs.length ? came.map(r => `
     <div class="flex items-center gap-3 px-3.5 py-2.5">
+      <div class="w-6 shrink-0 text-center text-xs ${rank(r) <= 3 ? 'font-semibold text-amber-600' : 'text-slate-400'}">${rank(r)}</div>
       <div class="flex-1 min-w-0">
-        <div class="font-semibold">${esc(r.name)}${r.gone ? ' <span class="text-xs font-normal text-slate-400">不在名单了</span>' : ''}</div>
-        <div class="text-xs text-slate-500">出席 ${r.att}${r.c.T ? `（含迟到/早退 ${r.c.T}）` : ''} · 请假 ${r.c.L} · 缺席 ${r.c.A}${r.c.none ? ` · 没点到 ${r.c.none}` : ''}</div>
+        <div class="font-semibold">${esc(r.name)}${r.ok ? ' <span class="text-xs font-normal text-emerald-600">✅ 够 ' + want + ' 次</span>' : ''}${r.gone ? ' <span class="text-xs font-normal text-slate-400">不在名单了</span>' : ''}</div>
+        ${want ? `<div class="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${r.ok ? 'bg-emerald-500' : 'bg-indigo-400'}" style="width:${Math.min(100, r.att / want * 100)}%"></div></div>` : ''}
+        <div class="text-xs text-slate-500 mt-0.5">${r.c.T ? `含迟到/早退 ${r.c.T} · ` : ''}请假 ${r.c.L} · 缺席 ${r.c.A}${r.c.none ? ` · 没点到 ${r.c.none}` : ''}</div>
       </div>
       <div class="text-right shrink-0">
-        ${r.ok === null ? '' : r.ok ? '<div class="text-emerald-600 font-semibold">✅ 达标</div>' : `<div class="text-red-600 font-semibold">🔴 差 ${want - r.att} 次</div>`}
-        <div class="text-xs text-slate-400">${Math.round(r.att / evs.length * 100)}%</div>
+        <div class="font-semibold">${r.att}${want ? `<span class="text-xs font-normal text-slate-400"> / ${want}</span>` : ''} 次</div>
+        <div class="text-xs text-slate-400">${pct(r)}%</div>
       </div>
-    </div>`).join('') : '';
-  lastStats = { p, evs, rows, want, kind };
+    </div>`).join('') + (zero.length ? `
+    <div class="px-3.5 py-2.5 text-xs text-slate-400 leading-relaxed">这段时间还没出席记录（${zero.length} 位）：${zero.map(r => esc(r.name)).join('、')}</div>` : '') : '';
+  lastStats = { p, evs, rows: came, zero, want, kind };
 }
 
 $('s-period').addEventListener('change', renderStats);
@@ -306,12 +317,8 @@ $('s-copy').addEventListener('click', async () => {
   const s = lastStats; if (!s?.evs.length) return;
   const kindTxt = s.kind ? `只算${KIND[s.kind]}，` : '';
   let t = `📊 *乐韵歌咏团出席率*\n${s.p.label}（${dm(s.evs[0].date)}–${dm(s.evs.at(-1).date)}），${kindTxt}点名 ${s.evs.length} 次`;
-  if (s.want) {
-    const ok = s.rows.filter(r => r.ok), bad = s.rows.filter(r => r.ok === false);
-    t += `，要出席 ${s.want} 次\n\n✅ 达标（${ok.length} 人）：${ok.map(r => r.name).join('、') || '—'}\n\n🔴 还没够（${bad.length} 人）：\n${bad.map(r => `• ${r.name} ${r.att} 次（差 ${s.want - r.att}）`).join('\n') || '—'}`;
-  } else {
-    t += `\n\n${s.rows.map(r => `• ${r.name} ${r.att} 次`).join('\n')}`;
-  }
+  t += `\n\n🏆 出席最多的：\n${s.rows.map(r => `${s.rows.findIndex(x => x.att === r.att) + 1}. ${r.name} ${r.att} 次（${Math.round(r.att / s.evs.length * 100)}%）${r.ok ? ' ✅' : ''}`).join('\n')}`;
+  if (s.want) t += `\n\n✅ = 已经够 ${s.want} 次${s.p.q >= 4 ? '（一年 ' + s.want + ' 次可以提名、晋升）' : ''}`;
   try { await navigator.clipboard.writeText(t); toast('✓ 复制了，去 WhatsApp 贴上'); }
   catch { prompt('复制这段：', t); }
 });
