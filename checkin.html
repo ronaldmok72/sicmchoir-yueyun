@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>签到 - 乐韵歌咏团</title>
+  <script src="src/gate.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
+  <main class="max-w-sm mx-auto px-4 py-10 text-center">
+    <img src="https://res.cloudinary.com/dsfhilcgz/image/upload/v1778688168/sicmchoir_yueyun_logo.jpg" alt="" class="w-14 h-14 rounded-2xl object-cover mx-auto">
+    <div class="text-xs text-slate-400 tracking-widest mt-2">SIC 乐韵歌咏团</div>
+    <div id="ev" class="text-lg font-semibold mt-1"></div>
+    <div id="box" class="mt-6 bg-white rounded-2xl border border-slate-200 p-6 space-y-3">
+      <div class="text-slate-400 text-sm">签到中…</div>
+    </div>
+    <div class="mt-6 flex justify-center gap-4 text-sm">
+      <a href="day.html" class="text-slate-500 hover:text-indigo-600">📅 这台弥撒</a>
+      <a href="/" class="text-slate-500 hover:text-indigo-600">🎼 乐谱</a>
+    </div>
+  </main>
+
+  <script src="src/login.js"></script>
+  <script type="module" src="src/checkin.js"></script>
+</body>
+</html>

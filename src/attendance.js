@@ -5,6 +5,7 @@
 import { collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
+import { DEFAULT_TIME, slotNow, tokenOf, randomSecret, hm } from "./checkin-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -56,6 +57,7 @@ async function load() {
 
 // ---------- 点名 ----------
 function openEvent() {
+  if (qrTimer) closeQr();
   const id = curId();
   $('r-title').textContent = titleFor($('r-date').value, $('r-kind').value);
   if (unsub) unsub();
@@ -86,13 +88,16 @@ function renderRoll() {
         <span class="font-semibold">${esc(p.name)}</span>
         ${p.fullName && p.fullName !== p.name ? `<span class="text-xs text-slate-400 ml-1">${esc(p.fullName)}</span>` : ''}
         ${p.gone ? '<span class="text-xs text-slate-400 ml-1">不在名单了</span>' : ''}
+        ${e?.times?.[p.id] ? `<div class="text-[11px] text-slate-400">📱 到 ${hm(e.times[p.id].in)}${e.times[p.id].out ? ` · 走 ${hm(e.times[p.id].out)}` : ''}</div>` : ''}
       </div>
       <div class="flex gap-1">
         ${MARKS.map(m => `<button data-id="${esc(p.id)}" data-mark="${m.k}" class="px-2 py-1 text-xs rounded-lg border ${marks[p.id] === m.k ? m.on : 'border-slate-200 text-slate-500 hover:bg-slate-50'}">${m.label}</button>`).join('')}
       </div>
     </div>`).join('') || '<div class="p-4 text-sm text-slate-400">名单是空的，先去「团员名单」加人。</div>';
   $('r-del').classList.toggle('hidden', !e);
+  $('r-qr').classList.toggle('hidden', $('r-date').value !== TODAY);
   renderRecent();
+  renderQrCount();
 }
 
 function renderRecent() {
@@ -161,6 +166,64 @@ $('r-del').addEventListener('click', async () => {
   try { await deleteDoc(doc(db, 'attendance', curId())); toast('删掉了'); }
   catch (err) { console.error(err); toast('❌ 删不到，检查网络', true); }
 });
+
+// ---------- 现场 QR 签到 ----------
+// 开 QR 时这一次的点名还没有 qr 密码就生一个，开始/结束时间照种类先填好（练歌 8pm–10pm）
+let qrTimer = null, qrObj = null;
+async function openQr() {
+  const id = curId(), e = events[id];
+  const [ds, de] = DEFAULT_TIME[$('r-kind').value] || ['', ''];
+  const patch = { ...base() };
+  if (!e?.qr) patch.qr = randomSecret();
+  if (e?.start === undefined) patch.start = ds;
+  if (e?.end === undefined) patch.end = de;
+  try { await setDoc(doc(db, 'attendance', id), patch, { merge: true }); }
+  catch (err) { console.error(err); return toast('❌ 开不到，检查网络', true); }
+  events[id] = { ...(events[id] || {}), ...patch, marks: events[id]?.marks || {} };
+  $('qr-title').textContent = `${dm($('r-date').value)} ${titleFor($('r-date').value, $('r-kind').value)}`;
+  $('qr-start').value = events[id].start || '';
+  $('qr-end').value = events[id].end || '';
+  $('qr-box').classList.remove('hidden');
+  try { await navigator.wakeLock?.request('screen'); } catch { /* 没关系 */ }
+  drawQr();
+  clearInterval(qrTimer);
+  qrTimer = setInterval(drawQr, 1000);
+  renderQrCount();
+}
+let lastSlot = null;
+async function drawQr() {
+  const e = events[curId()];
+  const slot = slotNow();
+  if (!e?.qr || slot === lastSlot) return;
+  lastSlot = slot;
+  const url = `${location.origin}/checkin.html?e=${encodeURIComponent(curId())}&k=${slot}.${await tokenOf(e.qr, slot)}`;
+  const size = Math.max(200, Math.min(innerWidth - 64, innerHeight - 340, 440));
+  if (!qrObj || qrObj._size !== size) {
+    $('qr').innerHTML = '';
+    qrObj = new QRCode($('qr'), { text: url, width: size, height: size, correctLevel: QRCode.CorrectLevel.M });
+    qrObj._size = size;
+  } else qrObj.makeCode(url);
+}
+function closeQr() {
+  clearInterval(qrTimer); qrTimer = null; lastSlot = null;
+  $('qr-box').classList.add('hidden');
+}
+function renderQrCount() {
+  if ($('qr-box').classList.contains('hidden')) return;
+  const e = events[curId()] || {};
+  const t = Object.entries(e.times || {});
+  const ins = t.filter(([, x]) => x.in).sort((a, b) => b[1].in.localeCompare(a[1].in));
+  const outs = t.filter(([, x]) => x.out).length;
+  $('qr-count').innerHTML = `已签到 <b class="text-lg">${ins.length}</b> 人${outs ? `　·　签退 <b>${outs}</b> 人` : ''}`;
+  $('qr-recent').textContent = ins.length ? '刚到：' + ins.slice(0, 8).map(([id, x]) => `${nameOf[id] || e.names?.[id] || '?'} ${hm(x.in)}${e.marks?.[id] === 'T' ? '⏰' : ''}`).join('、') : '';
+}
+$('r-qr').addEventListener('click', openQr);
+$('qr-close').addEventListener('click', closeQr);
+['start', 'end'].forEach(k => $('qr-' + k).addEventListener('change', async () => {
+  try { await updateDoc(doc(db, 'attendance', curId()), { [k]: $('qr-' + k).value, updatedAt: new Date().toISOString() }); toast('✓ 时间改好了'); }
+  catch (err) { console.error(err); toast('❌ 没存到', true); }
+}));
+window.addEventListener('resize', () => { if (qrTimer) { qrObj = null; lastSlot = null; drawQr(); } });
 
 // ---------- 出席率 ----------
 // 每一段时间：from–to，要几个「3 个月」（算要出席几次）
