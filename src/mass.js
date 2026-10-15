@@ -718,6 +718,40 @@ $('singers').addEventListener('click', e => {
   M.singers.splice(+b.dataset.rmsinger, 1); renderWed(); setDirty();
 });
 
+// 贴 WA 名单：有编号的行才算；「领经：Sebastian Yew」= 职务，「Ronald Mok」= 来唱的人
+function parseWaList(text) {
+  const roles = [], singers = [];
+  text.split(/\n/).forEach(line => {
+    const m = line.match(/^\s*\d+\s*[).、.]\s*(.+)$/);
+    if (!m) return;
+    const [role, ...rest] = m[1].split(/\s*[:：]\s*/);
+    const name = rest.join(':').trim();
+    if (rest.length && role.trim()) roles.push({ role: role.trim(), name });
+    else if (m[1].trim()) singers.push(m[1].trim());
+  });
+  return { roles, singers };
+}
+$('wa-apply').addEventListener('click', () => {
+  const { roles, singers } = parseWaList($('wa-text').value);
+  if (!roles.length && !singers.length) return alert('看不到名单。要有编号，例如「1)领经：Sebastian Yew」「9) Ronald Mok」。');
+  const names = [...new Set(singers.map(n => findMember(n, MEMBERS)?.name || n))];
+  const old = M.roles || [], oldS = M.singers || [];
+  const lo = s => String(s || '').toLowerCase();
+  const changes = [
+    ...roles.filter(r => lo(old.find(o => o.role.trim() === r.role)?.name) !== lo(r.name)).map(r => `${r.role}：${old.find(o => o.role.trim() === r.role)?.name || '（空）'} → ${r.name || '（空）'}`),
+    ...old.filter(o => o.role.trim() && !roles.some(r => r.role === o.role.trim())).map(o => `拿掉职务：${o.role}`),
+    ...names.filter(n => !oldS.some(x => lo(x) === lo(n))).map(n => `＋ 来唱：${n}`),
+    ...oldS.filter(x => !names.some(n => lo(n) === lo(x))).map(x => `− 不来唱：${x}`),
+  ];
+  if (!changes.length) return alert('跟现在的一样，不用改。');
+  if (!confirm(`照 WA 名单更新：\n\n${changes.join('\n')}\n\n确定？（之后记得按保存）`)) return;
+  if (roles.length) M.roles = roles;
+  if (singers.length) M.singers = names;
+  $('wa-text').value = '';
+  $('wa-paste').open = false;
+  renderWed(); setDirty();
+});
+
 // 婚礼的 WA 文字：照平常发的格式（标题、日期时间、进：…、职务、歌咏团名单）
 const fullOf = n => { const m = MEMBERS.find(x => x.name === n); return String(m?.fullName || '').replace(/[\u3400-\u9fff]+/g, '').trim() || n; };
 function waWedding() {

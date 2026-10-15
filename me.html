@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>我的资料 - 乐韵歌咏团</title>
+  <script src="src/gate.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="manifest" href="manifest.json">
+  <style>body { -webkit-tap-highlight-color: transparent; }</style>
+</head>
+<body class="bg-zinc-950 text-zinc-200 min-h-[100dvh] font-sans">
+  <main class="max-w-md mx-auto px-4 py-6 pb-24 text-sm">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <div class="text-xs text-zinc-500 tracking-widest">SIC 乐韵歌咏团</div>
+        <h1 class="text-lg font-semibold text-white">✏️ 我的资料</h1>
+      </div>
+      <a href="/" class="text-xs text-zinc-500 hover:text-zinc-300">← 回乐谱</a>
+    </header>
+
+    <div id="status" class="text-zinc-500">读取中…</div>
+
+    <!-- 还没登录 -->
+    <section id="need-login" class="hidden space-y-3">
+      <div class="text-zinc-400">先用电话登录，才可以改你的资料。</div>
+      <button id="btn-login" class="w-full rounded-xl py-3 font-semibold bg-indigo-600 hover:bg-indigo-500 text-white">📱 用电话登录</button>
+    </section>
+
+    <section id="body" class="hidden space-y-5">
+      <!-- 名单上可能本来就有你 -->
+      <div id="merge-box" class="hidden rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-2"></div>
+
+      <form id="f" class="rounded-2xl bg-zinc-900 border border-white/10 p-4 space-y-4">
+        <label class="block space-y-1.5">
+          <span class="text-zinc-400">大家看到的名字</span>
+          <input name="name" maxlength="30" required class="w-full rounded-xl bg-zinc-800 border border-white/10 px-4 py-3 text-white focus:outline-none focus:border-indigo-400">
+          <span class="block text-[11px] text-zinc-500">至少要有圣名，例如 <b class="text-zinc-300">Ronald Mok</b>、<b class="text-zinc-300">Peter Siow</b>、<b class="text-zinc-300">Angela 美嫣</b>（圣名＋姓，或圣名＋名字）</span>
+          <span id="name-tip" class="hidden block text-[11px] text-amber-300"></span>
+        </label>
+        <label class="block space-y-1.5">
+          <span class="text-zinc-400">全名（可以不填）</span>
+          <input name="fullName" maxlength="40" placeholder="例如 Ronald Mok 莫荣烽" class="w-full rounded-xl bg-zinc-800 border border-white/10 px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-400">
+        </label>
+        <div class="space-y-1.5">
+          <span class="text-zinc-400">电话</span>
+          <div class="flex items-center gap-2">
+            <span id="phone-now" class="flex-1 text-zinc-300"></span>
+            <button type="button" id="btn-phone" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300">换电话</button>
+          </div>
+          <div id="phone-box" class="hidden space-y-2">
+            <input name="phone" type="tel" inputmode="tel" placeholder="新的电话号码" class="w-full rounded-xl bg-zinc-800 border border-white/10 px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-400">
+            <div class="text-[11px] text-zinc-500">换了之后，下次登录就用新的号码。</div>
+          </div>
+        </div>
+        <div id="err" class="hidden text-amber-400 text-xs"></div>
+        <button id="btn-save" class="w-full rounded-xl py-3 font-semibold bg-indigo-600 hover:bg-indigo-500 text-white">保存</button>
+        <div id="ok" class="hidden text-emerald-400 text-xs text-center"></div>
+      </form>
+
+      <div class="grid grid-cols-2 gap-2">
+        <a href="day.html" class="rounded-xl py-3 text-center bg-white/5 hover:bg-white/10">📅 我坐哪里</a>
+        <a href="scan.html" class="rounded-xl py-3 text-center bg-white/5 hover:bg-white/10">📷 扫描签到</a>
+      </div>
+      <button id="btn-logout" class="w-full text-xs text-zinc-500 hover:text-white py-2">登出（这部手机不再记得我）</button>
+    </section>
+  </main>
+
+  <script src="src/login.js"></script>
+  <script type="module" src="src/me.js"></script>
+</body>
+</html>

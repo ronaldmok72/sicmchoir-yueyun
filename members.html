@@ -36,6 +36,11 @@
     <!-- 总览 -->
     <section id="summary" class="bg-white rounded-2xl border border-slate-200 p-4 mb-4 text-sm space-y-2"></section>
 
+    <!-- 自己注册的可能是名单上本来的人 -->
+    <section id="dup-box" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 text-sm space-y-2"></section>
+    <!-- 名字加上圣名 -->
+    <section id="name-box" class="hidden bg-sky-50 border border-sky-200 rounded-2xl p-4 mb-4 text-sm space-y-2"></section>
+
     <!-- 测验声部 -->
     <section id="quiz-box" class="hidden bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-4 text-sm space-y-2"></section>
 
@@ -63,7 +68,7 @@
         <h2 id="edit-title" class="font-semibold text-base"></h2>
         <button type="button" id="edit-close" class="text-slate-400 hover:text-slate-700 px-2 text-lg">✕</button>
       </div>
-      <label class="block space-y-1"><span class="text-slate-500">常用名字（排座位、职务表上的叫法）</span>
+      <label class="block space-y-1"><span class="text-slate-500">显示的名字（至少有圣名：Ronald Mok、Angela 美嫣；改了职务表、座位表会一起改）</span>
         <input name="name" required class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>
       <label class="block space-y-1"><span class="text-slate-500">全名（可以不填）</span>
         <input name="fullName" placeholder="例如：Ronald Mok 莫荣烽" class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>

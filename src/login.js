@@ -103,7 +103,8 @@
     shell(`
       <div class="text-white font-semibold text-base">欢迎加入 🙌</div>
       <form data-f class="space-y-3">
-        <input name="name" maxlength="20" placeholder="团里大家怎么叫你，例如 Agnes" class="${INPUT}">
+        <input name="name" maxlength="30" placeholder="圣名＋姓，例如 Ronald Mok" class="${INPUT}">
+        <div class="text-[11px] text-zinc-500 -mt-1">至少要有圣名：Ronald Mok、Peter Siow、Angela 美嫣</div>
         <input name="full" maxlength="40" placeholder="全名（可以不填）" class="${INPUT}">
         <div data-err class="hidden text-amber-400 text-xs"></div>
         <button class="${BTN} bg-indigo-600 hover:bg-indigo-500 text-white">下一步</button>
@@ -116,7 +117,20 @@
       if (!name) return err('要填名字');
       const same = (roster || []).find(m => norm(m.name) === norm(name));
       if (same) return err(`名单上已经有「${same.name}」。是你的话，按「回去名单找」选他；不是的话，名字加点区别，例如「${name} Tan」。`);
-      stepVoice({ phone, name, fullName });
+      // 名单上可能本来就有他（打 Hans Chew，名单上是 Hans）→ 先问是不是他
+      const first = norm(name.split(/\s+/)[0]);
+      const maybe = first.length >= 2 ? (roster || []).filter(m => !m.phoneHash && m.active !== false && [m.name, m.fullName].some(v => norm(String(v || '').split(/\s+/)[0]) === first)) : [];
+      if (!maybe.length) return stepVoice({ phone, name, fullName });
+      shell(`
+        <div class="text-white font-semibold text-base">名单上的这位是你吗？</div>
+        <div class="text-zinc-400 text-xs">是的话点他，你的披肩、职务、点名记录就会连起来。</div>
+        <div class="space-y-1.5">${maybe.map(m => `<button data-pick="${esc(m.id)}" class="w-full text-left rounded-xl bg-white/5 hover:bg-indigo-600/30 px-4 py-2.5"><div class="text-white">${esc(m.name)} <span class="text-xs text-indigo-300">是我</span></div>${m.fullName ? `<div class="text-[11px] text-zinc-400">${esc(m.fullName)}</div>` : ''}</button>`).join('')}</div>
+        <button data-no class="${BTN} bg-white/5 hover:bg-white/10 text-zinc-300">都不是，我是新来的「${esc(name)}」</button>`);
+      box.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => {
+        const m = roster.find(x => x.id === b.dataset.pick);
+        stepVoice({ phone, member: m, rename: name.length > m.name.length ? name : '', fullName });
+      }));
+      box.querySelector('[data-no]').addEventListener('click', () => stepVoice({ phone, name, fullName }));
     });
   }
   // ①-d 男女、声部（不知道就先唱主旋律，之后指挥会帮你安排）
@@ -142,7 +156,7 @@
         if (!g) return err('先选女声还是男声');
         busy(e.target, true, '注册中…');
         try {
-          member = await gate.register(m, { phone: ctx.phone, name: ctx.name, fullName: ctx.fullName, gender: g, voiceSelf: v });
+          member = await gate.register(m, { phone: ctx.phone, name: ctx.name, fullName: ctx.fullName, gender: g, voiceSelf: v, rename: ctx.rename });
           roster = null;
           gate.setMe(member);
           if ((member.areas || []).length) stepPin(); else done([], true);
@@ -196,7 +210,8 @@
       <div class="text-zinc-400">${names.length ? `你可以进后台：<span class="text-zinc-200">${esc(names.join('、'))}</span>` : '你可以看乐谱、这台弥撒（你坐哪里）、歌单目录、公告。'}</div>
       <a href="day.html" class="${BTN} block text-center bg-indigo-600 hover:bg-indigo-500 text-white">📅 看这个主日我坐哪里</a>
       <a href="scan.html" class="${BTN} block text-center bg-emerald-600 hover:bg-emerald-500 text-white">📷 扫描签到</a>
-      <button data-close class="${BTN} bg-white/5 hover:bg-white/10 text-zinc-300">🎼 去乐谱</button>`);
+      <button data-close class="${BTN} bg-white/5 hover:bg-white/10 text-zinc-300">🎼 去乐谱</button>
+      ${/\s/.test(member.name.trim()) ? '' : `<a href="me.html" class="block text-center text-xs text-amber-300 hover:text-amber-200">名字只有「${esc(member.name)}」？到 ✏️ 我的资料 加上姓 ›</a>`}`);
     box.querySelector('[data-close]').addEventListener('click', close);
     document.dispatchEvent(new CustomEvent('sic-login'));
   }

@@ -65,6 +65,12 @@
 
     <!-- 💒 婚礼才有：谁做什么、来唱的人、座位 -->
     <section id="wed-box" class="hidden mt-4 space-y-3 text-sm">
+      <details id="wa-paste" class="bg-rose-50 rounded-xl border border-rose-200 px-3 py-2.5">
+        <summary class="cursor-pointer font-semibold text-rose-800">📋 加人／换人：直接贴 WhatsApp 的名单</summary>
+        <div class="text-xs text-rose-700/80 mt-2">把群里最新的名单整段贴进来（「1)领经：Sebastian Yew」「9) Ronald Mok」这种）。有「：」的算职务，没有的算来唱的人，会照这份更新。</div>
+        <textarea id="wa-text" rows="6" class="mt-2 w-full border border-rose-200 rounded-lg px-3 py-2 text-sm" placeholder="1)领经：Sebastian Yew&#10;2) 读经一：Isabelle Chan&#10;…&#10;9) Ronald Mok&#10;10) Kevin Wo"></textarea>
+        <button id="wa-apply" class="mt-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold">照这份更新</button>
+      </details>
       <div class="bg-white rounded-xl border border-rose-200 px-3 py-3">
         <div class="font-semibold mb-2">👥 谁做什么</div>
         <div id="roles" class="space-y-1.5"></div>

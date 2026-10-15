@@ -333,6 +333,7 @@
         { href: '/', icon: '🎼', title: '乐谱', sub: '你现在在这里', here: true },
         { href: 'scan.html', icon: '📷', title: '扫描签到', sub: '练歌到了扫一次，回家前再扫一次' },
         { href: 'day.html', icon: '📅', title: '这台弥撒', sub: '这个主日唱什么、谁指挥、我坐哪里' },
+        { href: 'prayer.html', icon: '🙏', title: '练习前祈祷文', sub: '这个主日的进堂咏、集祷经＋圣女则济利亚祷文' },
         { href: 'songs.html', icon: '📚', title: '歌单目录', sub: '全部的歌都在这里，随时看谱学歌' },
         { href: 'notices.html', icon: '📢', title: '公告', sub: '最近的活动、要练哪几首歌' },
         { href: 'quiz.html', icon: '📝', title: '团员小测验', sub: '自我了解用，不影响职位', quiz: true },
@@ -356,7 +357,7 @@
         const who = gate?.me();
         // 最上面：现在是谁（电话登录）／Guest
         const head = who
-          ? `<div class="flex items-center gap-2 px-3 py-2.5 mb-1 rounded-xl bg-white/5 text-sm"><span class="flex-1 min-w-0 truncate text-white">👋 ${who.name.replace(/[<>&]/g, '')}</span><button data-act="logout" class="text-xs text-zinc-500 hover:text-white">登出</button></div>`
+          ? `<div class="flex items-center gap-2 px-3 py-2.5 mb-1 rounded-xl bg-white/5 text-sm"><span class="flex-1 min-w-0 truncate text-white">👋 ${who.name.replace(/[<>&]/g, '')}</span><a href="me.html" class="text-xs text-indigo-300 hover:text-white">✏️ 修改资料</a><span class="text-zinc-700">|</span><button data-act="logout" class="text-xs text-zinc-500 hover:text-white">登出</button></div>`
           : `<button data-act="login" class="w-full flex items-center gap-2 px-3 py-2.5 mb-1 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-sm text-indigo-200"><span class="flex-1 text-left">📱 用电话号码登录</span><span class="text-xs text-indigo-300">看我坐哪里 ›</span></button>`;
         list.innerHTML = head + PAGES.filter(p => (!p.quiz || quizOpen || staff) && (!p.masterOnly || gate?.isMaster())).map(p => p.group
           ? `<div class="px-2 pt-3 pb-1 text-[11px] tracking-widest text-zinc-500">${p.group}${p.group.includes('🔒') && staff ? '　已解锁' : ''}</div>`

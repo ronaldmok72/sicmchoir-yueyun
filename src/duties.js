@@ -4,6 +4,7 @@ import { collection, getDocs, doc, setDoc, writeBatch } from "https://www.gstati
 import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
 import { DUTY_SEED } from "./duties-seed.js";
+import { timeText } from "./weddings-common.js";
 
 const $ = id => document.getElementById(id);
 const DUTIES = 'duties';
@@ -30,6 +31,11 @@ const WANT = (new URLSearchParams(location.search).get('d') || '').match(/^\d{4}
 let D = {};          // date → 职务
 let members = [];
 let massTitle = {};  // 排歌页排过的弥撒名称
+// 💒 婚礼：职务存在婚礼那一份（masses/{日期_时间}.roles），跟排歌页同一份，这里改那里也会变
+let W = {};          // id → 婚礼
+// 婚礼的职务名称 → 团员名单「会做的职务」、职务表统计用的 key
+const WED_AS = { Pianist: 'piano', Organist: 'organ', 钢琴: 'piano', 风琴: 'organ', 答唱咏: 'cantor', 指挥: 'conductor', 吉他: 'guitar', 鼓手: 'drums' };
+const isDay = id => /^\d{4}-\d{2}-\d{2}$/.test(id);
 
 async function load() {
   $('status').textContent = '读取中…';
@@ -38,7 +44,8 @@ async function load() {
   ]);
   D = Object.fromEntries(ds.docs.map(d => [d.id, d.data()]));
   members = ms.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false);
-  massTitle = Object.fromEntries(ma.docs.map(d => [d.id, d.data().title]));
+  massTitle = Object.fromEntries(ma.docs.filter(d => isDay(d.id)).map(d => [d.id, d.data().title]));
+  W = Object.fromEntries(ma.docs.filter(d => d.data().kind).map(d => [d.id, { id: d.id, ...d.data() }]));
   $('status').textContent = '';
   render();
   if (WANT) document.getElementById(`d-${WANT}`)?.scrollIntoView({ block: 'center' });
@@ -52,7 +59,7 @@ function dates() {
   if ($('range').value === 'year') {
     Object.keys(D).filter(d => d.startsWith(YEAR)).forEach(d => set.add(d));
   }
-  Object.keys(D).concat(Object.keys(massTitle)).filter(d => d >= TODAY).forEach(d => set.add(d));
+  Object.keys(D).concat(Object.keys(massTitle)).filter(d => isDay(d) && d >= TODAY).forEach(d => set.add(d));
   const s = new Date(TODAY + 'T12:00');
   s.setDate(s.getDate() + (7 - s.getDay()) % 7);
   for (let i = 0; i < 8; i++, s.setDate(s.getDate() + 7)) set.add(iso(s));
@@ -72,6 +79,14 @@ function stats() {
       if (d <= TODAY) s.last = d; else if (!s.next) s.next = d;
     });
   });
+  // 婚礼的钢琴、风琴、答唱咏也算（轮答唱咏才公平）
+  Object.values(W).filter(w => w.date.startsWith(YEAR)).forEach(w => (w.roles || []).forEach(r => {
+    const key = WED_AS[r.role], n = String(r.name || '').trim();
+    if (!key || !n) return;
+    const s = ((st[key] ||= {})[n] ||= { count: 0, last: null, next: null });
+    s.count++;
+    if (w.date <= TODAY) { if (!s.last || w.date > s.last) s.last = w.date; } else if (!s.next || w.date < s.next) s.next = w.date;
+  }));
   return st;
 }
 
@@ -80,27 +95,54 @@ function render() {
   $('seed-box').classList.toggle('hidden', Object.keys(D).length > 0);
   $('seed-count').textContent = DUTY_SEED.length;
   const list = dates();
-  $('list').innerHTML = list.map(date => {
-    const x = D[date] || {};
-    const past = date < TODAY;
-    return `
-      <div id="d-${date}" class="bg-white rounded-xl border ${date === (WANT || list.find(d => d >= TODAY)) ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200'} px-3 py-2.5 ${past ? 'opacity-60' : ''}">
+  const weds = Object.values(W).filter(w => $('range').value === 'year' ? w.date.startsWith(YEAR) : w.date >= TODAY);
+  // 日期和婚礼排在一起（同一天的话婚礼在前）
+  const rows = list.map(date => ({ date })).concat(weds.map(w => ({ date: w.date, w })))
+    .sort((a, b) => a.date.localeCompare(b.date) || (b.w ? 1 : 0) - (a.w ? 1 : 0) || (a.w?.time || '').localeCompare(b.w?.time || ''));
+  $('list').innerHTML = rows.map(({ date, w }) => w ? wedCard(w) : dayCard(date, list)).join('');
+  renderStats();
+}
+
+function wedCard(w) {
+  const roles = w.roles || [];
+  return `
+      <div class="bg-white rounded-xl border border-rose-200 px-3 py-2.5 ${w.date < TODAY ? 'opacity-60' : ''}">
         <div class="flex items-baseline gap-2 mb-2">
-          <span class="font-semibold text-sm">${md(date)}</span>
-          <span class="text-xs text-slate-400">星期${week(date)}</span>
-          <button data-title="${date}" class="flex-1 min-w-0 truncate text-left text-sm text-slate-600 hover:text-indigo-600" title="改名称">${esc(titleOf(date))}</button>
-          ${x.note ? `<span class="text-xs text-amber-600 truncate max-w-[40%]">${esc(x.note)}</span>` : ''}
+          <span class="font-semibold text-sm">${md(w.date)}</span>
+          <span class="text-xs text-slate-400 shrink-0">星期${week(w.date)} ${esc(timeText(w.time))}</span>
+          <span class="flex-1 min-w-0 truncate text-sm text-rose-700">💒 ${esc(w.title || '')}</span>
+          <a href="mass.html?id=${encodeURIComponent(w.id)}" class="text-xs text-indigo-600 hover:underline shrink-0">歌、来唱的人 ›</a>
         </div>
-        <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-          ${DUTY_ROLES.map(({ key, label }) => `
-            <button data-date="${date}" data-role="${key}" class="text-left rounded-lg px-2 py-1.5 border ${x[key] ? 'border-slate-200 bg-slate-50 hover:border-indigo-300' : 'border-dashed border-slate-200 hover:border-indigo-300'}">
-              <span class="block text-[10px] text-slate-400">${label}</span>
-              <span class="block truncate text-sm ${x[key] ? 'text-slate-800' : 'text-slate-300'}">${esc(x[key] || '＋')}</span>
+        <div class="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+          ${roles.map((r, i) => `
+            <button data-wed="${esc(w.id)}" data-idx="${i}" class="text-left rounded-lg px-2 py-1.5 border ${r.name ? 'border-slate-200 bg-slate-50 hover:border-indigo-300' : 'border-dashed border-slate-200 hover:border-indigo-300'}">
+              <span class="block text-[10px] text-slate-400">${esc(r.role)}</span>
+              <span class="block truncate text-sm ${r.name ? 'text-slate-800' : 'text-slate-300'}">${esc(r.name || '＋')}</span>
             </button>`).join('')}
         </div>
+        <div class="text-[11px] text-slate-400 mt-1.5">🎤 来唱 ${(w.singers || []).length} 位${(w.singers || []).length ? '：' + w.singers.map(esc).join('、') : ''}</div>
       </div>`;
-  }).join('');
-  renderStats();
+}
+
+function dayCard(date, list) {
+  const x = D[date] || {};
+  const past = date < TODAY;
+  return `
+    <div id="d-${date}" class="bg-white rounded-xl border ${date === (WANT || list.find(d => d >= TODAY)) ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200'} px-3 py-2.5 ${past ? 'opacity-60' : ''}">
+      <div class="flex items-baseline gap-2 mb-2">
+        <span class="font-semibold text-sm">${md(date)}</span>
+        <span class="text-xs text-slate-400">星期${week(date)}</span>
+        <button data-title="${date}" class="flex-1 min-w-0 truncate text-left text-sm text-slate-600 hover:text-indigo-600" title="改名称">${esc(titleOf(date))}</button>
+        ${x.note ? `<span class="text-xs text-amber-600 truncate max-w-[40%]">${esc(x.note)}</span>` : ''}
+      </div>
+      <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+        ${DUTY_ROLES.map(({ key, label }) => `
+          <button data-date="${date}" data-role="${key}" class="text-left rounded-lg px-2 py-1.5 border ${x[key] ? 'border-slate-200 bg-slate-50 hover:border-indigo-300' : 'border-dashed border-slate-200 hover:border-indigo-300'}">
+            <span class="block text-[10px] text-slate-400">${label}</span>
+            <span class="block truncate text-sm ${x[key] ? 'text-slate-800' : 'text-slate-300'}">${esc(x[key] || '＋')}</span>
+          </button>`).join('')}
+      </div>
+    </div>`;
 }
 
 function renderStats() {
@@ -123,6 +165,8 @@ $('list').addEventListener('click', async e => {
   }
   const b = e.target.closest('[data-role]');
   if (b) openPicker(b.dataset.date, b.dataset.role);
+  const wb = e.target.closest('[data-wed]');
+  if (wb) openPicker(W[wb.dataset.wed].date, null, wb.dataset.wed, +wb.dataset.idx);
 });
 
 async function save(date, patch) {
@@ -139,9 +183,11 @@ async function save(date, patch) {
 
 // ───────── 选人 ─────────
 let pick = null;
-function openPicker(date, role) {
-  pick = { date, role };
-  $('picker-title').textContent = `${md(date)} ${titleOf(date)} · ${LABEL[role]}`;
+// 婚礼的那一格：wed = 婚礼 id，idx = 第几个职务；role = 对应的职务 key（Pianist → piano，领经没有）
+function openPicker(date, role, wed, idx) {
+  const wr = wed && W[wed].roles[idx];
+  pick = { date, role: wed ? WED_AS[wr.role] || null : role, wed, idx, label: wed ? wr.role : LABEL[role] };
+  $('picker-title').textContent = wed ? `${md(date)} 💒 ${timeText(W[wed].time)} · ${wr.role}` : `${md(date)} ${titleOf(date)} · ${LABEL[role]}`;
   $('picker-search').value = '';
   $('picker').classList.remove('hidden');
   renderPicker();
@@ -157,56 +203,61 @@ $('picker-search').addEventListener('keydown', async e => {
   const v = $('picker-search').value.trim();
   if (!v) return;
   const hit = members.find(m => m.name.toLowerCase() === v.toLowerCase());
-  const { date, role } = pick;
-  closePicker();
-  await save(date, { [role]: hit ? hit.name : v });
+  await choose(hit ? hit.name : v);
 });
-$('picker-clear').addEventListener('click', async () => {
-  if (!pick) return;
-  const { date, role } = pick;
+$('picker-clear').addEventListener('click', () => pick && choose(''));
+async function choose(name) {
+  const { date, role, wed, idx } = pick;
   closePicker();
-  await save(date, { [role]: '' });
-});
+  if (!wed) return save(date, { [role]: name });
+  const w = W[wed];
+  w.roles = w.roles.map((r, i) => i === idx ? { ...r, name } : r);
+  render();
+  try {
+    await setDoc(doc(db, 'masses', wed), { roles: w.roles, savedAt: new Date().toISOString() }, { merge: true });
+    $('status').textContent = `✅ 已保存 ${md(date)} 婚礼`;
+  } catch (err) { console.error(err); alert('保存失败：' + (err.code || err.message)); }
+}
 
 function renderPicker() {
   if (!pick) return;
-  const { date, role } = pick;
-  const label = LABEL[role];
+  const { date, role, wed, idx, label } = pick;
   const q = $('picker-search').value.trim().toLowerCase();
-  const st = stats()[role] || {};
+  const st = (role && stats()[role]) || {};
   const cur = D[date] || {};
-  // 这一天已经做别的职务
-  const busy = n => DUTY_ROLES.filter(r => r.key !== role && cur[r.key] === n).map(r => r.label);
+  const curName = wed ? W[wed].roles[idx].name : cur[role];
+  // 这一天（这一台）已经做别的职务
+  const busy = n => wed ? W[wed].roles.filter((r, i) => i !== idx && r.name === n).map(r => r.role) : DUTY_ROLES.filter(r => r.key !== role && cur[r.key] === n).map(r => r.label);
+  const label2 = role ? LABEL[role] : label;   // 团员名单「会做的职务」的叫法（Pianist → 钢琴）
   const match = m => !q || `${m.name} ${m.fullName || ''}`.toLowerCase().includes(q);
-  const can = members.filter(m => (m.roles || []).includes(label) && match(m));
+  const can = members.filter(m => (m.roles || []).includes(label2) && match(m));
   // 答唱咏：今年做得少、很久没做的排前面（轮流）；其他职务：常做的排前面
   const rotate = role === 'cantor';
   can.sort((a, b) => {
     const sa = st[a.name] || { count: 0 }, sb = st[b.name] || { count: 0 };
     return rotate ? sa.count - sb.count || (sa.last || '').localeCompare(sb.last || '') : sb.count - sa.count;
   });
-  const others = q ? members.filter(m => !(m.roles || []).includes(label) && match(m)) : [];
+  const others = q || !can.length ? members.filter(m => !(m.roles || []).includes(label2) && match(m)) : [];
   const row = m => {
     const s = st[m.name];
     const b = busy(m.name);
-    return `<button data-name="${esc(m.name)}" class="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-indigo-50 ${cur[role] === m.name ? 'bg-indigo-50' : ''}">
-      <span class="flex-1 min-w-0 truncate text-sm">${esc(m.name)}${cur[role] === m.name ? ' ✓' : ''}</span>
+    return `<button data-name="${esc(m.name)}" class="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-indigo-50 ${curName === m.name ? 'bg-indigo-50' : ''}">
+      <span class="flex-1 min-w-0 truncate text-sm">${esc(m.name)}${curName === m.name ? ' ✓' : ''}</span>
       ${b.length ? `<span class="text-[11px] text-amber-600 shrink-0">这天已经是${b.join('、')}</span>` : ''}
-      <span class="text-[11px] text-slate-400 shrink-0">${s ? `今年 ${s.count} 次${s.last ? ` · 上次 ${md(s.last)}` : ''}${s.next ? ` · 已排 ${md(s.next)}` : ''}` : '今年还没做'}</span>
+      ${role ? `<span class="text-[11px] text-slate-400 shrink-0">${s ? `今年 ${s.count} 次${s.last ? ` · 上次 ${md(s.last)}` : ''}${s.next ? ` · 已排 ${md(s.next)}` : ''}` : '今年还没做'}</span>` : ''}
     </button>`;
   };
   $('picker-list').innerHTML =
-    (can.length ? `<div class="px-3 pt-1 pb-1 text-[11px] text-slate-400">会做${label}的${rotate ? '（今年做得少的在前面）' : ''}</div>${can.map(row).join('')}` : '')
+    (can.length ? `<div class="px-3 pt-1 pb-1 text-[11px] text-slate-400">会做${label2}的${rotate ? '（今年做得少的在前面）' : ''}</div>${can.map(row).join('')}` : '')
     + (others.length ? `<div class="px-3 pt-3 pb-1 text-[11px] text-slate-400">其他团员</div>${others.map(row).join('')}` : '')
-    + (!can.length && !others.length ? `<div class="text-sm text-slate-400 text-center py-6">${q ? `名单里没有「${esc(q)}」，按 Enter 直接用这个名字` : `团员名单里还没有人勾「${label}」。打名字搜，或到团员名单勾选`}</div>` : '')
+    + (!can.length && !others.length ? `<div class="text-sm text-slate-400 text-center py-6">${q ? `名单里没有「${esc(q)}」，按 Enter 直接用这个名字` : `团员名单里还没有人勾「${label2}」。打名字搜，或到团员名单勾选`}</div>` : '')
+    + (q && (can.length || others.length) ? '<div class="text-[11px] text-slate-400 text-center py-2">不是团员？打完整名字按 Enter</div>' : '')
     + (!q && can.length ? '<div class="text-[11px] text-slate-400 text-center py-2">要选别人：打名字搜</div>' : '');
 }
 $('picker-list').addEventListener('click', async e => {
   const b = e.target.closest('button[data-name]');
   if (!b || !pick) return;
-  const { date, role } = pick;
-  closePicker();
-  await save(date, { [role]: b.dataset.name });
+  await choose(b.dataset.name);
 });
 
 // ───────── 固定的补上：指挥、钢琴、风琴空着的，填今年最常做的人 ─────────

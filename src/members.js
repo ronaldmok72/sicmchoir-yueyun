@@ -4,6 +4,7 @@ import { collection, getDocs, doc, setDoc, addDoc, deleteDoc, writeBatch } from 
 import { db, RESULTS } from "./firebase.js";
 import { SEED } from "./members-seed.js";
 import { VOICES, VOICE_NAME, VOICE_SHORT, genderOf, genderFromVoice, normVoice } from "./people.js";
+import { renameEverywhere, mergeMembers, lookAlikes, suggestName } from "./members-common.js";
 
 const $ = id => document.getElementById(id);
 const MEMBERS = 'members';
@@ -44,6 +45,8 @@ function render() {
   $('seed-box').classList.toggle('hidden', members.length > 0);
   $('seed-count').textContent = SEED.length;
   renderSummary();
+  renderDupBox();
+  renderNameBox();
   renderQuizBox();
   renderList();
 }
@@ -67,6 +70,56 @@ function renderSummary() {
     <div class="text-xs text-slate-400">每个人都会唱主旋律；上面 S A T B 是另外会唱声部的人${quiz.length ? '' : '（10/17 测验答完会自动出现建议）'}</div>
     ${guessed.length ? `<div class="text-amber-700">⏳ ${guessed.length} 位的男女是照名字猜的（名单上标「猜的」），看一下对不对：${guessed.map(m => esc(m.name)).join('、')}</div>` : ''}
     ${dup.length ? `<div class="text-red-600">🔴 披肩号码重复：${dup.map(([c, n]) => `#${c} ${n.map(esc).join('、')}`).join('；')}</div>` : ''}`;
+}
+
+// 自己注册的新团员，名单上可能本来就有他（Hans Chew ↔ Hans）→ 一键合并
+function renderDupBox() {
+  const act = members.filter(m => m.active !== false);
+  const pairs = act.filter(m => m.selfJoined).flatMap(n => lookAlikes(n, act).filter(o => !o.selfJoined).map(o => ({ n, o })));
+  const box = $('dup-box');
+  box.classList.toggle('hidden', !pairs.length);
+  if (!pairs.length) return;
+  const nameOf = ({ n, o }) => n.name.length > o.name.length ? n.name : o.name;
+  box.innerHTML = `
+    <div class="font-semibold text-amber-900">🆕 自己注册的，名单上可能本来就有他</div>
+    <div class="text-xs text-amber-800">是同一个人就按合并：留名单上本来那一笔（披肩、职务、点名记录都在），把电话、声部搬过去。不是同一个人就不用理。</div>
+    ${pairs.map((p, i) => `
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="flex-1 min-w-0"><b>${esc(p.n.name)}</b> <span class="text-slate-500">（自己注册）</span> ↔ <b>${esc(p.o.name)}</b> <span class="text-slate-500">（名单上本来就有${p.o.phoneHash ? `，已经用 …${esc(p.o.phoneTail || '')} 登记` : ''}）</span></span>
+        <button data-merge="${i}" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs">是同一个人，合并（叫 ${esc(nameOf(p))}）</button>
+      </div>`).join('')}`;
+  box.querySelectorAll('[data-merge]').forEach(b => b.addEventListener('click', async () => {
+    const p = pairs[+b.dataset.merge];
+    if (p.o.phoneHash && !confirm(`${p.o.name} 已经用另一个电话 …${p.o.phoneTail} 登记了。还是要合并？（会留旧的电话）`)) return;
+    b.disabled = true; b.textContent = '合并中…';
+    try { await mergeMembers(db, p.o.id, p.n.id, nameOf(p)); } catch (err) { console.error(err); alert('合并失败：' + (err.code || err.message)); }
+    await load();
+  }));
+}
+
+// 显示的名字至少要有圣名：Mok → Ronald Mok、咏薇 → Agnes 咏薇（照全名）；职务表、座位表一起改
+function renderNameBox() {
+  const act = members.filter(m => m.active !== false);
+  const todo = act.map(m => ({ m, to: suggestName(m) })).filter(x => x.to && !members.some(o => o.id !== x.m.id && o.name.toLowerCase() === x.to.toLowerCase()));
+  const bare = act.filter(m => !/\s/.test(m.name.trim()) && !suggestName(m));
+  const box = $('name-box');
+  box.classList.toggle('hidden', !todo.length && !bare.length);
+  box.innerHTML = `
+    ${todo.length ? `<div class="font-semibold text-sky-900">名字加上圣名／姓（照全名，${todo.length} 位）</div>
+    <div class="text-slate-700">${todo.map(({ m, to }) => `${esc(m.name)} → <b>${esc(to)}</b>`).join('、')}</div>
+    <button id="btn-names" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white">全部改</button>
+    <span class="text-xs text-sky-800">职务表、座位表、婚礼名单上的名字也会一起改</span>` : ''}
+    ${bare.length ? `<div class="text-xs text-slate-500">还只有一个名字、也没有全名的 ${bare.length} 位：${bare.map(m => esc(m.name)).join('、')}。他们登录后可以在「✏️ 我的资料」自己补，或者点他的名字帮他改。</div>` : ''}`;
+  $('btn-names')?.addEventListener('click', async e => {
+    e.target.disabled = true; e.target.textContent = '改名中…';
+    try {
+      for (const { m, to } of todo) {
+        await setDoc(doc(db, MEMBERS, m.id), { name: to, updatedAt: new Date().toISOString() }, { merge: true });
+        await renameEverywhere(db, m.name, to);
+      }
+    } catch (err) { console.error(err); alert('改名失败：' + (err.code || err.message)); }
+    await load();
+  });
 }
 
 // 测验答的声部跟名单不一样（或名单还没填）→ 一键采用
@@ -218,8 +271,11 @@ form.addEventListener('submit', async e => {
     active: form.active.checked, note: form.note.value.trim(), selfJoined: false, updatedAt: new Date().toISOString(),   // 改过一次 = 看过了，不再标「🆕 自己注册」
   };
   try {
-    if (editing.id) await setDoc(doc(db, MEMBERS, editing.id), data, { merge: true });
-    else await addDoc(collection(db, MEMBERS), { ...data, createdAt: data.updatedAt });
+    if (editing.id) {
+      await setDoc(doc(db, MEMBERS, editing.id), data, { merge: true });
+      // 改了名字：职务表、座位表、婚礼名单上的旧名字一起改
+      if (editing.name && editing.name !== name) await renameEverywhere(db, editing.name, name);
+    } else await addDoc(collection(db, MEMBERS), { ...data, createdAt: data.updatedAt });
     closeEditor();
     await load();
   } catch (err) {

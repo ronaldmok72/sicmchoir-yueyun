@@ -123,6 +123,8 @@
       if (cur?.phoneHash) throw Object.assign(new Error('这个名字已经有电话了'), { code: 'name-taken', tail: cur.phoneTail });
       // 男女：名单没写、或者是猜的，才照他自己选的
       if (info.gender && (!cur?.gender || cur.genderGuess)) { f.gender = info.gender; f.genderGuess = false; }
+      // 他打了比较完整的名字（名单上 Hans，他打 Hans Chew）：先记在全名，团员名单会建议改成这个名字
+      if (info.rename && !cur?.fullName) f.fullName = info.rename;
       const r = await fetch(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&${Object.keys(f).map(k => 'updateMask.fieldPaths=' + k).join('&')}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
@@ -191,15 +193,25 @@
     write(next);
     return next;
   }
+  // 名字改了（例如 Mok → Ronald Mok）或被合并掉：这部手机记的名字跟着更新；那一笔不在了就请他重新用电话登录
+  async function syncMe() {
+    const cur = me();
+    if (!cur) return;
+    let m;
+    try { m = await memberById(cur.id); } catch { return; }   // 没网络就先照旧
+    if (!m) { logout(); return; }
+    if (m.name !== cur.name) { setMe(m); document.dispatchEvent(new CustomEvent('sic-me')); }
+  }
   function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } }
 
   window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys,
-    me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById };
+    me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById, syncMe };
 
   try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
 
   const tag = document.currentScript;
   const need = tag && tag.hasAttribute('data-require') ? (tag.getAttribute('data-require') || '') : null;
+  syncMe();
   if (need === null) { refresh(); return; }
   const kick = () => { document.documentElement.style.display = 'none'; location.replace('/'); };
   if (can(need)) {
