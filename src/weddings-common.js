@@ -5,7 +5,10 @@
 //   roles: [{ role, name }], singers: [名字], createdAt, savedAt }
 // 一天可以有好几台（9.30am、11.30am、1.30pm），所以 id 带时间；排歌页、这台弥撒都用这里
 
-export const WEDDING_ROLES = ['领经', '读经一', '答唱咏', '读经二', '投影', 'Pianist', 'Organist', '领唱'];
+export const WEDDING_ROLES = ['领经', '读经一', '答唱咏', '读经二', '投影', '钢琴', '风琴', '领唱'];
+// 职务名统一用中文：WA 名单写 Pianist／Organist 也认得
+const ROLE_ZH = { pianist: '钢琴', piano: '钢琴', organist: '风琴', organ: '风琴', cantor: '答唱咏', conductor: '指挥', guitar: '吉他', drums: '鼓手', drummer: '鼓手' };
+export const roleZh = r => ROLE_ZH[String(r || '').trim().toLowerCase()] || String(r || '').trim();
 export const WEDDING_TIMES = ['09:30', '11:30', '13:30'];
 
 // 09:30 → 9.30am、13:30 → 1.30pm（跟大家平常写的一样）

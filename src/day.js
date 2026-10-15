@@ -3,10 +3,11 @@
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
 import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
-import { litDay } from "./liturgy.js";
+import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
 import { loadNotices, noticeHtml } from "./notices-common.js";
-import { timeText, findMember } from "./weddings-common.js";
+import { timeText, findMember, roleZh } from "./weddings-common.js";
+import { CECILIA, bookName, loadPrayer } from "./prayer-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +32,7 @@ let specials = {};   // 婚礼 { 日期: [几台] }：排歌页 masses 里有 ki
 let wseats = {};     // 婚礼的座位表 seatings/{日期_时间}
 let memberList = [];
 let date = null;
+window.sicNavDate = () => date;   // 菜单去排歌／职务表／座位表时带着这个日期
 let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 
@@ -75,7 +77,7 @@ function dates() {
 }
 // 只有婚礼弥撒的那天（星期六）：不算主日，不用排座位、职务表
 const onlySpecial = d => !!specials[d]?.length && !masses[d] && !duties[d] && !seatings[d];
-const titleOf = d => onlySpecial(d) ? specials[d].map(w => `💒 ${timeText(w.time)}`).join(' ') : masses[d]?.title || duties[d]?.title || litDay(d).name;
+const titleOf = d => onlySpecial(d) ? specials[d].map(w => `💒 ${timeText(w.time)}`).join(' ') : tidyTitle(masses[d]?.title || duties[d]?.title || litDay(d).name);
 
 // ───────── 还要处理的（指挥才看到）─────────
 // level: red = 一定要处理；wait = 还没做完
@@ -110,12 +112,11 @@ const stageNames = d => STAGE.flatMap(k => splitNames(duties[d]?.[k]));
 // ───────── 画面 ─────────
 function render() {
   const isStaff = staff();
-  $('staff-links').classList.toggle('hidden', !isStaff);
   $('btn-staff').classList.toggle('hidden', isStaff);
-  document.querySelectorAll('#staff-links a').forEach(a => { a.href = `${a.getAttribute('href').split('?')[0]}?d=${date}`; });
   renderDates(isStaff);
   renderHead();
   renderSpecials(isStaff);
+  renderPrayer();
   const only = onlySpecial(date);
   ['todo', 'songs', 'people', 'seats'].forEach(id => $(id).classList.toggle('hidden', only));
   if (only) { renderNotices(isStaff); return; }
@@ -282,7 +283,7 @@ function renderSpecials(isStaff) {
   const song = x => `<a href="${esc(x.imageUrl)}" target="_blank" rel="noopener" class="text-slate-800 hover:text-indigo-600 underline decoration-slate-200 underline-offset-4" title="${esc(x.title)}">${esc(waTitle(x.title))}</a>`;
   box.innerHTML = list.map(w => {
     const roles = (w.roles || []).filter(r => r.name);
-    const mine = roles.filter(r => isMe(r.name)).map(r => r.role).concat((w.singers || []).some(isMe) ? ['唱'] : []);
+    const mine = roles.filter(r => isMe(r.name)).map(r => roleZh(r.role)).concat((w.singers || []).some(isMe) ? ['唱'] : []);
     return `<section class="bg-white rounded-2xl border border-rose-200 p-4">
       ${card(`💒 ${esc(timeText(w.time))}　${esc(w.title)}`, isStaff ? `<span class="shrink-0 text-xs space-x-2"><a href="mass.html?id=${encodeURIComponent(w.id)}" class="text-indigo-600 hover:underline">改歌 →</a><a href="seating.html?e=${encodeURIComponent(w.id)}" class="text-indigo-600 hover:underline">座位 →</a></span>` : '')}
       ${mine.length ? `<div class="mb-2 text-sm rounded-lg bg-rose-50 text-rose-800 px-3 py-2">🙋 你这台有份：<b>${esc(mine.join('、'))}</b></div>` : ''}
@@ -297,7 +298,7 @@ function renderSpecials(isStaff) {
       ${w.setlistName ? `<a href="/?setlist=${encodeURIComponent(w.setlistName)}" class="mt-2 mb-3 block text-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 text-sm">🎼 打开乐谱（翻页看）</a>` : ''}
       ${roles.length ? `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">${roles.map(r => `
         <div class="rounded-lg px-2.5 py-2 ${isMe(r.name) ? 'bg-rose-100' : 'bg-slate-50'}">
-          <div class="text-[11px] text-slate-400">${esc(r.role)}</div>
+          <div class="text-[11px] text-slate-400">${esc(roleZh(r.role))}</div>
           <div class="text-sm truncate">${esc(r.name)}</div>
         </div>`).join('')}</div>` : ''}
       ${(w.singers || []).length ? `<div class="mt-3 text-sm"><span class="text-slate-500">🎤 来唱（${w.singers.length}）：</span>${w.singers.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : ''}
@@ -319,6 +320,38 @@ function wedSeats(w, isMe) {
 }
 
 // 公告 + 要练的歌（还在显示的公告都放这里，不管选哪一天）
+// 练习前祈祷文（主日才有）：星期四、星期六练习那天自动打开，其他时候按一下展开
+const prayers = {};
+async function renderPrayer() {
+  const box = $('prayer'), d = date;
+  const sun = new Date(d + 'T12:00').getDay() === 0;
+  box.classList.toggle('hidden', !sun);
+  if (!sun) return;
+  const lit = litDay(d);
+  prayers[lit.key] ??= await loadPrayer(lit.key);
+  if (d !== date) return;   // 读的时候已经换了别天
+  const p = prayers[lit.key];
+  const ahead = Math.round((new Date(d + 'T12:00') - new Date(TODAY + 'T12:00')) / 864e5);
+  const wasOpen = box.dataset.date === d ? box.open : [4, 6].includes(new Date().getDay()) && ahead >= 0 && ahead < 7;
+  box.dataset.date = d;
+  const para = (h, t, ref = '') => `<div><div class="text-sm font-semibold text-indigo-700 mb-1">${h}${ref ? `<span class="font-normal text-slate-400">（${esc(ref)}）</span>` : ''}</div><p class="leading-loose text-[15px]">${esc(t)}</p></div>`;
+  box.innerHTML = `
+    <summary class="flex items-center gap-2 cursor-pointer list-none">
+      <span class="font-semibold">🙏 练习前祈祷文</span>
+      <span class="flex-1 min-w-0 truncate text-xs text-slate-400">${esc(bookName(lit.key, lit.name))}</span>
+      <span class="text-slate-400 text-sm group-open:rotate-90 transition-transform">›</span>
+    </summary>
+    <div class="mt-3 space-y-4">
+      ${p?.entrance ? para('进堂咏', p.entrance, p.ref) : ''}
+      ${p?.collect ? para('集祷经', '请大家祈祷：' + p.collect) : ''}
+      ${p?.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="经书这一页" class="w-full rounded-xl border border-slate-200">` : ''}
+      ${p ? '' : '<div class="text-sm text-amber-700 bg-amber-50 rounded-xl px-3 py-2">这个主日的进堂咏、集祷经还没有人输入。<a href="prayer.html?d=' + d + '" class="underline font-semibold">去输入（一次就好）</a></div>'}
+      ${para('圣女则济利亚祷文', CECILIA)}
+      <a href="prayer.html?d=${d}" class="block text-center text-xs text-indigo-600 hover:underline">打开祈祷文页（可以复制给 WhatsApp）→</a>
+    </div>`;
+  box.open = wasOpen;
+}
+
 function renderNotices(isStaff) {
   const box = $('notices');
   box.classList.toggle('hidden', !notices.length && !isStaff);

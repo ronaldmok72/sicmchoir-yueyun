@@ -4,7 +4,7 @@ import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
 import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER } from "./autofill.js";
-import { WEDDING_ROLES, WEDDING_TIMES, timeText, findMember } from "./weddings-common.js";
+import { WEDDING_ROLES, WEDDING_TIMES, timeText, findMember, roleZh } from "./weddings-common.js";
 
 const $ = id => document.getElementById(id);
 const MASSES = 'masses';
@@ -647,6 +647,7 @@ function setKind(kind) {
     M.kind = kind;
     M.time ||= WEDDING_TIMES[0];
     M.roles ||= WEDDING_ROLES.map(role => ({ role, name: '' }));
+    M.roles.forEach(r => { r.role = roleZh(r.role); });
     M.singers ||= [];
     M.autoTitle = false;
     M.manual = true;
@@ -726,7 +727,7 @@ function parseWaList(text) {
     if (!m) return;
     const [role, ...rest] = m[1].split(/\s*[:：]\s*/);
     const name = rest.join(':').trim();
-    if (rest.length && role.trim()) roles.push({ role: role.trim(), name });
+    if (rest.length && role.trim()) roles.push({ role: roleZh(role), name });
     else if (m[1].trim()) singers.push(m[1].trim());
   });
   return { roles, singers };
@@ -772,4 +773,4 @@ function waWedding() {
 }
 
 // 「📅 总览」带着现在这一天过去
-document.querySelector('[data-day-link]')?.addEventListener('click', e => { const d = M?.date; if (d) e.currentTarget.href = `day.html?d=${d}`; });
+window.sicNavDate = () => M?.date;   // 菜单去别页时带着这个日期

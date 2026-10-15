@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>这台弥撒 - 乐韵歌咏团</title>
   <script src="src/gate.js"></script>
+  <script src="src/nav.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    summary::-webkit-details-marker { display: none; }
     body { -webkit-tap-highlight-color: transparent; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { scrollbar-width: none; }
@@ -20,17 +22,7 @@
         <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
         <h1 class="text-xl font-semibold">这台弥撒</h1>
       </div>
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <span id="staff-links" class="hidden flex items-center gap-3">
-          <a href="mass.html" class="text-slate-500 hover:text-indigo-600">排歌</a>
-          <a href="duties.html" class="text-slate-500 hover:text-indigo-600">职务表</a>
-          <a href="seating.html" class="text-slate-500 hover:text-indigo-600">座位表</a>
-        </span>
-        <a href="scan.html" class="text-indigo-600 hover:text-indigo-500 font-medium">📷 扫描签到</a>
-        <a href="prayer.html" class="text-slate-500 hover:text-indigo-600">🙏 祈祷文</a>
-        <a href="songs.html" class="text-slate-500 hover:text-indigo-600">歌单目录</a>
-        <a href="/" class="text-slate-500 hover:text-indigo-600">← 回乐谱</a>
-      </div>
+      <button type="button" data-nav-open class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 shadow-sm">☰ 菜单</button>
     </header>
 
     <!-- 哪一天 -->
@@ -40,6 +32,7 @@
     <div id="day" class="hidden space-y-3">
       <section id="head" class="bg-white rounded-2xl border border-slate-200 p-4"></section>
       <div id="specials" class="hidden space-y-3"></div>
+      <details id="prayer" class="hidden group bg-white rounded-2xl border border-slate-200 p-4"></details>
       <section id="todo" class="hidden rounded-2xl border p-4 text-sm"></section>
       <section id="songs" class="bg-white rounded-2xl border border-slate-200 p-4"></section>
       <section id="people" class="bg-white rounded-2xl border border-slate-200 p-4"></section>

@@ -36,13 +36,15 @@ export const SEASON_OF = k => k.startsWith('OT') ? 'OT' : k.startsWith('ADV') ? 
 }[k] || 'OT');
 
 const NAME = {
-  ADV: n => `将临期第${n}主日`, LENT: n => `四旬期第${n}主日`, EAS: n => `复活期第${n}主日`, OT: n => `常年${n}主日`,
+  ADV: n => `将临期第${n}主日`, LENT: n => `四旬期第${n}主日`, EAS: n => `复活期第${n}主日`, OT: n => `常年期第${n}主日`,
   XMASEVE: '圣诞前夕', XMAS: '圣诞节', HOLYFAMILY: '圣家节', MARY: '天主之母节', EPIPHANY: '主显节', BAPTISM: '主受洗节',
   ASH: '圣灰礼仪', PALM: '圣枝主日', HOLYTHU: '主的晚餐', GOODFRI: '主受难日', VIGIL: '复活前夕', EASTER: '复活节',
   ASCENSION: '耶稣升天节', PENTECOST: '圣神降临节', TRINITY: '天主圣三节', CORPUS: '基督圣体圣血节', SACREDHEART: '耶稣圣心节',
   ALLSAINTS: '诸圣节', ALLSOULS: '追思已亡节', HOLYCROSS: '光荣十字圣架节', ASSUMPTION: '圣母升天节', IMMACULATE: '圣母始胎无染原罪节', PRESENTATION: '献耶稣于圣殿节',
   TRANSFIG: '耶稣显圣容节', PATRON: '主保庆典', CNY: '新春感恩弥撒', NYE: '新年前夕', OT34: '耶稣普世君王节',
 };
+// 旧的写法「常年29主日」「常年期第 29 主日」→ 统一成「常年期第29主日」
+export const tidyTitle = t => String(t || '').replace(/(常年|将临|四旬|复活)期?\s*第?\s*(\d+)\s*主日/, '$1期第$2主日');
 export function nameOf(key) {
   if (NAME[key]) return NAME[key];
   const m = key.match(/^([A-Z]+)(\d+)$/);

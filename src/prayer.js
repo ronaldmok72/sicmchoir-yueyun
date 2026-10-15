@@ -1,43 +1,25 @@
 // 练习前祈祷文：这个主日的进堂咏 + 集祷经（弥撒经书，每年同一个主日都一样）+ 圣女则济利亚祷文（每次都念）
 // 进堂咏、集祷经存 Firestore prayers/{礼仪 key}（OT29、ADV1、EASTER…）：输入一次，明年同一个主日自己出来
 // 星期四、星期六练的是接下来那个主日的歌，所以显示接下来的主日（今天是主日就是今天）
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
+import { CECILIA, bookName, loadPrayer } from "./prayer-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const gate = window.sicStaff;
-
-export const CECILIA = '天主，求祢因殉道者圣女则济利亚的转求，仁慈地垂允我们的祈祷，使我们能效法她心灵的纯洁，堪以歌唱永远赞美祢。以上所求是靠祢的子，我们的主天主耶稣基督，祂和祢及圣神永生永王。阿们。';
-
-// 已经有的（Ronald 2026-10-15 在群里发的经书照片）；Firestore 有的话用 Firestore 的
-const SEED = {
-  OT29: {
-    ref: '咏 16:6,8',
-    entrance: '天主，我向祢呼求，祢必应允我，求祢侧耳俯听，俯听我的诉说。求祢保护我，有如眼中的瞳人，让我藏身在祢的翼荫下。',
-    collect: '全能永生的天主，求祢使我们常能爽快地服从祢的旨意，为了祢的光荣，诚恳地奉献我们的崇敬。以上所求，是靠祢的子，我们的主、耶稣基督，祂和祢及圣神，惟一天主，永生永王。',
-  },
-};
 
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const at = s => new Date(s + 'T12:00');
 const add = (s, n) => { const d = at(s); d.setDate(d.getDate() + n); return iso(d); };
 const dm = s => `${+s.slice(8)}/${+s.slice(5, 7)}`;
-// 经书的写法：常年期第二十九主日
-const CN = '〇一二三四五六七八九';
-const cnNum = n => n < 10 ? CN[n] : `${n >= 20 ? CN[Math.floor(n / 10)] : ''}十${n % 10 ? CN[n % 10] : ''}`;
-function bookName(key, name) {
-  const m = key.match(/^(OT|ADV|LENT|EAS)(\d+)$/);
-  if (!m || key === 'OT34') return name;
-  return `${{ OT: '常年期', ADV: '将临期', LENT: '四旬期', EAS: '复活期' }[m[1]]}第${cnNum(+m[2])}主日`;
-}
-
 // ?d=2026-10-18 看某一个主日；不然 = 接下来的主日
 const want = (new URLSearchParams(location.search).get('d') || '').match(/^\d{4}-\d{2}-\d{2}$/)?.[0];
 let sunday = (() => { const t = want || iso(new Date()); return add(t, (7 - at(t).getDay()) % 7); })();
 let lit = null, data = null;
+window.sicNavDate = () => sunday;
 
 async function load() {
   lit = litDay(sunday);
@@ -48,9 +30,7 @@ async function load() {
   $('status').classList.remove('hidden');
   $('status').textContent = '读取中…';
   $('text').classList.add('hidden');
-  let snap = null;
-  try { snap = await getDoc(doc(db, 'prayers', lit.key)); } catch (err) { console.error(err); }
-  data = snap?.exists() ? snap.data() : SEED[lit.key] || null;
+  data = await loadPrayer(lit.key);
   $('status').classList.add('hidden');
   render();
 }

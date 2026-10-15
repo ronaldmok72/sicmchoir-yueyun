@@ -565,4 +565,4 @@ $('btn-seed').addEventListener('click', async () => {
 load().catch(err => { console.error(err); $('status').textContent = '读取失败：' + (err.code || err.message); });
 
 // 「📅 总览」带着现在这一天过去
-document.querySelector('[data-day-link]')?.addEventListener('click', e => { const d = cur?.date; if (d) e.currentTarget.href = `day.html?d=${d}`; });
+window.sicNavDate = () => cur?.date;   // 菜单去别页时带着这个日期

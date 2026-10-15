@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>公告 - 乐韵歌咏团</title>
   <script src="src/gate.js"></script>
+  <script src="src/nav.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { -webkit-tap-highlight-color: transparent; }
@@ -18,11 +19,7 @@
         <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
         <h1 class="text-xl font-semibold">公告</h1>
       </div>
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <a href="day.html" class="text-slate-500 hover:text-indigo-600">这台弥撒</a>
-        <a href="songs.html" class="text-slate-500 hover:text-indigo-600">歌单目录</a>
-        <a href="/" class="text-slate-500 hover:text-indigo-600">← 回乐谱</a>
-      </div>
+      <button type="button" data-nav-open class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 shadow-sm">☰ 菜单</button>
     </header>
 
     <button id="btn-new" class="hidden w-full mb-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 text-sm">＋ 发公告</button>

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>我的资料 - 乐韵歌咏团</title>
   <script src="src/gate.js"></script>
+  <script src="src/nav.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="manifest" href="manifest.json">
   <style>body { -webkit-tap-highlight-color: transparent; }</style>
@@ -16,7 +17,7 @@
         <div class="text-xs text-zinc-500 tracking-widest">SIC 乐韵歌咏团</div>
         <h1 class="text-lg font-semibold text-white">✏️ 我的资料</h1>
       </div>
-      <a href="/" class="text-xs text-zinc-500 hover:text-zinc-300">← 回乐谱</a>
+      <button type="button" data-nav-open class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-zinc-200 border border-white/10">☰ 菜单</button>
     </header>
 
     <div id="status" class="text-zinc-500">读取中…</div>

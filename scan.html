@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>扫描签到 - 乐韵歌咏团</title>
   <script src="src/gate.js"></script>
+  <script src="src/nav.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -15,7 +16,7 @@
 <body class="bg-zinc-950 text-zinc-200 min-h-[100dvh] font-sans">
   <main class="max-w-sm mx-auto px-4 py-6 text-center">
     <div class="flex items-center justify-between mb-4 text-sm">
-      <a href="/" class="text-zinc-400 hover:text-white">← 回乐谱</a>
+      <button type="button" data-nav-open class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-zinc-200 border border-white/10">☰ 菜单</button>
       <span class="text-xs text-zinc-500 tracking-widest">SIC 乐韵歌咏团</span>
     </div>
     <h1 class="text-xl font-semibold text-white">📷 扫描签到</h1>

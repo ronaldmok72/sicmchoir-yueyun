@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>指挥后台 - 乐谱排单</title>
   <script src="src/gate.js" data-require="admin"></script>
+  <script src="src/nav.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
   
   <!-- 现代 SaaS 隐藏式细滚动条 -->
@@ -46,9 +47,8 @@
         <button class="sm:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
-        <a href="/" class="text-sm text-slate-500 hover:text-indigo-600 whitespace-nowrap">← 乐谱</a>
+        <button type="button" data-nav-open class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 shadow-sm">☰ 菜单</button>
         <h1 class="text-lg font-bold text-slate-800 hidden lg:block">主日弥撒排单</h1>
-        <a href="mass.html" class="text-sm font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap">按位置排歌 →</a>
       </div>
 
       <!-- 全局发布控制区 -->

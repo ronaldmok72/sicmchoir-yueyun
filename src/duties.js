@@ -2,9 +2,9 @@
 // Firestore duties/{YYYY-MM-DD}，人名存团员名单的「常用名字」（名单外的人也可以直接打名字）
 import { collection, getDocs, doc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
-import { litDay } from "./liturgy.js";
+import { litDay, tidyTitle } from "./liturgy.js";
 import { DUTY_SEED } from "./duties-seed.js";
-import { timeText } from "./weddings-common.js";
+import { timeText, roleZh } from "./weddings-common.js";
 
 const $ = id => document.getElementById(id);
 const DUTIES = 'duties';
@@ -48,10 +48,10 @@ async function load() {
   W = Object.fromEntries(ma.docs.filter(d => d.data().kind).map(d => [d.id, { id: d.id, ...d.data() }]));
   $('status').textContent = '';
   render();
-  if (WANT) document.getElementById(`d-${WANT}`)?.scrollIntoView({ block: 'center' });
+  if (WANT) (document.getElementById(`d-${WANT}`) || document.getElementById(`w-${WANT}`))?.scrollIntoView({ block: 'center' });
 }
 
-const titleOf = date => D[date]?.title || massTitle[date] || litDay(date).name;
+const titleOf = date => tidyTitle(D[date]?.title || massTitle[date] || litDay(date).name);
 
 // 要显示哪些日期：接下来 = 今天以后有职务／有排歌的，加上接下来 8 个主日
 function dates() {
@@ -63,7 +63,7 @@ function dates() {
   const s = new Date(TODAY + 'T12:00');
   s.setDate(s.getDate() + (7 - s.getDay()) % 7);
   for (let i = 0; i < 8; i++, s.setDate(s.getDate() + 7)) set.add(iso(s));
-  if (WANT) set.add(WANT);
+  if (WANT && !Object.values(W).some(w => w.date === WANT)) set.add(WANT);
   return [...set].sort();
 }
 
@@ -106,7 +106,7 @@ function render() {
 function wedCard(w) {
   const roles = w.roles || [];
   return `
-      <div class="bg-white rounded-xl border border-rose-200 px-3 py-2.5 ${w.date < TODAY ? 'opacity-60' : ''}">
+      <div id="w-${w.date}" class="bg-white rounded-xl border ${w.date === WANT ? 'border-rose-400 ring-1 ring-rose-200' : 'border-rose-200'} px-3 py-2.5 ${w.date < TODAY ? 'opacity-60' : ''}">
         <div class="flex items-baseline gap-2 mb-2">
           <span class="font-semibold text-sm">${md(w.date)}</span>
           <span class="text-xs text-slate-400 shrink-0">星期${week(w.date)} ${esc(timeText(w.time))}</span>
@@ -116,7 +116,7 @@ function wedCard(w) {
         <div class="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
           ${roles.map((r, i) => `
             <button data-wed="${esc(w.id)}" data-idx="${i}" class="text-left rounded-lg px-2 py-1.5 border ${r.name ? 'border-slate-200 bg-slate-50 hover:border-indigo-300' : 'border-dashed border-slate-200 hover:border-indigo-300'}">
-              <span class="block text-[10px] text-slate-400">${esc(r.role)}</span>
+              <span class="block text-[10px] text-slate-400">${esc(roleZh(r.role))}</span>
               <span class="block truncate text-sm ${r.name ? 'text-slate-800' : 'text-slate-300'}">${esc(r.name || '＋')}</span>
             </button>`).join('')}
         </div>
@@ -186,8 +186,8 @@ let pick = null;
 // 婚礼的那一格：wed = 婚礼 id，idx = 第几个职务；role = 对应的职务 key（Pianist → piano，领经没有）
 function openPicker(date, role, wed, idx) {
   const wr = wed && W[wed].roles[idx];
-  pick = { date, role: wed ? WED_AS[wr.role] || null : role, wed, idx, label: wed ? wr.role : LABEL[role] };
-  $('picker-title').textContent = wed ? `${md(date)} 💒 ${timeText(W[wed].time)} · ${wr.role}` : `${md(date)} ${titleOf(date)} · ${LABEL[role]}`;
+  pick = { date, role: wed ? WED_AS[wr.role] || null : role, wed, idx, label: wed ? roleZh(wr.role) : LABEL[role] };
+  $('picker-title').textContent = wed ? `${md(date)} 💒 ${timeText(W[wed].time)} · ${roleZh(wr.role)}` : `${md(date)} ${titleOf(date)} · ${LABEL[role]}`;
   $('picker-search').value = '';
   $('picker').classList.remove('hidden');
   renderPicker();
@@ -320,4 +320,4 @@ $('btn-seed').addEventListener('click', async () => {
 load().catch(err => { console.error(err); $('status').textContent = '读取失败：' + (err.code || err.message); });
 
 // 「📅 总览」带着现在这一天过去
-document.querySelector('[data-day-link]')?.addEventListener('click', e => { const d = WANT; if (d) e.currentTarget.href = `day.html?d=${d}`; });
+window.sicNavDate = () => WANT;   // 菜单去别页时带着这个日期
