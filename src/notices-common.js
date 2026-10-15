@@ -37,6 +37,7 @@ export function noticeHtml(n, { titles = {}, compact = false, edit = '' } = {}) 
       ${edit}
     </div>
     ${body ? `<div class="mt-1.5 text-sm text-slate-700 whitespace-pre-wrap ${compact ? 'line-clamp-3' : ''}">${esc(body)}</div>` : ''}
+    ${compact && (body.split(/\n/).length > 3 || body.length > 90) ? `<button type="button" onclick="const b=this.previousElementSibling;b.classList.toggle('line-clamp-3');this.textContent=b.classList.contains('line-clamp-3')?'看全部 ▾':'收起 ▴'" class="mt-1 text-xs font-semibold text-indigo-600 hover:underline">看全部 ▾</button>` : ''}
     ${songs.length ? `
       <div class="mt-2.5 text-xs text-slate-500">🎵 要练的歌（点一下看谱）</div>
       <div class="mt-1 flex flex-wrap gap-1.5">
