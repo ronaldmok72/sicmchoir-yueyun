@@ -3,7 +3,8 @@
 // 页面上任何 [data-nav-open] 按钮都打开它；页面没有的话右上角浮一个。
 // 页面有设 window.sicNavDate = () => '2026-10-18' 的话，去这台弥撒／排歌／职务表／座位表／祈祷文会带着那个日期
 (function () {
-  const QUIZ_OPEN = new Date('2026-10-17T00:00:00+08:00');   // 测验 10/17 当天才对全团显示
+  // 测验：Ronald 在「测验结果」页开关；关着的时候团员菜单看不到，后台看得到
+  let quizOpen = window.sicQuiz?.cached() ?? false;
   const PAGES = [
     { group: '团员' },
     { href: '/', icon: '🎼', title: '乐谱', sub: '指挥翻到哪里，你就跟到哪里' },
@@ -69,7 +70,6 @@
 
   function render() {
     const gate = window.sicStaff, staff = gate?.isStaff();
-    const quizOpen = new Date() >= QUIZ_OPEN;
     const who = gate?.me();
     // 最上面：现在是谁（电话登录）＋ 修改资料、登出；还没登录就请他登录
     const head = who
@@ -81,7 +81,7 @@
           <span class="text-xl w-7 text-center">${p.icon}</span>
           <span class="flex-1 min-w-0">
             <span class="block text-white font-semibold text-sm">${p.title}${here(p.href) ? ' <span class="text-[11px] font-normal text-indigo-300">你在这里</span>' : ''}</span>
-            <span class="block text-zinc-500 text-xs truncate">${p.quiz && !quizOpen ? '10/17 才对全团显示' : p.sub}</span>
+            <span class="block text-zinc-500 text-xs truncate">${p.quiz && !quizOpen ? '现在关着，团员看不到' : p.sub}</span>
           </span>
           ${p.staff && !gate?.can(p.staff) ? '<span class="text-zinc-600 text-sm">🔒</span>' : '<span class="text-zinc-600">›</span>'}
         </a>`).join('');
@@ -89,6 +89,7 @@
   function open() { if (!modal) build(); render(); modal.classList.remove('hidden'); modal.classList.add('flex'); }
   function close() { modal?.classList.add('hidden'); modal?.classList.remove('flex'); }
   window.sicNav = { open, close, PAGES };
+  window.sicQuiz?.load().then(v => { quizOpen = v; if (modal && !modal.classList.contains('hidden')) render(); });
 
   // 页面上没有菜单按钮（不应该）→ 右上角浮一个
   function mount() {

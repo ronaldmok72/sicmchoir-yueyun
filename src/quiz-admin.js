@@ -25,7 +25,29 @@ function enter() {
   $('gate').classList.add('hidden');
   $('app').classList.remove('hidden');
   load();
+  window.sicQuiz?.load().then(v => { quizOpen = v; renderSwitch(); });
 }
+
+// ───────── 测验开关：只有最高权限（Ronald）可以按 ─────────
+let quizOpen = false;
+function renderSwitch() {
+  const master = window.sicStaff?.isMaster();
+  $('qs-state').innerHTML = quizOpen
+    ? '🟢 测验现在<b>开着</b>：全团在菜单看得到「团员小测验」'
+    : '⚪ 测验现在<b>关着</b>：团员看不到，只有后台看得到';
+  $('qs-sub').textContent = master ? '要做测验那天按「打开」，做完按「关掉」，以后随时可以再开。已经交的成绩不会不见。' : '只有 Ronald 可以开关。';
+  const b = $('qs-btn');
+  b.textContent = quizOpen ? '关掉测验' : '打开测验';
+  b.className = `px-4 py-2 rounded-lg font-semibold text-white ${quizOpen ? 'bg-slate-600 hover:bg-slate-500' : 'bg-emerald-600 hover:bg-emerald-500'}${master ? '' : ' hidden'}`;
+}
+$('qs-btn').addEventListener('click', async () => {
+  const want = !quizOpen;
+  if (!confirm(want ? '打开测验？全团在菜单就看得到。' : '关掉测验？团员就看不到了（已经交的成绩不会不见）。')) return;
+  $('qs-btn').disabled = true;
+  try { quizOpen = await window.sicQuiz.set(want); } catch (err) { alert('没改到，检查一下网络。\n' + err.message); }
+  $('qs-btn').disabled = false;
+  renderSwitch();
+});
 if (window.sicStaff?.can('quiz')) enter();
 
 $('btn-reload').addEventListener('click', load);

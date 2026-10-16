@@ -202,6 +202,29 @@
     if (!m) { logout(); return; }
     if (m.name !== cur.name) { setMe(m); document.dispatchEvent(new CustomEvent('sic-me')); }
   }
+  // ───────── 团员小测验：开／关 ─────────
+  // Firestore config/quiz.open；Ronald 在「测验结果」页按开关。这部手机记住上次看到的，菜单一打开就对
+  const QUIZ_KEY = 'sicQuizOpen';
+  const quizCached = () => { try { return localStorage.getItem(QUIZ_KEY) === '1'; } catch { return false; } };
+  const quizRemember = open => { try { localStorage.setItem(QUIZ_KEY, open ? '1' : '0'); } catch { /* 没关系 */ } return open; };
+  async function quizLoad() {
+    try {
+      const r = await fetch(`${API}/config/quiz?key=${API_KEY}`, { cache: 'no-store' });
+      if (r.status === 404) return quizRemember(false);
+      if (!r.ok) return quizCached();
+      return quizRemember(!!(await r.json()).fields?.open?.booleanValue);
+    } catch { return quizCached(); }   // 没网络就照上次
+  }
+  async function quizSet(open) {
+    const r = await fetch(`${API}/config/quiz?key=${API_KEY}&updateMask.fieldPaths=open&updateMask.fieldPaths=updatedAt`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { open: { booleanValue: !!open }, updatedAt: { stringValue: new Date().toISOString() } } }),
+    });
+    if (!r.ok) throw new Error('没存到 ' + r.status);
+    return quizRemember(!!open);
+  }
+  window.sicQuiz = { cached: quizCached, load: quizLoad, set: quizSet };
+
   function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } }
 
   window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys,

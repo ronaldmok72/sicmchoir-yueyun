@@ -67,7 +67,7 @@ function renderSummary() {
     </div>
     <div class="text-slate-600">女声 <b>${act.filter(m => genderOf(m) === 'F').length}</b>　男声 <b>${act.filter(m => genderOf(m) === 'M').length}</b>${act.some(m => !genderOf(m)) ? `　<span class="text-amber-700">还不知道男女：${act.filter(m => !genderOf(m)).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
     <div class="text-slate-600">📱 用电话注册了 <b>${act.filter(m => m.phoneHash).length}</b> / ${act.length} 位${act.some(m => !m.phoneHash) ? `　<span class="text-xs text-slate-400">（下面选「还没用电话注册的」看是谁）</span>` : ''}${act.some(m => m.selfJoined) ? `　<span class="text-indigo-700">🆕 自己注册的新团员：${act.filter(m => m.selfJoined).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
-    <div class="text-xs text-slate-400">每个人都会唱主旋律；上面 S A T B 是另外会唱声部的人${quiz.length ? '' : '（10/17 测验答完会自动出现建议）'}</div>
+    <div class="text-xs text-slate-400">每个人都会唱主旋律；上面 S A T B 是另外会唱声部的人${quiz.length ? '' : '（测验答完会自动出现建议）'}</div>
     ${guessed.length ? `<div class="text-amber-700">⏳ ${guessed.length} 位的男女是照名字猜的（名单上标「猜的」），看一下对不对：${guessed.map(m => esc(m.name)).join('、')}</div>` : ''}
     ${dup.length ? `<div class="text-red-600">🔴 披肩号码重复：${dup.map(([c, n]) => `#${c} ${n.map(esc).join('、')}`).join('；')}</div>` : ''}`;
 }

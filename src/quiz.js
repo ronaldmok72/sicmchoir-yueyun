@@ -24,7 +24,7 @@ const shuffle = arr => {
 };
 
 const QMAP = Object.fromEntries(QUESTIONS.map(q => [q.id, q]));
-const SECTIONS = ['s-start', 's-quiz', 's-intent', 's-tap', 's-saving', 's-result'];
+const SECTIONS = ['s-closed', 's-start', 's-quiz', 's-intent', 's-tap', 's-saving', 's-result'];
 const show = id => {
   SECTIONS.forEach(s => $(s).classList.toggle('hidden', s !== id));
   window.scrollTo(0, 0);
@@ -526,7 +526,12 @@ function renderResult(d) {
 // ───────────── 启动 ─────────────
 initQuizNav();
 const done = store.get(DONE_KEY);
-if (done && new URLSearchParams(location.search).get('again') === null) {
+// 测验关着：团员看到「没有开」（做过的还是可以看自己的结果）；有后台权限的照样可以试
+const quizOpen = await (window.sicQuiz?.load() ?? true);
+if (!quizOpen && gate?.isStaff()) $('closed-note').classList.remove('hidden');
+if (!quizOpen && !gate?.isStaff() && !done) {
+  show('s-closed');
+} else if (done && new URLSearchParams(location.search).get('again') === null) {
   renderResult(done);
   const p = document.createElement('p');
   p.className = 'text-xs text-zinc-600 text-center';
