@@ -1,4 +1,4 @@
-import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, addDoc, doc as docRef, updateDoc, arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, RESULTS } from "./firebase.js";
 import { QUESTIONS, CATEGORIES, INTENT, QUIZ_VERSION } from "./quiz-data.js";
 import { unlock, isRunning, now, click, playBars } from "./quiz-audio.js";
@@ -55,7 +55,7 @@ function newState(name) {
   order.forEach(id => { optOrder[id] = shuffle(QMAP[id].options.map((_, i) => i)); });
   return { v: QUIZ_VERSION, name, order, optOrder, answers: {}, idx: 0, intent: {}, tap: null, stage: 'quiz', startedAt: Date.now() };
 }
-const saveDraft = () => store.set(DRAFT_KEY, S);
+const saveDraft = () => { if (!S.retakeId) store.set(DRAFT_KEY, S); }; // 重做听拍子时不存草稿
 
 function setProgress(label, done, total) {
   $('progress-wrap').classList.remove('hidden');
@@ -450,10 +450,49 @@ async function startTap() {
 }
 
 function finishTap() {
+  if (S.retakeId) return finishRetake();
   S.tap.done = true;
   S.stage = 'submit';
   saveDraft();
   submit();
+}
+
+// 做完测验后，只重做听拍子：新结果盖掉旧的，旧的留在 tapPrev
+async function finishRetake() {
+  const d = store.get(DONE_KEY);
+  const back = () => { $('progress-wrap').classList.add('hidden'); $('save-error').classList.add('hidden'); $('btn-retry-save').classList.add('hidden'); renderResult(d); addAgainLink(); };
+  if (S.tap.skipped) return back();
+  S.tap.done = true;
+  S.tap.retake = true;
+  show('s-saving');
+  try {
+    await updateDoc(docRef(db, RESULTS, S.retakeId), {
+      tap: S.tap,
+      tapPrev: arrayUnion({ ...(d.tap || { skipped: true }), replacedAt: new Date().toISOString() }),
+      tapRetakeAt: serverTimestamp(),
+    });
+    d.tap = S.tap;
+    store.set(DONE_KEY, d);
+    back();
+  } catch (err) {
+    $('save-error').textContent = '送不出去，请检查网络：' + (err.message || err);
+    $('save-error').classList.remove('hidden');
+    $('btn-retry-save').classList.remove('hidden');
+  }
+}
+function startRetake() {
+  const d = store.get(DONE_KEY);
+  if (!d?.id) return;
+  S = { name: d.name, stage: 'tap', retakeId: d.id, tap: { results: {} } };
+  startTap();
+}
+function addAgainLink() {
+  if ($('again-link')) return;
+  const p = document.createElement('p');
+  p.id = 'again-link';
+  p.className = 'text-xs text-zinc-600 text-center';
+  p.innerHTML = '<a href="?again" class="underline">重新做一次（会另外送一份）</a>';
+  $('s-result').appendChild(p);
 }
 
 // ───────────── ⑤ 送出 ─────────────
@@ -508,7 +547,7 @@ async function submit() {
     $('btn-retry-save').classList.remove('hidden');
   }
 }
-$('btn-retry-save').addEventListener('click', submit);
+$('btn-retry-save').addEventListener('click', () => (S.retakeId ? finishRetake() : submit()));
 
 // ───────────── ⑥ 结果 ─────────────
 function renderResult(d) {
@@ -540,7 +579,10 @@ function renderResult(d) {
   BEAT_TRIALS.forEach(tr => { if (R[tr.key]) tapLines.push(`<div class="text-zinc-400 mt-2">跟拍子 · ${tr.label}</div>`, ...describeBeat(R[tr.key]).map(l => `<div>${l}</div>`)); });
   const entries = ENTRY_TRIALS.filter(tr => R[tr.key]);
   if (entries.length) tapLines.push('<div class="text-zinc-400 mt-3">进歌</div>', ...entries.map(tr => `<div>${describeEntry(tr.label, R[tr.key])}</div>`));
-  $('r-tap').innerHTML = tapLines.join('') || '没有资料。';
+  $('r-tap').innerHTML = (tapLines.join('') || '没有资料。') + (d.id ? `
+    <button id="btn-tap-again" class="mt-4 w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">🥁 ${t.skipped || !Object.keys(R).length ? '现在做听拍子小测' : '再做一次听拍子小测'}</button>
+    <p class="text-xs text-zinc-500 mt-2">只重做这一部分（约 5 分钟），选择题不用再做。新的结果会取代上面这个。</p>` : '');
+  $('btn-tap-again')?.addEventListener('click', startRetake);
 
   const wrong = d.order.filter(id => !d.correctIds.includes(id));
   $('r-wrong').innerHTML = wrong.length
@@ -567,10 +609,7 @@ if (!quizOpen && !gate?.isStaff() && !done) {
   show('s-closed');
 } else if (done && new URLSearchParams(location.search).get('again') === null) {
   renderResult(done);
-  const p = document.createElement('p');
-  p.className = 'text-xs text-zinc-600 text-center';
-  p.innerHTML = '<a href="?again" class="underline">重新做一次（会另外送一份）</a>';
-  $('s-result').appendChild(p);
+  addAgainLink();
 } else {
   show('s-start');
   initStart();
