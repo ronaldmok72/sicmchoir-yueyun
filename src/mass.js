@@ -1,5 +1,5 @@
 // 弥撒排歌：每个位置选歌 → 保存时自动生成乐谱排单（setlists），乐谱 App 不用改
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
@@ -109,6 +109,9 @@ function renderHeader() {
   renderWed();
   $('mass-date').value = M.date;
   $('mass-title').value = M.title;
+  // 以前写在职务表的备注（例如「原本 Frank，当天不舒服，Francis 补上」）：搬来这里一起改，保存后职务表那份就收掉
+  const dn = !isWed(M) && DUTY[M.date]?.note;
+  if (dn && !(M.note || '').includes(dn)) M.note = [M.note, dn].filter(Boolean).join('；');
   $('mass-note').value = M.note || '';
   const missing = M.slots.reduce((n, s) => n + s.songs.filter(x => x.missing).length, 0);
   $('draft-banner').classList.toggle('hidden', !!M.setlistName || M.isNew);
@@ -450,6 +453,10 @@ async function save() {
       createdAt: M.createdAt || now, savedAt: now,
     };
     await setDoc(doc(db, MASSES, newId), data);
+    if (!isWed(M) && DUTY[M.date]?.note) {   // 备注已经搬进这一场了
+      await updateDoc(doc(db, 'duties', M.date), { note: deleteField() }).catch(console.error);
+      delete DUTY[M.date].note;
+    }
 
     // 乐谱排单：同名就更新歌单（保留原本建立时间和直播翻页），没有就新建
     const ref = doc(db, SETLISTS, name);
@@ -514,12 +521,12 @@ $('btn-copy').addEventListener('click', async () => {
 // 职务表（复制歌单文字时带上谁指挥、谁答唱咏）
 let DUTY = {};
 async function loadMasses() {
-  getDocs(collection(db, 'duties')).then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
+  const duty = getDocs(collection(db, 'duties')).then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
   getDocs(collection(db, 'members')).then(s => {
     MEMBERS = s.docs.map(d => d.data()).filter(m => m.active !== false).sort((a, b) => a.name.localeCompare(b.name));
     $('names').innerHTML = MEMBERS.map(m => `<option value="${esc(m.name)}">${esc(m.fullName || '')}</option>`).join('');
   }).catch(() => {});
-  const snap = await getDocs(collection(db, MASSES));
+  const [snap] = await Promise.all([getDocs(collection(db, MASSES)), duty]);
   masses = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || ''));
   // 歌名以曲库为准：改过名的歌，旧弥撒里也显示新名字
   masses.forEach(m => { m.slots = normalizeSlots(m.slots); m.slots.forEach(sl => sl.songs.forEach(x => { const t = songById(x.id)?.title; if (t) x.title = t; })); });
