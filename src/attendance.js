@@ -23,6 +23,8 @@ const KIND = { mass: '弥撒', practice: '练歌', other: '其他活动' };
 
 let members = [];            // 现在在团的人
 let nameOf = {};             // 团员id → 名字（包括已经不在团的）
+let fullOf = {};             // 团员id → 全名
+let rsvp = {};               // 这次点名的投票（团员在「这台弥撒」页按的会来／不来）：{ 团员id: 'Y'|'N' }
 let events = {};             // 点名id → 资料
 let need = 7;                // 每 3 个月要出席几次
 let unsub = null;
@@ -48,6 +50,7 @@ async function load() {
   ]);
   const all = ms.docs.map(d => ({ id: d.id, ...d.data() }));
   nameOf = Object.fromEntries(all.map(m => [m.id, m.name]));
+  fullOf = Object.fromEntries(all.map(m => [m.id, m.fullName || '']));
   members = all.filter(m => m.active !== false).sort((a, b) => a.name.localeCompare(b.name, 'zh'));
   events = Object.fromEntries(ev.docs.map(d => [d.id, d.data()]));
   Object.values(events).forEach(e => Object.entries(e.names || {}).forEach(([id, n]) => { nameOf[id] ??= n; }));
@@ -66,6 +69,8 @@ function openEvent() {
     if (s.exists()) events[id] = s.data(); else delete events[id];
     renderRoll();
   }, err => console.error(err));
+  rsvp = {};
+  getDoc(doc(db, 'rsvp', id)).then(s => { if (curId() === id) { rsvp = s.exists() ? s.data().votes || {} : {}; renderRoll(); } }).catch(() => {});
   renderRoll();
 }
 
@@ -76,11 +81,13 @@ function renderRoll() {
   const people = members.concat(Object.keys(marks).filter(id => !members.some(m => m.id === id)).map(id => ({ id, name: nameOf[id] || '（已离团）', gone: true })));
   const n = k => people.filter(p => marks[p.id] === k).length;
   const none = people.filter(p => !marks[p.id]).length;
+  const yes = Object.values(rsvp).filter(v => v === 'Y').length, no = Object.values(rsvp).filter(v => v === 'N').length;
   $('r-count').innerHTML = `<div class="flex flex-wrap gap-x-4 gap-y-1">
       <span>✅ 有到 <b>${n('P')}</b></span><span>⏰ 迟到/早退 <b>${n('T')}</b></span>
       <span>📝 请假 <b>${n('L')}</b></span><span>❌ 缺席 <b>${n('A')}</b></span>
       <span class="${none ? 'text-slate-500' : 'text-emerald-600'}">${none ? `还没点 <b>${none}</b> 人` : '✓ 全部点完了'}</span>
     </div>
+    ${yes + no ? `<div class="text-xs text-slate-600 mt-1">🗳️ App 投票：🙋 说会来 <b>${yes}</b>　🙅 说不来 <b>${no}</b>（名字旁边有标）</div>` : ''}
     <div class="text-xs text-slate-400 mt-1">点一下就存好了，再点一次同一个就取消。</div>`;
   $('r-list').innerHTML = people.filter(p => !q || `${p.name} ${p.fullName || ''}`.toLowerCase().includes(q)).map(p => `
     <div class="flex flex-wrap items-center gap-2 px-3 py-2.5">
@@ -88,6 +95,7 @@ function renderRoll() {
         <span class="font-semibold">${esc(p.name)}</span>
         ${p.fullName && p.fullName !== p.name ? `<span class="text-xs text-slate-400 ml-1">${esc(p.fullName)}</span>` : ''}
         ${p.gone ? '<span class="text-xs text-slate-400 ml-1">不在名单了</span>' : ''}
+        ${rsvp[p.id] === 'Y' ? '<span class="text-xs text-emerald-700 ml-1">🙋 说会来</span>' : rsvp[p.id] === 'N' ? '<span class="text-xs text-slate-500 ml-1">🙅 说不来</span>' : ''}
         ${e?.times?.[p.id] ? `<div class="text-[11px] text-slate-400">📱 到 ${hm(e.times[p.id].in)}${e.times[p.id].out ? ` · 走 ${hm(e.times[p.id].out)}` : ''}</div>` : ''}
       </div>
       <div class="flex gap-1">
@@ -321,6 +329,24 @@ $('s-copy').addEventListener('click', async () => {
   if (s.want) t += `\n\n✅ = 已经够 ${s.want} 次${s.p.q >= 4 ? '（一年 ' + s.want + ' 次可以提名、晋升）' : ''}`;
   try { await navigator.clipboard.writeText(t); toast('✓ 复制了，去 WhatsApp 贴上'); }
   catch { prompt('复制这段：', t); }
+});
+
+// 下载 CSV（Excel、Google Sheet 都打得开）：一人一行，前面是总数，后面每一次点名一格
+$('s-csv').addEventListener('click', () => {
+  const s = lastStats; if (!s?.evs.length) return;
+  const WORD = { P: '有到', T: '迟到/早退', L: '请假', A: '缺席' };
+  const cell = v => { const t = String(v ?? ''); return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const head = ['名字', '全名', '出席次数', '出席率%', '有到', '迟到/早退', '请假', '缺席', '没点到', ...(s.want ? [`够 ${s.want} 次`] : []),
+    ...s.evs.map(e => `${e.date} ${KIND[e.kind] || ''}`)];
+  const body = s.rows.concat(s.zero).map(r => [r.name, fullOf[r.id] || '', r.att, Math.round(r.att / s.evs.length * 100), r.c.P, r.c.T, r.c.L, r.c.A, r.c.none,
+    ...(s.want ? [r.ok ? '✅' : ''] : []), ...s.evs.map(e => WORD[e.marks?.[r.id]] || '')]);
+  const csv = '\ufeff' + [head, ...body].map(row => row.map(cell).join(',')).join('\r\n');   // 前面加 BOM，Excel 打开中文才不会乱码
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `乐韵出席_${s.evs[0].date}_到_${s.evs.at(-1).date}${s.kind ? '_' + KIND[s.kind] : ''}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('✓ 下载了，用 Excel 或 Google Sheet 打开');
 });
 
 // ---------- 切换 ----------
