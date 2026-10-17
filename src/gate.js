@@ -228,7 +228,60 @@
 
   function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } }
 
+  // ───────── 照片＋乐谱空间（Cloudinary）快满提醒：只给最高权限（Ronald）看 ─────────
+  // 每 6 小时最多问一次 /api/cloudinary-usage；70% 起黄色提醒，85% 起红色
+  const CLOUD_KEY = 'sicCloudUsage';
+  const CLOUD_HIDE = 'sicCloudHide';
+  const lsGet = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 没关系 */ } };
+  async function cloudUsage(fresh) {
+    const c = lsGet(CLOUD_KEY);
+    if (!fresh && c && Date.now() - c.at < 6 * 3600e3) return c.u;
+    const r = await fetch('/api/cloudinary-usage', { cache: 'no-store' });
+    if (!r.ok) throw new Error('问不到 ' + r.status);
+    const u = await r.json();
+    lsSet(CLOUD_KEY, { at: Date.now(), u });
+    return u;
+  }
+  function cloudBanner(u) {
+    let tone, html;
+    if (!u.configured) {
+      tone = 'background:#334155;color:#fff';
+      html = '📦 <b>照片空间提醒还没接好</b>：要在 Vercel 加两把钥匙（CLOUDINARY_API_KEY、CLOUDINARY_API_SECRET），接好之后快满时这里会提醒你。';
+    } else if (u.error) {
+      tone = 'background:#334155;color:#fff';
+      html = `📦 照片空间查不到（${u.error}）。钥匙可能填错了，去 Vercel 检查一下。`;
+    } else {
+      const p = Math.round(u.pct || 0);
+      if (p < 70) return;
+      tone = p >= 85 ? 'background:#dc2626;color:#fff' : 'background:#fbbf24;color:#0f172a';
+      html = `📦 <b>照片和乐谱的存放空间已经用了 ${p}%</b>。到 100% 新照片、新乐谱会传不上去。<br>` +
+        `现在要做：把旧合照下载备份，再从 App 拿掉；或者开一个新的免费帐号专放合照。`;
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    const hide = lsGet(CLOUD_HIDE);
+    if (hide && hide.until >= day) return;
+    const bar = document.createElement('div');
+    bar.id = 'cloud-banner';
+    // 用 inline style：有些页没有 Tailwind
+    bar.style.cssText = `${tone};position:relative;z-index:60;display:flex;gap:12px;align-items:flex-start;padding:12px 16px;font-size:14px;line-height:1.6`;
+    bar.innerHTML = `<div style="flex:1">${html}</div><button style="flex-shrink:0;text-decoration:underline;opacity:.85;background:none;border:0;color:inherit;font:inherit;cursor:pointer">知道了</button>`;
+    bar.querySelector('button').onclick = () => {
+      // 没接好：7 天后再提醒；已经快满：明天再提醒
+      const d = new Date(Date.now() + (u.configured && !u.error ? 1 : 7) * 864e5).toISOString().slice(0, 10);
+      lsSet(CLOUD_HIDE, { until: d });
+      bar.remove();
+    };
+    document.body.prepend(bar);
+  }
+  function cloudWatch() {
+    if (!isMaster() || /^(localhost|127\.)/.test(location.hostname)) return;
+    const go = () => cloudUsage().then(cloudBanner).catch(() => { /* 没网络就算了 */ });
+    if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
+  }
+
   window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys,
+    cloudUsage, cloudBanner,
     me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById, syncMe };
 
   try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
@@ -236,6 +289,7 @@
   const tag = document.currentScript;
   const need = tag && tag.hasAttribute('data-require') ? (tag.getAttribute('data-require') || '') : null;
   syncMe();
+  cloudWatch();
   if (need === null) { refresh(); return; }
   const kick = () => { document.documentElement.style.display = 'none'; location.replace('/'); };
   if (can(need)) {
