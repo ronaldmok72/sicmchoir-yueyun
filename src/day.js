@@ -1,7 +1,8 @@
 // 这台弥撒：一天的所有东西放在一页——唱什么歌、谁指挥／答唱咏／弹琴、谁坐哪里、要带哪件披肩
 // 团员打开就看得到；指挥（输过密码）还会看到「还要处理的」，点一下跳去那一页改
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+// 这里会写的只有两样：团员投票会不会来（rsvp/{日期_practice|mass}）、合照（photos/{日期 或 婚礼id}，相片本身放 Cloudinary）
+import { collection, getDocs, doc, setDoc, updateDoc, deleteField, arrayUnion } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
@@ -31,13 +32,17 @@ let notices = [], songTitles = {};
 let specials = {};   // 婚礼 { 日期: [几台] }：排歌页 masses 里有 kind 的
 let wseats = {};     // 婚礼的座位表 seatings/{日期_时间}
 let memberList = [];
+let rsvps = {};      // rsvp/{日期_kind}：{ votes: { 团员id: 'Y'|'N' }, names }
+let photos = {};     // photos/{日期 或 婚礼id}：{ items: [{ url, by, at }] }
 let date = null;
 window.sicNavDate = () => date;   // 菜单去排歌／职务表／座位表时带着这个日期
 let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 
 async function load() {
-  const [ma, du, se, mb, cs] = await Promise.all(['masses', 'duties', 'seatings', 'members', 'custom_songs'].map(c => getDocs(collection(db, c))));
+  const [ma, du, se, mb, cs, rv, ph] = await Promise.all(['masses', 'duties', 'seatings', 'members', 'custom_songs', 'rsvp', 'photos'].map(c => getDocs(collection(db, c)).catch(() => ({ docs: [] }))));
+  rsvps = Object.fromEntries(rv.docs.map(d => [d.id, d.data()]));
+  photos = Object.fromEntries(ph.docs.map(d => [d.id, d.data()]));
   notices = (await loadNotices(db).catch(() => ({ active: [] }))).active;
   const all = ma.docs.map(d => ({ id: d.id, ...d.data() }));
   masses = Object.fromEntries(all.filter(m => !m.kind).map(m => [m.date || m.id, m]));
@@ -115,15 +120,17 @@ function render() {
   $('btn-staff').classList.toggle('hidden', isStaff);
   renderDates(isStaff);
   renderHead();
+  renderRsvp();
   renderSpecials(isStaff);
   renderPrayer();
   const only = onlySpecial(date);
-  ['todo', 'songs', 'people', 'seats'].forEach(id => $(id).classList.toggle('hidden', only));
+  ['todo', 'songs', 'people', 'seats', 'photos'].forEach(id => $(id).classList.toggle('hidden', only));
   if (only) { renderNotices(isStaff); return; }
   renderTodo(isStaff);
   renderSongs(isStaff);
   renderPeople(isStaff);
   renderSeats(isStaff);
+  renderPhotos();
   renderNotices(isStaff);
 }
 
@@ -225,7 +232,8 @@ function renderSeats(isStaff) {
     return;
   }
   const rows = Array.from({ length: s.nRows || 0 }, (_, r) => Array.from({ length: s.cols || 5 }, (_, c) => s.seats?.[`${r}-${c}`] || ''));
-  const seated = rows.flat().filter(Boolean);
+  const front = s.front || [];   // 台前那一排（指挥、乐手、领唱…）
+  const seated = rows.flat().concat(front).filter(Boolean);
   const stage = STAGE.flatMap(k => splitNames(duties[date]?.[k]).map(n => ({ n, role: ROLES.find(r => r[0] === k)[1] })));
   const all = [...new Set(seated.concat(stage.map(p => p.n)))].sort((a, b) => a.localeCompare(b, 'zh'));
   const meKey = me.toLowerCase();
@@ -233,7 +241,9 @@ function renderSeats(isStaff) {
   if (me) {
     const st = stage.find(p => p.n.toLowerCase() === meKey);
     const r = rows.findIndex(row => row.some(n => n.toLowerCase() === meKey));
-    if (st) where = `你今天是<b>${st.role}</b>，不用坐歌咏团的位子`;
+    const f = front.findIndex(n => n.toLowerCase() === meKey);
+    if (f >= 0) where = `你坐<b>台前</b>，从左边数第 <b>${f + 1}</b> 个${st ? `（${st.role}）` : ''}`;
+    else if (st && r < 0) where = `你今天是<b>${st.role}</b>，不用坐歌咏团的位子`;
     else if (r >= 0) where = `你坐<b>第 ${r + 1} 排</b>，从左边数第 <b>${rows[r].findIndex(n => n.toLowerCase() === meKey) + 1}</b> 个`;
     else if ((s.absent || []).some(n => n.toLowerCase() === meKey)) where = '这天写你没来';
     else where = '这天还没有你的位子';
@@ -254,16 +264,23 @@ function renderSeats(isStaff) {
     </div>
     <div class="text-center text-xs text-slate-400 mb-1.5">▲ 前面（祭台／指挥）</div>
     <div class="space-y-1">
+      ${front.length ? `
+        <div class="flex justify-center gap-1 pb-1.5 mb-0.5 border-b border-dashed border-slate-200">
+          <div class="w-6 shrink-0 text-[10px] text-slate-400 flex items-center justify-center">台前</div>
+          ${front.map(n => `<div class="flex-1 min-w-0 max-w-[5.5rem] h-11 rounded-lg border text-center px-0.5 flex flex-col justify-center ${!n ? 'border-dashed border-slate-100' : n.toLowerCase() === meKey ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-emerald-50 border-emerald-200'}">
+            ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block truncate text-[10px] leading-tight ${n.toLowerCase() === meKey ? 'text-indigo-100' : 'text-slate-400'}">${esc(stage.filter(p => p.n.toLowerCase() === n.toLowerCase()).map(p => p.role).join('·') || (capeOf(n) ? `#${capeOf(n)}` : ''))}</span>` : ''}
+          </div>`).join('')}
+        </div>` : ''}
       ${rows.map((row, r) => `
         <div class="flex gap-1">
-          <div class="w-4 shrink-0 text-[11px] text-slate-400 flex items-center justify-center">${r + 1}</div>
+          <div class="w-6 shrink-0 text-[11px] text-slate-400 flex items-center justify-center">${r + 1}</div>
           ${row.map(n => `<div class="flex-1 min-w-0 h-11 rounded-lg border text-center px-0.5 flex flex-col justify-center ${!n ? 'border-dashed border-slate-100' : n.toLowerCase() === meKey ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200'}">
             ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block truncate text-[10px] leading-tight ${n.toLowerCase() === meKey ? 'text-indigo-100' : 'text-slate-400'}">${capeOf(n) ? `#${capeOf(n)}` : esc(guestGroup(n))}</span>` : ''}
           </div>`).join('')}
         </div>`).join('')}
     </div>
     ${guests.length ? `<div class="text-xs text-violet-700 mt-2">🙋 Guest：${guests.map(n => `${esc(n)}（${esc(guestGroup(n))}）`).join('、')}</div>` : ''}
-    ${stage.length ? `<div class="text-xs text-slate-500 mt-2">台前：${stage.map(p => `${p.role} ${esc(p.n)}`).join('　')}</div>` : ''}
+    ${stage.length && !front.length ? `<div class="text-xs text-slate-500 mt-2">台前：${stage.map(p => `${p.role} ${esc(p.n)}`).join('　')}</div>` : ''}
     ${isStaff ? `<div class="text-xs text-slate-500 mt-1">要带 <b>${withCape.length}</b> 件披肩${(s.absent || []).length ? `　·　没来：${(s.absent || []).map(esc).join('、')}` : ''}</div>` : ''}`;
   $('btn-login')?.addEventListener('click', () => window.sicLogin?.open());
   $('me').addEventListener('change', e => {
@@ -303,6 +320,7 @@ function renderSpecials(isStaff) {
         </div>`).join('')}</div>` : ''}
       ${(w.singers || []).length ? `<div class="mt-3 text-sm"><span class="text-slate-500">🎤 来唱（${w.singers.length}）：</span>${w.singers.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : ''}
       ${wedSeats(w, isMe)}
+      ${photoBlock(w.id)}
     </section>`;
   }).join('');
 }
@@ -313,8 +331,10 @@ function wedSeats(w, isMe) {
   if (!s?.seats) return '';
   const rows = Array.from({ length: s.nRows || 0 }, (_, r) => Array.from({ length: s.cols || 5 }, (_, c) => s.seats[`${r}-${c}`]).filter(Boolean));
   const mine = rows.findIndex(row => row.some(isMe));
+  const front = (s.front || []).filter(Boolean);
   return `<div class="mt-3 text-sm rounded-lg bg-slate-50 px-3 py-2 space-y-0.5">
-    <div class="text-slate-500">🪑 座位${s.noCapes ? '（这台不穿披肩）' : '（👘 这台要穿披肩）'}${mine >= 0 ? `　<b class="text-rose-700">你坐第 ${mine + 1} 排</b>` : ''}</div>
+    <div class="text-slate-500">🪑 座位${s.noCapes ? '（这台不穿披肩）' : '（👘 这台要穿披肩）'}${front.some(isMe) ? '　<b class="text-rose-700">你坐台前</b>' : mine >= 0 ? `　<b class="text-rose-700">你坐第 ${mine + 1} 排</b>` : ''}</div>
+    ${front.length ? `<div><span class="text-slate-400">台前：</span>${front.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : ''}
     ${rows.map((row, r) => row.length ? `<div><span class="text-slate-400">第${r + 1}排：</span>${row.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : '').join('')}
   </div>`;
 }
@@ -360,6 +380,137 @@ function renderNotices(isStaff) {
        ${notices.some(n => (n.songs || []).length) ? '<a href="songs.html?f=practice" class="mt-3 block text-center rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold py-2.5 text-sm">📚 在歌单目录看全部要练的歌</a>' : ''}`
     : '<div class="text-sm text-slate-400">现在没有公告</div>');
 }
+
+// ───────── 会不会来：团员在这里按（代替 WA 投票）─────────
+// 规矩：这个礼拜或上个礼拜的星期四／六至少来一次练习，主日才排位子、拿披肩
+const addDays = (d, n) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return iso(x); };
+const rsvpSlots = d => [[addDays(d, -3), 'practice', '星期四练歌'], [addDays(d, -1), 'practice', '星期六练歌'], [d, 'mass', '主日弥撒']]
+  .map(([dt, kind, label]) => ({ id: `${dt}_${kind}`, date: dt, kind, label }));
+function renderRsvp() {
+  const box = $('rsvp');
+  const show = new Date(date + 'T12:00').getDay() === 0 && date >= TODAY && !onlySpecial(date);
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const meM = window.sicStaff?.me();
+  const isStaff = staff();
+  const who = (v, want) => Object.entries(v.votes || {}).filter(([, x]) => x === want).map(([id]) => v.names?.[id] || memberList.find(m => m.id === id)?.name || '?');
+  box.innerHTML = card('🗳️ 这个礼拜会来吗？', '') + `
+    ${meM ? '' : '<div class="mb-2 text-sm"><button id="btn-login-vote" class="text-indigo-600 hover:underline">📱 用电话登录就可以按</button></div>'}
+    <div class="divide-y divide-slate-100">
+      ${rsvpSlots(date).map(x => {
+        const v = rsvps[x.id] || {};
+        const mine = meM ? v.votes?.[meM.id] : null;
+        const yes = who(v, 'Y'), no = who(v, 'N');
+        const past = x.date < TODAY;
+        const btn = (k, txt, on) => `<button data-vote="${x.id}" data-v="${k}" class="px-3 py-1.5 rounded-lg border text-sm ${mine === k ? on : 'border-slate-200 text-slate-600 hover:bg-slate-50'}">${txt}</button>`;
+        return `<div class="py-2.5 flex flex-wrap items-center gap-2">
+          <div class="flex-1 min-w-[8rem]">
+            <div class="text-sm font-semibold">${x.label} <span class="font-normal text-slate-400">${md(x.date)}</span></div>
+            <div class="text-xs text-slate-500">🙋 ${yes.length} 会来　🙅 ${no.length} 不来</div>
+            ${isStaff && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${no.map(esc).join('、')}` : ''}</div>` : ''}
+          </div>
+          ${meM && !past ? `<div class="flex gap-1.5">${btn('Y', '🙋 会来', 'bg-emerald-600 border-emerald-600 text-white')}${btn('N', '🙅 不来', 'bg-slate-600 border-slate-600 text-white')}</div>`
+            : past ? '<span class="text-xs text-slate-400">已经过了</span>' : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="text-[11px] text-slate-400 mt-2">这个礼拜或上个礼拜的星期四／六至少来一次练习，主日才排位子、拿披肩。按「会来」的可以先排位子。</div>`;
+  $('btn-login-vote')?.addEventListener('click', () => window.sicLogin?.open());
+}
+$('rsvp').addEventListener('click', async e => {
+  const b = e.target.closest('[data-vote]'); if (!b) return;
+  const meM = window.sicStaff?.me(); if (!meM) return;
+  const id = b.dataset.vote, v = b.dataset.v;
+  const x = rsvpSlots(date).find(s => s.id === id);
+  const cur = rsvps[id] ||= { date: x.date, kind: x.kind, votes: {}, names: {} };
+  cur.votes ||= {}; cur.names ||= {};
+  const undo = cur.votes[meM.id] === v;   // 再按一次同一个 = 取消
+  b.disabled = true;
+  try {
+    if (undo) {
+      await updateDoc(doc(db, 'rsvp', id), { [`votes.${meM.id}`]: deleteField(), updatedAt: new Date().toISOString() });
+      delete cur.votes[meM.id];
+    } else {
+      await setDoc(doc(db, 'rsvp', id), { date: x.date, kind: x.kind, votes: { [meM.id]: v }, names: { [meM.id]: meM.name }, updatedAt: new Date().toISOString() }, { merge: true });
+      cur.votes[meM.id] = v; cur.names[meM.id] = meM.name;
+    }
+  } catch (err) { console.error(err); alert('没存到，检查一下网络。'); }
+  renderRsvp();
+});
+
+// ───────── 合照：每一台一个相册；相片放 Cloudinary（乐谱也放那里），资料库只记连结 ─────────
+// 有「合照」权限的人（密码管理里开）才能加、拿掉；大家都看得到
+const canPhoto = () => !!window.sicStaff?.can('photos');
+const thumb = url => url.replace('/upload/', '/upload/c_fill,w_300,h_300,q_auto,f_auto/');
+const full = url => url.replace('/upload/', '/upload/q_auto,f_auto/');
+// main = 主日那一张卡片（标题大一点）；婚礼卡片里面的小一点
+function photoBlock(key, main = false) {
+  const items = photos[key]?.items || [];
+  const can = canPhoto();
+  if (!items.length && !can) return '';
+  const add = can ? `<label class="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"><span>＋ 加照片</span><input type="file" accept="image/*" multiple data-photo-up="${esc(key)}" class="hidden"></label>` : '';
+  const title = `📷 合照${items.length ? `（${items.length}）` : ''}`;
+  return `<div class="${main ? '' : 'mt-3'}">
+    ${main ? card(title, add) : `<div class="flex items-center justify-between mb-1.5"><div class="text-sm text-slate-500">${title}</div>${add}</div>`}
+    ${items.length ? `<div class="grid grid-cols-3 gap-1.5">${items.map((p, i) => `
+      <div class="relative">
+        <a href="${esc(full(p.url))}" target="_blank" rel="noopener"><img src="${esc(thumb(p.url))}" loading="lazy" alt="" class="w-full aspect-square object-cover rounded-lg bg-slate-100"></a>
+        ${can ? `<button data-photo-del="${esc(key)}" data-i="${i}" class="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/50 text-white text-xs" title="拿掉">✕</button>` : ''}
+      </div>`).join('')}</div>` : '<div class="text-xs text-slate-400">还没有照片</div>'}
+  </div>`;
+}
+function renderPhotos() {
+  const html = onlySpecial(date) ? '' : photoBlock(date, true);
+  $('photos').classList.toggle('hidden', !html);
+  $('photos').innerHTML = html;
+}
+// 手机拍的照片很大：先在手机缩小到长边 1600、JPG，再上传（省流量也省 Cloudinary 的空间）
+async function shrink(file) {
+  try {
+    const img = await createImageBitmap(file);
+    const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(b => r(b || file), 'image/jpeg', 0.82));
+  } catch { return file; }
+}
+document.addEventListener('change', async e => {
+  const inp = e.target.closest?.('[data-photo-up]'); if (!inp || !inp.files.length) return;
+  const key = inp.dataset.photoUp, files = [...inp.files];
+  const txt = inp.closest('label').querySelector('span');
+  const by = window.sicStaff?.me()?.name || '';
+  const added = [];
+  for (const [i, f] of files.entries()) {
+    txt.textContent = `上传中 ${i + 1}/${files.length}…`;
+    try {
+      const fd = new FormData();
+      fd.append('file', new File([await shrink(f)], `photo_${key}_${Date.now()}_${i}.jpg`, { type: 'image/jpeg' }));
+      fd.append('upload_preset', 'ml_default');
+      const r = await fetch('https://api.cloudinary.com/v1_1/dsfhilcgz/image/upload', { method: 'POST', body: fd }).then(x => x.json());
+      if (!r.secure_url) throw new Error(r.error?.message || '上传失败');
+      added.push({ url: r.secure_url, by, at: new Date().toISOString() });
+    } catch (err) { console.error(err); alert(`第 ${i + 1} 张没上传到：${err.message}`); }
+  }
+  if (added.length) {
+    try {
+      await setDoc(doc(db, 'photos', key), { key, items: arrayUnion(...added), updatedAt: new Date().toISOString() }, { merge: true });
+      (photos[key] ||= { items: [] }).items = [...(photos[key].items || []), ...added];
+    } catch (err) { console.error(err); alert('照片上传了，但没记到资料库，检查一下网络。'); }
+  }
+  render();
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-photo-del]'); if (!b) return;
+  if (!confirm('从 App 拿掉这张照片？')) return;
+  const key = b.dataset.photoDel, items = [...(photos[key]?.items || [])];
+  items.splice(Number(b.dataset.i), 1);
+  try {
+    await setDoc(doc(db, 'photos', key), { key, items, updatedAt: new Date().toISOString() }, { merge: true });
+    photos[key].items = items;
+    render();
+  } catch (err) { console.error(err); alert('没拿掉，检查一下网络。'); }
+});
 
 // 电话登录好了 → 马上换成他的位子
 document.addEventListener('sic-login', () => {
