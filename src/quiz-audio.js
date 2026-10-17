@@ -14,11 +14,31 @@ export function getCtx() {
   return ctx;
 }
 
+// iPhone 常会把声音"暂停"（锁屏、来电、切出去、或第二次播放），
+// 所以每次按按钮都要叫一次，而且一定要在按下去的那一刻叫。
 export async function unlock() {
-  const c = getCtx();
-  if (c.state !== 'running') await c.resume();
+  // iOS 17+：就算侧边静音键打开，也照样出声
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  if (ctx && ctx.state === 'closed') ctx = null;
+  let c = getCtx();
+  // 在按下去的当下放一下无声，iPhone 才肯开喇叭
+  try {
+    const s = c.createBufferSource();
+    s.buffer = c.createBuffer(1, 1, 22050);
+    s.connect(c.destination);
+    s.start(0);
+  } catch (e) {}
+  if (c.state !== 'running') { try { await c.resume(); } catch (e) {} }
+  // 还是不动（iPhone 的 interrupted 状态）→ 整个重开一个
+  if (c.state !== 'running') {
+    try { await c.close(); } catch (e) {}
+    ctx = null;
+    c = getCtx();
+    try { await c.resume(); } catch (e) {}
+  }
   return c;
 }
+export const isRunning = () => !!ctx && ctx.state === 'running';
 
 export const now = () => getCtx().currentTime;
 

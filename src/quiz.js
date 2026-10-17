@@ -1,7 +1,7 @@
 import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, RESULTS } from "./firebase.js";
 import { QUESTIONS, CATEGORIES, INTENT, QUIZ_VERSION } from "./quiz-data.js";
-import { unlock, now, click, playBars } from "./quiz-audio.js";
+import { unlock, isRunning, now, click, playBars } from "./quiz-audio.js";
 
 const $ = id => document.getElementById(id);
 const DRAFT_KEY = 'sicQuizDraft';
@@ -202,6 +202,7 @@ const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
 
 let taps = null; // 正在收集时是数组
 function onTap(e) {
+  if (!isRunning()) unlock();
   if (!taps) return;
   if (e) e.preventDefault();
   taps.push(now());
@@ -230,7 +231,8 @@ function tapUI({ info, pad = false, status = '', actions = [] }) {
     box.appendChild(b);
   });
 }
-const waitClick = (info, actions) => new Promise(res => tapUI({ info, actions: actions.map(([l, v, p]) => [l, () => res(v), p]) }));
+// 每按一个按钮都顺手把声音叫醒（iPhone 第二段起没声音就是因为没叫）
+const waitClick = (info, actions) => new Promise(res => tapUI({ info, actions: actions.map(([l, v, p]) => [l, () => { unlock().then(() => res(v)); }, p]) }));
 
 // 在 [起点, 终点] 之间收集按键；phases = [[时间, 提示文字], ...]
 async function collect(endT, phases) {
@@ -330,7 +332,7 @@ async function entryTrial(bpb, bpm, style, lat) {
   const target = t0 + 4 * bpb * spb;
   const got = await collect(target + 2.5, [[now(), '前奏来了，觉得<b class="text-white">该开口唱了</b>就按一下']]);
   const first = got.find(t => t > t0 + bpb * spb);
-  const r = { bpb, bpm, style };
+  const r = { bpb, bpm, style, taps: got.filter(t => t > t0).length };
   if (first === undefined) { r.verdict = '没按'; return r; }
   const err = first - lat - target;
   r.errMs = Math.round(err * 1000);
@@ -355,6 +357,7 @@ const ENTRY_TRIALS = [
   { key: 'entry3', label: '3 拍的歌', bpb: 3, bpm: 104, style: 'normal' },
   { key: 'entrySlow', label: '慢歌', bpb: 4, bpm: 66, style: 'slow' },
 ];
+const TOTAL_SEG = 1 + BEAT_TRIALS.length + ENTRY_TRIALS.length;
 
 async function startTap() {
   show('s-tap');
@@ -365,21 +368,39 @@ async function startTap() {
   const go = await waitClick(`
     <p class="text-white font-semibold">听拍子小测（约 5 分钟）</p>
     <p>🔈 <b class="text-white">请用手机喇叭或有线耳机</b>，<b class="text-red-300">不要用蓝牙耳机</b>——蓝牙会让声音慢 0.15–0.3 秒，结果会全部不准。</p>
-    <p>找个安静的地方，把音量开到听得清楚。</p>
-    <p class="text-zinc-400">每一段开始前会说明要做什么。<b class="text-zinc-200">每段只有一次机会</b>，听清楚说明再按开始。</p>`,
+    <p>找个安静的地方，把音量开到听得清楚。iPhone 请把<b class="text-white">侧边的静音键拨开</b>。</p>
+    <p>做法很简单：<b class="text-white">听到声音，就点下面那个大按钮</b>。一共 ${TOTAL_SEG} 段，每段开始前都会先说明。</p>
+    <p class="text-zinc-400">每段只有一次机会，听清楚说明再按开始。</p>`,
     [['现在不方便，跳过', 'skip'], ['开始', 'go', true]]);
   if (go === 'skip') { T.skipped = true; return finishTap(); }
-  await unlock();
+
+  // 先试听，确定有声音才开始
+  for (;;) {
+    click(now() + 0.15, true); click(now() + 0.65); click(now() + 1.15);
+    const heard = await waitClick(`
+      <p class="text-white font-semibold">试听</p>
+      <p>刚才应该听到 <b class="text-white">3 下"哒"</b>。听到了吗？</p>`,
+      [['没听到', false], ['听到了', true, true]]);
+    if (heard) break;
+    const again = await waitClick(`
+      <p class="text-white font-semibold">没声音的话，试试这几样</p>
+      <p>1. 把音量调大（按手机侧边的音量键）</p>
+      <p>2. iPhone：把侧边的<b class="text-white">静音键拨开</b>（看不到橙色）</p>
+      <p>3. 拿掉蓝牙耳机</p>
+      <p>4. 还是不行：关掉这个网页再打开，会从这里接着做</p>`,
+      [['跳过这部分', 'skip'], ['再听一次', 'again', true]]);
+    if (again === 'skip') { T.skipped = true; return finishTap(); }
+  }
 
   // 校正
   while (T.latencyMs === undefined) {
     await waitClick(`
-      <p class="text-white font-semibold">先校正一下</p>
-      <p>每支手机出声音的速度都不一样。接下来会有 <b class="text-white">8 下"哒"</b>，每听到一下就点一下大圆圈。</p>
+      <p class="text-white font-semibold">第 1 / ${TOTAL_SEG} 段：校正</p>
+      <p>每支手机出声音的速度都不一样。接下来会有 <b class="text-white">8 下"哒"</b>，每听到一下，就点一下下面的大按钮。</p>
       <p class="text-zinc-400">这一步只是让 App 知道你的手机慢多少，不算分。</p>`, [['开始', true, true]]);
     const lat = await calibrate();
     if (lat === null) {
-      await waitClick('<p>没点到够，再来一次。听到"哒"就点。</p>', [['好', true, true]]);
+      await waitClick('<p>没点到够，再来一次。</p><p>听到"哒"就马上点大按钮，<b class="text-white">一下"哒"点一下</b>。</p>', [['好', true, true]]);
     } else {
       T.latencyMs = Math.round(lat * 1000);
     }
@@ -387,9 +408,11 @@ async function startTap() {
   const lat = T.latencyMs / 1000;
 
   // 第一关（每段只有一次机会：练的就是一听就抓到）
+  let seg = 1;
   for (const tr of BEAT_TRIALS) {
+    seg++;
     await waitClick(`
-      <p class="text-white font-semibold">第一关：跟拍子（${tr.label}）</p>
+      <p class="text-white font-semibold">第 ${seg} / ${TOTAL_SEG} 段：跟拍子（${tr.label}）</p>
       <p>钢琴会先弹 1 小节给你听，然后<b class="text-white">跟着拍子一直点</b>。</p>
       <p>过一会儿<b class="text-white">钢琴会停</b>——不要停，<b class="text-white">继续照同样的速度点</b>，直到屏幕说结束。</p>`,
       [['开始', true, true]]);
@@ -402,12 +425,23 @@ async function startTap() {
 
   // 第二关
   for (const tr of ENTRY_TRIALS) {
+    seg++;
     await waitClick(`
-      <p class="text-white font-semibold">第二关：进歌（${tr.label}）</p>
-      <p>钢琴会弹一段 <b class="text-white">4 小节的前奏</b>，弹完就停，不会有人唱。</p>
-      <p>你觉得<b class="text-white">"现在该开口唱第一个字了"</b>，就按一下大圆圈。只按一次。</p>`,
+      <p class="text-white font-semibold">第 ${seg} / ${TOTAL_SEG} 段：进歌（${tr.label}）</p>
+      <p>这一段<b class="text-white">不是跟拍子</b>。钢琴会弹一段前奏（大约 10 秒），弹完就停，不会有人唱。</p>
+      <p>前奏弹的时候<b class="text-white">先不要按</b>。等你觉得"<b class="text-white">现在该开口唱第一个字了</b>"，才按<b class="text-white">一下</b>大按钮。</p>`,
       [['开始', true, true]]);
-    const r = await entryTrial(tr.bpb, tr.bpm, tr.style, lat);
+    let r = await entryTrial(tr.bpb, tr.bpm, tr.style, lat);
+    // 一听就按、或跟着拍子一直按 → 是没看懂，不是进歌问题；给一次重来
+    if (r.taps >= 3 || (r.errBeats !== undefined && r.errBeats <= -tr.bpb)) {
+      await waitClick(`
+        <p class="text-white font-semibold">再来一次</p>
+        <p>${r.taps >= 3 ? `你按了 ${r.taps} 下。` : '你在前奏还没弹完就按了。'}</p>
+        <p>这一段是：<b class="text-white">整段前奏听完，到该唱第一个字时，只按一下</b>。前奏中间不要按。</p>`,
+        [['再来', true, true]]);
+      r = await entryTrial(tr.bpb, tr.bpm, tr.style, lat);
+      r.tries = 2;
+    }
     T.results[tr.key] = r;
     saveDraft();
     await waitClick(`<p class="text-white font-semibold">结束</p><p>${describeEntry(tr.label, r)}</p>`, [['下一段', true, true]]);
