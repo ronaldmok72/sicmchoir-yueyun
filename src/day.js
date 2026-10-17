@@ -223,7 +223,9 @@ function renderPeople(isStaff) {
 }
 
 // 披肩号码：座位表这一天改过的先算，不然照团员名单
-const capeOn = (d, n) => seatings[d]?.capes?.[n] || members[String(n).toLowerCase()]?.cape || null;
+// capes[名字] = 0 表示这场不穿
+const memberCape = n => members[String(n).toLowerCase()]?.cape || null;
+const capeOn = (d, n) => { const c = seatings[d]?.capes; return c && n in c ? (c[n] || null) : memberCape(n); };
 const capeOf = n => capeOn(date, n);
 function renderSeats(isStaff) {
   const s = seatings[date];
@@ -262,23 +264,12 @@ function renderSeats(isStaff) {
       ${where ? `<span class="text-slate-700">${where}</span>` : ''}
       ${!window.sicStaff?.me() ? '<button id="btn-login" class="text-xs text-indigo-600 hover:underline">📱 用电话登录，自动找到我</button>' : ''}
     </div>
-    <div class="text-center text-xs text-slate-400 mb-1.5">▲ 前面（祭台／指挥）</div>
-    <div class="space-y-1">
-      ${front.length ? `
-        <div class="flex justify-center gap-1 pb-1.5 mb-0.5 border-b border-dashed border-slate-200">
-          <div class="w-6 shrink-0 text-[10px] text-slate-400 flex items-center justify-center">台前</div>
-          ${front.map(n => `<div class="flex-1 min-w-0 max-w-[5.5rem] h-11 rounded-lg border text-center px-0.5 flex flex-col justify-center ${!n ? 'border-dashed border-slate-100' : n.toLowerCase() === meKey ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-emerald-50 border-emerald-200'}">
-            ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block truncate text-[10px] leading-tight ${n.toLowerCase() === meKey ? 'text-indigo-100' : 'text-slate-400'}">${esc(stage.filter(p => p.n.toLowerCase() === n.toLowerCase()).map(p => p.role).join('·') || (capeOf(n) ? `#${capeOf(n)}` : ''))}</span>` : ''}
-          </div>`).join('')}
-        </div>` : ''}
-      ${rows.map((row, r) => `
-        <div class="flex gap-1">
-          <div class="w-6 shrink-0 text-[11px] text-slate-400 flex items-center justify-center">${r + 1}</div>
-          ${row.map(n => `<div class="flex-1 min-w-0 h-11 rounded-lg border text-center px-0.5 flex flex-col justify-center ${!n ? 'border-dashed border-slate-100' : n.toLowerCase() === meKey ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200'}">
-            ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block truncate text-[10px] leading-tight ${n.toLowerCase() === meKey ? 'text-indigo-100' : 'text-slate-400'}">${capeOf(n) ? `#${capeOf(n)}` : esc(guestGroup(n))}</span>` : ''}
-          </div>`).join('')}
-        </div>`).join('')}
-    </div>
+    ${seatGrid({
+      rows, front,
+      isMe: n => !!meKey && n.toLowerCase() === meKey,
+      frontSub: n => stage.filter(p => p.n.toLowerCase() === n.toLowerCase()).map(p => p.role).join('·') || (capeOf(n) ? `#${capeOf(n)}` : ''),
+      sub: n => capeOf(n) ? `#${capeOf(n)}` : guestGroup(n),
+    })}
     ${guests.length ? `<div class="text-xs text-violet-700 mt-2">🙋 Guest：${guests.map(n => `${esc(n)}（${esc(guestGroup(n))}）`).join('、')}</div>` : ''}
     ${stage.length && !front.length ? `<div class="text-xs text-slate-500 mt-2">台前：${stage.map(p => `${p.role} ${esc(p.n)}`).join('　')}</div>` : ''}
     ${isStaff ? `<div class="text-xs text-slate-500 mt-1">要带 <b>${withCape.length}</b> 件披肩${(s.absent || []).length ? `　·　没来：${(s.absent || []).map(esc).join('、')}` : ''}</div>` : ''}`;
@@ -325,17 +316,46 @@ function renderSpecials(isStaff) {
   }).join('');
 }
 
-// 婚礼排了座位：一排一排列出来，自己的位子标出来；要穿披肩的话说一声
+// 座位格子（主日、婚礼共用）：▲ 前面 → 台前一排 → 第 1、2、3 排；自己的位子变紫色
+function seatGrid({ rows, front = [], isMe, sub, frontSub }) {
+  const box = (n, base, extra = '') => `<div class="flex-1 min-w-0 ${extra} h-11 rounded-lg border text-center px-0.5 flex flex-col justify-center ${!n ? 'border-dashed border-slate-100' : isMe(n) ? 'bg-indigo-600 border-indigo-600 text-white' : base}">
+    ${n ? `<span class="block truncate text-[12px] tracking-tight leading-tight">${esc(n)}</span><span class="block truncate text-[10px] leading-tight ${isMe(n) ? 'text-indigo-100' : 'text-slate-400'}">${esc((n && (frontSub && extra ? frontSub(n) : sub(n))) || '')}</span>` : ''}
+  </div>`;
+  return `<div class="text-center text-xs text-slate-400 mb-1.5">▲ 前面（祭台／指挥）</div>
+    <div class="space-y-1">
+      ${front.some(Boolean) ? `
+        <div class="flex justify-center gap-1 pb-1.5 mb-0.5 border-b border-dashed border-slate-200">
+          <div class="w-6 shrink-0 text-[10px] text-slate-400 flex items-center justify-center">台前</div>
+          ${front.map(n => box(n, 'bg-emerald-50 border-emerald-200', 'max-w-[5.5rem]')).join('')}
+        </div>` : ''}
+      ${rows.map((row, r) => `
+        <div class="flex gap-1">
+          <div class="w-6 shrink-0 text-[11px] text-slate-400 flex items-center justify-center">${r + 1}</div>
+          ${row.map(n => box(n, 'bg-slate-50 border-slate-200')).join('')}
+        </div>`).join('')}
+    </div>`;
+}
+
+// 婚礼排了座位：跟主日一样的格子，自己的位子标出来；要穿披肩的话说一声
 function wedSeats(w, isMe) {
   const s = wseats[w.id];
   if (!s?.seats) return '';
-  const rows = Array.from({ length: s.nRows || 0 }, (_, r) => Array.from({ length: s.cols || 5 }, (_, c) => s.seats[`${r}-${c}`]).filter(Boolean));
-  const mine = rows.findIndex(row => row.some(isMe));
-  const front = (s.front || []).filter(Boolean);
-  return `<div class="mt-3 text-sm rounded-lg bg-slate-50 px-3 py-2 space-y-0.5">
-    <div class="text-slate-500">🪑 座位${s.noCapes ? '（这台不穿披肩）' : '（👘 这台要穿披肩）'}${front.some(isMe) ? '　<b class="text-rose-700">你坐台前</b>' : mine >= 0 ? `　<b class="text-rose-700">你坐第 ${mine + 1} 排</b>` : ''}</div>
-    ${front.length ? `<div><span class="text-slate-400">台前：</span>${front.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : ''}
-    ${rows.map((row, r) => row.length ? `<div><span class="text-slate-400">第${r + 1}排：</span>${row.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : '').join('')}
+  const rows = Array.from({ length: s.nRows || 0 }, (_, r) => Array.from({ length: s.cols || 5 }, (_, c) => s.seats[`${r}-${c}`] || ''));
+  const front = s.front || [];
+  const r = rows.findIndex(row => row.some(n => n && isMe(n)));
+  const f = front.findIndex(n => n && isMe(n));
+  const roleOf = n => (w.roles || []).filter(x => x.name && x.name.toLowerCase() === n.toLowerCase()).map(x => roleZh(x.role)).join('·');
+  const cape = n => {
+    if (s.noCapes) return '';
+    const o = s.capes?.[n];
+    if (o === 0) return '';
+    return o ? `#${o}` : memberCape(n) ? `#${memberCape(n)}` : '';
+  };
+  const where = f >= 0 ? `你坐<b>台前</b>，从左边数第 <b>${f + 1}</b> 个`
+    : r >= 0 ? `你坐<b>第 ${r + 1} 排</b>，从左边数第 <b>${rows[r].findIndex(n => n && isMe(n)) + 1}</b> 个` : '';
+  return `<div class="mt-3 rounded-xl border border-slate-200 p-3">
+    <div class="text-sm text-slate-500 mb-2">🪑 座位${s.noCapes ? '（这台不穿披肩）' : '（👘 这台要穿披肩）'}${where ? `　<span class="text-slate-700">${where}</span>` : ''}</div>
+    ${seatGrid({ rows, front, isMe: n => !!isMe(n), sub: n => cape(n) || roleOf(n), frontSub: n => roleOf(n) || cape(n) })}
   </div>`;
 }
 
