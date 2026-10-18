@@ -362,13 +362,21 @@ function seatBtn(r, c, n, dup, roles) {
   </button>`;
 }
 
+function rowLabel(r, text) {
+  const has = rowOf(r).some(Boolean);
+  return `<div class="w-6 shrink-0 text-[11px] text-slate-400 flex flex-col items-center justify-center leading-tight" title="${r === 'F' ? '台前（指挥、乐手、领唱…）' : `第${r + 1}排`}">
+    <span class="${r === 'F' ? 'text-[10px]' : ''}">${text}</span>
+    ${has ? `<button data-clear-row="${r}" class="mt-0.5 text-[11px] text-slate-300 hover:text-red-500" title="清空这一排">✕</button>` : ''}
+  </div>`;
+}
+
 function renderGrid() {
   const dup = new Set(dupCapes().map(([c]) => c));
   const roles = roleMap();
   // 台前那一排：指挥、乐手、领唱…，椅子几张自己加减
   const front = `
     <div class="flex items-stretch justify-center gap-1 pb-2 mb-1 border-b border-dashed border-slate-200">
-      <div class="w-6 shrink-0 text-[10px] text-slate-400 flex items-center justify-center text-center leading-tight" title="台前（指挥、乐手、领唱…）">台前</div>
+      ${rowLabel('F', '台前')}
       ${cur.front.map((n, c) => seatBtn('F', c, n, dup, roles)).join('') || '<div class="flex-1 text-xs text-slate-400 self-center">台前还没有椅子 →</div>'}
       <div class="flex flex-col gap-0.5 shrink-0 justify-center">
         <button data-front="+" class="px-1.5 rounded bg-slate-100 hover:bg-slate-200 text-xs" title="台前加一张椅子">＋</button>
@@ -377,7 +385,7 @@ function renderGrid() {
     </div>`;
   $('grid').innerHTML = front + (cur.rows.map((row, r) => `
     <div class="flex items-stretch gap-1">
-      <div class="w-6 shrink-0 text-[11px] text-slate-400 flex items-center justify-center" title="第${r + 1}排">${r + 1}</div>
+      ${rowLabel(r, r + 1)}
       ${row.map((n, c) => seatBtn(r, c, n, dup, roles)).join('')}
     </div>`).join('') || '<div class="text-sm text-slate-400 text-center py-4">还没有座位，按「＋ 一排」</div>');
   $('legend').innerHTML = ['S', 'A', 'T', 'B', ''].map(k => `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded border ${VOICE_STYLE[k][0]}"></span>${VOICE_STYLE[k][1]}</span>`).join('')
@@ -514,11 +522,67 @@ $('grid').addEventListener('click', e => {
     }
     return changed();
   }
+  const x = e.target.closest('[data-clear-row]');
+  if (x) {
+    const r = x.dataset.clearRow === 'F' ? 'F' : +x.dataset.clearRow;
+    const who = rowOf(r).filter(Boolean);
+    if (!who.length || !confirm(`${r === 'F' ? '台前' : `第 ${r + 1} 排`}的 ${who.length} 个人（${who.join('、')}）会回到「还没排座位」。确定？`)) return;
+    rowOf(r).fill('');
+    return changed();
+  }
   const b = e.target.closest('[data-seat]'); if (!b) return;
   const [r, c] = parseSeat(b.dataset.seat);
+  // 连按两下坐着的人 → 退回「还没排座位」
+  const t = Date.now(), dbl = lastTap && lastTap.k === b.dataset.seat && t - lastTap.t < 450;
+  lastTap = null;
+  if (dbl && nameAt(r, c)) { rowOf(r)[c] = ''; return changed(); }
   if (sel) return dropOn(sel, r, c);
-  if (nameAt(r, c)) { sel = { kind: 'seat', r, c }; render(); }
+  if (nameAt(r, c)) { sel = { kind: 'seat', r, c }; lastTap = { k: b.dataset.seat, t }; render(); }
+  else openPicker(r, c);
 });
+let lastTap = null;   // 上一下点到哪个座位（认连按两下用）
+
+// 点空位：先问男生还是女生，再列出还没位子的人，点一个就坐进去
+function openPicker(r, c, g = null) {
+  const all = trayPeople();
+  if (!all.length) { $('status').textContent = '✅ 全部人都排好了'; return; }
+  const cnt = k => all.filter(n => gender(n) === k).length;
+  const list = g === null ? [] : all.filter(n => g === 'all' || gender(n) === g || (g !== 'all' && !gender(n)));
+  const roles = roleMap();
+  let box = $('seat-picker');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'seat-picker';
+    box.className = 'fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-3';
+    document.body.appendChild(box);
+    box.addEventListener('click', e => {
+      if (e.target === box || e.target.closest('[data-pick-close]')) return closePicker();
+      const gb = e.target.closest('[data-pick-g]');
+      if (gb) return openPicker(box.dataset.r === 'F' ? 'F' : +box.dataset.r, +box.dataset.c, gb.dataset.pickG);
+      const pb = e.target.closest('[data-pick]');
+      if (pb) {
+        const rr = box.dataset.r === 'F' ? 'F' : +box.dataset.r;
+        rowOf(rr)[+box.dataset.c] = pb.dataset.pick;
+        closePicker();
+        changed();
+      }
+    });
+  }
+  box.dataset.r = r; box.dataset.c = c;
+  const where = r === 'F' ? `台前第 ${c + 1} 张` : `第 ${r + 1} 排第 ${c + 1} 个`;
+  const tab = (k, label) => `<button data-pick-g="${k}" class="flex-1 py-2.5 rounded-xl border text-sm font-semibold ${g === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400'}">${label}</button>`;
+  box.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col p-4 shadow-xl">
+    <div class="flex items-center mb-3"><div class="flex-1 font-semibold text-slate-800">🪑 ${where}：放谁？</div><button data-pick-close class="text-slate-400 hover:text-slate-700 px-2 text-lg">✕</button></div>
+    <div class="flex gap-2 mb-3">${tab('F', `👩 女生（${cnt('F')}）`)}${tab('M', `👨 男生（${cnt('M')}）`)}${tab('all', `全部（${all.length}）`)}</div>
+    <div class="flex-1 overflow-y-auto flex flex-wrap gap-1.5 content-start">
+      ${g === null ? '<div class="text-sm text-slate-400 py-6 w-full text-center">先选男生还是女生</div>'
+        : list.length ? list.map(n => chip(n, `data-pick="${esc(n)}"`, '', roles).replace('draggable="true"', '')).join('')
+        : '<div class="text-sm text-slate-400 py-6 w-full text-center">没有人了</div>'}
+    </div>
+    ${g && g !== 'all' && list.some(n => !gender(n)) ? '<div class="text-[11px] text-slate-400 mt-2">没填男女的人两边都会出现</div>' : ''}
+  </div>`;
+}
+function closePicker() { $('seat-picker')?.remove(); }
 $('tray').addEventListener('click', e => {
   const b = e.target.closest('[data-tray]');
   if (!b) { if (sel?.kind === 'seat') unseat(sel); return; }
@@ -539,7 +603,11 @@ $('act-absent').addEventListener('click', () => {
   if (!cur.absent.includes(name)) cur.absent.push(name);
   changed();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && sel) { sel = null; render(); } });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($('seat-picker')) return closePicker();
+  if (sel) { sel = null; render(); }
+});
 
 // 这一场的披肩号码、声部
 const selName = () => sel?.kind === 'seat' ? nameAt(sel.r, sel.c) : null;
