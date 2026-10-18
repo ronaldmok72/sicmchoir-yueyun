@@ -76,6 +76,26 @@ export async function mergeMembers(db, keepId, dropId, name) {
   return { id: keepId, ...keep, ...p };
 }
 
+// 团员自己在「我的资料」改名／按「是我」合并：资料库锁起来后，团员改不到职务表、座位表、点名
+// → 先在自己那一笔记 pendingRename { from, to } / pendingMerge { into, name }，有「团员名单」权限的人打开名单时这里帮他做完
+// 回传做了几件
+export async function doPending(db, members) {
+  let n = 0;
+  for (const m of members) {
+    if (m.pendingMerge?.into && members.some(x => x.id === m.pendingMerge.into)) {
+      await mergeMembers(db, m.pendingMerge.into, m.id, m.pendingMerge.name);   // 合并完这一笔就删掉了
+      n++;
+      continue;
+    }
+    if (m.pendingRename?.from) {
+      if (m.pendingRename.from !== m.name) await renameEverywhere(db, m.pendingRename.from, m.name);
+      await updateDoc(doc(db, 'members', m.id), { pendingRename: deleteField() });
+      n++;
+    }
+  }
+  return n;
+}
+
 // 名单上可能是同一个人：第一个字一样（Hans ↔ Hans Chew、Teresa ↔ Teresa Tan），或全名里有他的名字
 export function lookAlikes(m, members) {
   const first = s => String(s || '').trim().split(/\s+/)[0].toLowerCase();

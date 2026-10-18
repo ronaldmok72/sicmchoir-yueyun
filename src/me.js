@@ -40,7 +40,7 @@ f.name.addEventListener('input', nameTip);
 
 // 名单上本来就有你（自己注册时没点到）：还没登记电话、名字第一个字一样的
 function renderMerge() {
-  const cand = me.selfJoined ? lookAlikes(me, members).filter(o => !o.phoneHash && !o.selfJoined) : [];
+  const cand = me.selfJoined && !me.pendingMerge ? lookAlikes(me, members).filter(o => !o.phoneHash && !o.selfJoined) : [];
   const box = $('merge-box');
   box.classList.toggle('hidden', !cand.length);
   if (!cand.length) return;
@@ -60,7 +60,15 @@ function renderMerge() {
       gate.setMe(m);
       ok(`✅ 合并好了，现在是「${m.name}」`);
       await load();
-    } catch (x) { console.error(x); alert('合并失败：' + (x.code || x.message)); b.disabled = false; }
+    } catch (x) {
+      // 团员改不到别人那一笔（资料库锁着）→ 先记下来，管理员打开团员名单时自动合并
+      if (x.code !== 'permission-denied') { console.error(x); alert('合并失败：' + (x.code || x.message)); b.disabled = false; return; }
+      try {
+        await updateDoc(doc(db, 'members', me.id), { pendingMerge: { into: o.id, name }, updatedAt: new Date().toISOString() });
+        ok(`✅ 收到了。管理员打开团员名单时会自动跟「${o.name}」连起来（之后要用电话再登录一次）。`);
+        await load();
+      } catch (y) { console.error(y); alert('没送出：' + (y.code || y.message)); b.disabled = false; }
+    }
   }));
 }
 
@@ -85,7 +93,11 @@ f.addEventListener('submit', async e => {
   b.disabled = true; b.textContent = '保存中…';
   try {
     await updateDoc(doc(db, 'members', me.id), p);
-    if (name !== me.name) await renameEverywhere(db, me.name, name);
+    // 职务表、座位表里的名字也换掉；改不到（资料库锁着）→ 记下来，管理员打开团员名单时自动换
+    if (name !== me.name) await renameEverywhere(db, me.name, name).catch(async x => {
+      if (x.code !== 'permission-denied') throw x;
+      await updateDoc(doc(db, 'members', me.id), { pendingRename: { from: me.pendingRename?.from || me.name, to: name } });
+    });
     gate.setMe({ id: me.id, name });
     f.phone.value = '';
     $('phone-box').classList.add('hidden');

@@ -4,7 +4,7 @@ import { collection, getDocs, doc, setDoc, addDoc, deleteDoc, writeBatch } from 
 import { db, RESULTS } from "./firebase.js";
 import { SEED } from "./members-seed.js";
 import { VOICES, VOICE_NAME, VOICE_SHORT, genderOf, genderFromVoice, normVoice } from "./people.js";
-import { renameEverywhere, mergeMembers, lookAlikes, suggestName } from "./members-common.js";
+import { renameEverywhere, mergeMembers, lookAlikes, suggestName, doPending } from "./members-common.js";
 
 const $ = id => document.getElementById(id);
 const MEMBERS = 'members';
@@ -23,6 +23,13 @@ async function load() {
   $('status').textContent = '读取中…';
   const [ms, qs] = await Promise.all([getDocs(collection(db, MEMBERS)), getDocs(collection(db, RESULTS)).catch(() => null)]);
   members = ms.docs.map(d => ({ id: d.id, ...d.data() }));
+  // 团员自己改名／合并、还没做完的：现在帮他做
+  if (members.some(m => m.pendingRename || m.pendingMerge)) {
+    try {
+      const n = await doPending(db, members);
+      if (n) { members = (await getDocs(collection(db, MEMBERS))).docs.map(d => ({ id: d.id, ...d.data() })); setTimeout(() => alert(`✅ 有 ${n} 位团员自己改了名字／合并了名单，已经帮他们把职务表、座位表、点名记录一起改好。`), 300); }
+    } catch (err) { console.error('团员自己改的，没做完', err); }
+  }
   const seen = new Set();
   quiz = (qs ? qs.docs.map(d => d.data()) : [])
     .map(r => ({ ...r, _t: r.createdAt?.toMillis?.() ?? (Date.parse(r.clientTime) || 0) }))
