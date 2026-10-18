@@ -380,10 +380,14 @@ function tab(name) {
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => tab(b.dataset.tab)));
 
 load().then(() => {
-  $('r-date').value = TODAY;
-  $('r-kind').value = new Date().getDay() === 0 ? 'mass' : 'practice';
+  // 从「这台弥撒」按「📋 点名」来：?d=2026-10-25&k=mass → 直接开那一次
+  const qs = new URLSearchParams(location.search);
+  const wantD = (qs.get('d') || '').match(/^\d{4}-\d{2}-\d{2}$/)?.[0];
+  const d = wantD || TODAY;
+  $('r-date').value = d;
+  $('r-kind').value = ['mass', 'practice', 'other'].includes(qs.get('k')) ? qs.get('k') : new Date(d + 'T00:00').getDay() === 0 ? 'mass' : 'practice';
   openEvent();
   let t = 'roll';
-  try { t = sessionStorage.getItem('attTab') || 'roll'; } catch { /* 没关系 */ }
+  try { t = wantD ? 'roll' : sessionStorage.getItem('attTab') || 'roll'; } catch { /* 没关系 */ }
   tab(t);
 }).catch(err => { console.error(err); toast('读取失败：' + (err.code || err.message), true); });

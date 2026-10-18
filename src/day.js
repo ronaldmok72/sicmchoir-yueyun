@@ -178,10 +178,31 @@ function renderTodo(isStaff) {
         <span class="shrink-0">${icon[i.level]}</span>
         <span class="flex-1 min-w-0 text-slate-700">${esc(i.text)}</span>
         <a href="${i.href}" class="shrink-0 text-indigo-600 hover:underline whitespace-nowrap">${i.label} →</a>
-      </div>`).join('')}</div>` : ''}`;
+      </div>`).join('')}</div>` : ''}
+    ${quickBar(date)}`;
 }
 
-const editLink = (isStaff, page) => isStaff ? `<a href="${page}?d=${date}" class="text-xs text-indigo-600 hover:underline">改 →</a>` : '';
+// 后台：有那一页权限的人才看到「✏️ 改」，按了直接到那一页、同一天
+const can = area => !!window.sicStaff?.can(area);
+const EDIT_BTN = 'shrink-0 inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100';
+const AREA_OF = { 'mass.html': 'mass', 'duties.html': 'duties', 'seating.html': 'seating' };
+const editLink = (isStaff, page) => isStaff && can(AREA_OF[page]) ? `<a href="${page}?d=${date}" class="${EDIT_BTN}">✏️ 改</a>` : '';
+// 这一台要改什么：排歌、职务、座位、点名、祈祷文、公告，一排按钮
+function quickBar(d) {
+  const sun = new Date(d + 'T00:00').getDay() === 0;
+  const items = [
+    ['mass', `mass.html?d=${d}`, '⛪ 排歌'],
+    ['duties', `duties.html?d=${d}`, '🗓️ 职务'],
+    ['seating', `seating.html?d=${d}`, '🪑 座位'],
+    ['attendance', `attendance.html?d=${d}&k=${sun ? 'mass' : 'practice'}`, '📋 点名'],
+    [null, `prayer.html?d=${d}`, '🙏 祈祷文'],
+    ['notice', 'notices.html', '📢 公告'],
+  ].filter(([a]) => !a || can(a));
+  return `<div class="mt-3 pt-3 border-t border-black/5">
+    <div class="text-xs text-slate-500 mb-1.5">🛠️ 这一台要改什么，直接按：</div>
+    <div class="flex flex-wrap gap-1.5">${items.map(([, href, label]) => `<a href="${href}" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 hover:text-indigo-700 text-sm font-medium text-slate-700">${label}</a>`).join('')}</div>
+  </div>`;
+}
 const card = (title, right) => `<div class="flex items-center justify-between mb-2"><h2 class="font-semibold">${title}</h2>${right || ''}</div>`;
 
 function renderSongs(isStaff) {
@@ -297,7 +318,7 @@ function renderSpecials(isStaff) {
     const roles = (w.roles || []).filter(r => r.name);
     const mine = roles.filter(r => isMe(r.name)).map(r => roleZh(r.role)).concat((w.singers || []).some(isMe) ? ['唱'] : []);
     return `<section class="bg-white rounded-2xl border border-rose-200 p-4">
-      ${card(`💒 ${esc(timeText(w.time))}　${esc(w.title)}`, isStaff ? `<span class="shrink-0 text-xs space-x-2"><a href="mass.html?id=${encodeURIComponent(w.id)}" class="text-indigo-600 hover:underline">改歌 →</a><a href="seating.html?e=${encodeURIComponent(w.id)}" class="text-indigo-600 hover:underline">座位 →</a></span>` : '')}
+      ${card(`💒 ${esc(timeText(w.time))}　${esc(w.title)}`, isStaff && (can('mass') || can('seating')) ? `<span class="shrink-0 flex gap-1.5">${can('mass') ? `<a href="mass.html?id=${encodeURIComponent(w.id)}" class="${EDIT_BTN}">✏️ 改歌</a>` : ''}${can('seating') ? `<a href="seating.html?e=${encodeURIComponent(w.id)}" class="${EDIT_BTN}">🪑 座位</a>` : ''}</span>` : '')}
       ${mine.length ? `<div class="mb-2 text-sm rounded-lg bg-rose-50 text-rose-800 px-3 py-2">🙋 你这台有份：<b>${esc(mine.join('、'))}</b></div>` : ''}
       ${w.note ? `<div class="mb-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">📌 ${esc(w.note)}</div>` : ''}
       <div class="divide-y divide-slate-100">
