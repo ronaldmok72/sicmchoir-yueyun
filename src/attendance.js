@@ -114,7 +114,7 @@ function renderRoll() {
       </div>
     </div>`).join('') || '<div class="p-4 text-sm text-slate-400">名单是空的，先去「团员名单」加人。</div>';
   $('r-del').classList.toggle('hidden', !e);
-  $('r-qr').classList.toggle('hidden', $('r-date').value !== TODAY);
+  $('r-qr').classList.toggle('hidden', $('r-date').value !== TODAY || $('r-kind').value === 'mass');   // 弥撒不用扫码签到（只用「会来」排座位）
   renderRecent();
   renderQrCount();
 }
