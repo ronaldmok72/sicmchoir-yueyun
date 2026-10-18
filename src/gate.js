@@ -22,7 +22,7 @@
   const BOOT = [{ id: 'boot', name: '最高权限（暂时）', hash: '', plain: 'sic', master: true, areas: ALL }];
 
   const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
-  const write = g => { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* 没关系 */ } };
+  const write = g => { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* 没关系 */ } queueAuth(); };
   const areasNow = () => new Set(read().flatMap(g => g.areas || []));
   const can = area => area ? areasNow().has(area) : areasNow().size > 0;
   const isMaster = () => areasNow().has('access');
@@ -177,11 +177,15 @@
     return { id: (await r.json()).name.split('/').pop(), ...f };
   }
   function setMe(m) {
+    const prev = me();
+    // ph = 打乱过的电话：拿来领通行证（证明是这位团员）
+    const ph = m.phoneHash || (prev?.id === m.id ? prev.ph : '') || '';
     try {
-      localStorage.setItem(ME_KEY, JSON.stringify({ id: m.id, name: m.name }));
+      localStorage.setItem(ME_KEY, JSON.stringify({ id: m.id, name: m.name, ...(ph ? { ph } : {}) }));
       localStorage.setItem('sicMyName', m.name);          // 「这台弥撒」找我的位子用
       localStorage.removeItem('sicGuest');
     } catch { /* 没关系 */ }
+    queueAuth();
   }
   // 后台 PIN：对了就把这位团员开的区记在这部手机
   async function memberUnlock(m, pin) {
@@ -209,6 +213,7 @@
       localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName');
       if (m) write(read().filter(x => x.m !== m.id));
     } catch { /* 没关系 */ }
+    queueAuth();
   }
 
   // 每次打开都对一下密码表：密码被改掉或拿掉权限的，这部手机也跟着拿掉
@@ -238,6 +243,7 @@
     try { m = await memberById(cur.id); } catch { return; }   // 没网络就先照旧
     if (!m) { logout(); return; }
     if (m.name !== cur.name) { setMe(m); document.dispatchEvent(new CustomEvent('sic-me')); }
+    else if (!cur.ph && m.phoneHash) setMe(m);   // 以前登录的手机：补上 ph，才领得到通行证
   }
   // ───────── 团员小测验：开／关 ─────────
   // Firestore config/quiz.open；Ronald 在「测验结果」页按开关。这部手机记住上次看到的，菜单一打开就对
@@ -268,7 +274,53 @@
   }
   window.sicQuiz = { cached: quizCached, load: quizLoad, set: quizSet };
 
-  function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } }
+  function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } queueAuth(); }
+
+  // ───────── 通行证（Firebase 登录）─────────
+  // 这部手机输过的后台密码／PIN／电话 → 拿去 /api/login 换通行证；资料库锁起来之后，有通行证才能改资料
+  // 一样的东西一天只换一次；什么都没有了（登出）就把通行证收回
+  const AUTH_SIG = 'sicAuthSig';
+  const LOGIN_URL = /^(localhost|127\.)/.test(location.hostname) ? 'https://sicmchoir-yueyun.vercel.app/api/login' : '/api/login';
+  let authP = null;
+  const authSdk = () => authP || (authP = Promise.all([
+    import('/src/firebase.js'),
+    import('https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js'),
+  ]).then(([a, f]) => ({ auth: f.getAuth(a.app), ...f })));
+  async function syncAuth() {
+    const g = read(), m = me();
+    const body = {
+      keys: g.filter(x => !x.m && x.h).map(x => x.h),
+      pins: g.filter(x => x.m && x.h).map(x => ({ m: x.m, h: x.h })),
+      member: m?.ph ? { id: m.id, phoneHash: m.ph } : null,
+    };
+    const sig = JSON.stringify(body);
+    const empty = !body.keys.length && !body.pins.length && !body.member;
+    const old = lsGet(AUTH_SIG);
+    if (empty && !old) return;                       // 没登录过，不用载入 Firebase 登录
+    const F = await authSdk();
+    await F.auth.authStateReady();
+    const user = F.auth.currentUser;
+    if (empty) { if (user) await F.signOut(F.auth); lsSet(AUTH_SIG, null); return; }
+    if (user && old && old.sig === sig && Date.now() - old.at < 864e5) return;
+    const r = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sig });
+    if (r.status === 401) { if (user) await F.signOut(F.auth); lsSet(AUTH_SIG, null); return; }
+    if (!r.ok) throw new Error('领不到通行证 ' + r.status);
+    const j = await r.json();
+    await F.signInWithCustomToken(F.auth, j.token);
+    lsSet(AUTH_SIG, { sig, at: Date.now(), uid: j.uid, areas: j.areas, member: j.member });
+  }
+  let authT = null;
+  function queueAuth() {
+    clearTimeout(authT);
+    authT = setTimeout(() => syncAuth().catch(err => console.warn('通行证', err)), 300);
+  }
+  // 现在的通行证（给要用 REST 写资料的地方加在 Authorization 上）；没有 → null
+  async function idToken() {
+    if (!lsGet(AUTH_SIG)) return null;
+    const F = await authSdk();
+    await F.auth.authStateReady();
+    return F.auth.currentUser ? F.auth.currentUser.getIdToken() : null;
+  }
 
   // ───────── 照片＋乐谱空间（Cloudinary）快满提醒：只给最高权限（Ronald）看 ─────────
   // 每 6 小时最多问一次 /api/cloudinary-usage；70% 起黄色提醒，85% 起红色
@@ -323,7 +375,7 @@
   }
 
   window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys,
-    cloudUsage, cloudBanner,
+    cloudUsage, cloudBanner, idToken, syncAuth,
     me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById, syncMe };
 
   try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
@@ -332,6 +384,7 @@
   const need = tag && tag.hasAttribute('data-require') ? (tag.getAttribute('data-require') || '') : null;
   syncMe();
   cloudWatch();
+  queueAuth();
   if (need === null) { refresh(); return; }
   const kick = () => { document.documentElement.style.display = 'none'; location.replace('/'); };
   if (can(need)) {

@@ -75,7 +75,10 @@
     const head = who
       ? `<div class="flex items-center gap-2 px-3 py-2.5 mb-1 rounded-xl bg-white/5 text-sm"><span class="flex-1 min-w-0 truncate text-white">👋 ${esc(who.name)}</span><a href="me.html" class="text-xs text-indigo-300 hover:text-white">✏️ 修改资料</a><span class="text-zinc-700">|</span><button data-act="logout" class="text-xs text-zinc-500 hover:text-white">登出</button></div>`
       : `<button data-act="login" class="w-full flex items-center gap-2 px-3 py-2.5 mb-1 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-sm text-indigo-200"><span class="flex-1 text-left">📱 用电话号码登录</span><span class="text-xs text-indigo-300">看我坐哪里 ›</span></button>`;
-    modal.querySelector('[data-list]').innerHTML = head + PAGES.filter(p => (!p.quiz || quizOpen || staff) && (!p.masterOnly || gate?.isMaster())).map(p => p.group
+    // 通行证（锁资料库用）：登录了的人看得到这部手机领到了没有
+    let pass = null; try { pass = JSON.parse(localStorage.getItem('sicAuthSig') || 'null'); } catch { /* 没关系 */ }
+    const passLine = who || staff ? `<div class="px-3 pb-1 text-[11px] ${pass ? 'text-emerald-400/80' : 'text-zinc-500'}">${pass ? `🔐 通行证 ✅${pass.areas?.length ? `（后台 ${pass.areas.length} 区）` : ''}` : '🔐 通行证还没领到'}</div>` : '';
+    modal.querySelector('[data-list]').innerHTML = head + passLine + PAGES.filter(p => (!p.quiz || quizOpen || staff) && (!p.masterOnly || gate?.isMaster())).map(p => p.group
       ? `<div class="px-2 pt-3 pb-1 text-[11px] tracking-widest text-zinc-500">${p.group}${p.group.includes('🔒') && staff ? '　已解锁' : ''}</div>`
       : `<a href="${link(p.href)}" data-staff="${p.staff || ''}" ${here(p.href) ? 'data-here="1"' : ''} class="flex items-center gap-3 px-3 py-3 rounded-xl ${here(p.href) ? 'bg-indigo-600/20' : 'hover:bg-white/10'} transition-colors no-underline">
           <span class="text-xl w-7 text-center">${p.icon}</span>

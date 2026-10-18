@@ -11,5 +11,6 @@ const firebaseConfig = {
   appId: "1:55940456186:web:3a4a78dfb8c430f3963343"
 };
 
-export const db = getFirestore(initializeApp(firebaseConfig));
+export const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app);
 export const RESULTS = 'quiz_results';
