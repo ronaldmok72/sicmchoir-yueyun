@@ -37,7 +37,7 @@ async function run() {
 
   const who = gate?.me();
   if (!who) {
-    show('📱', '先用电话登录', '登录一次，以后这部手机扫了就直接签到。<br><button id="go" class="mt-3 w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3">用电话号码登录</button>');
+    show('📱', '先用电话登录', '登录一次，以后用这部手机扫就会直接签到。<br><span class="text-xs text-slate-400">iPhone 用相机扫会开 Safari，跟桌面上的 App 是分开的，所以 Safari 也要登录一次。<br>不想再登录：打开 App，按下面的「📷 扫码签到」。</span><br><button id="go" class="mt-3 w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3">用电话号码登录</button>');
     $('go').addEventListener('click', () => window.sicLogin?.open());
     return;
   }
