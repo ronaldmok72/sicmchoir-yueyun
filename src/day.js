@@ -429,7 +429,7 @@ function renderRsvp() {
             <div class="text-xs text-slate-500">🙋 ${yes.length} 会来　🙅 ${no.length} 不来</div>
             ${isStaff && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${no.map(esc).join('、')}` : ''}</div>` : ''}
           </div>
-          ${meM && !past ? `<div class="flex gap-1.5">${btn('Y', '🙋 会来', 'bg-emerald-600 border-emerald-600 text-white')}${btn('N', '🙅 不来', 'bg-slate-600 border-slate-600 text-white')}</div>`
+          ${meM && !past ? `<div class="flex gap-1.5">${btn('Y', '🙋 会来', 'bg-emerald-600 border-emerald-600 text-white')}${btn('N', '📝 请假（不来）', 'bg-slate-600 border-slate-600 text-white')}</div>`
             : past ? '<span class="text-xs text-slate-400">已经过了</span>' : ''}
         </div>`;
       }).join('')}

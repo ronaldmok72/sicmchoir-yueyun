@@ -1,8 +1,9 @@
-// 团员扫了现场的 QR 来到这里：第一次扫 = 签到（算整场到），隔 10 分钟以上再扫 = 签退（只有要早走的人才扫）
+// 团员扫了现场的 QR 来到这里：第一次扫 = 签到，隔 10 分钟以上再扫 = 签退
+// 积分：签到 + 签退 = 1 分（迟到、早退各扣 0.2）；只签到没签退 = 0.5 分
 // 要先用电话登录（才知道是谁）；签到 / 签退会直接改点名页那一次的记录
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
-import { tokenOk, hm, markFor } from "./checkin-common.js";
+import { tokenOk, hm, markFor, scanScore, lateOf, earlyOf, fmtPts } from "./checkin-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -14,7 +15,7 @@ const q = new URLSearchParams(location.search);
 const evId = q.get('e'), key = q.get('k');
 const MIN_GAP = 10 * 60000;   // 签到后 10 分钟内再扫，不算签退（免得扫两次）
 let okAt = 0;
-const OUT_HINT = '<span class="text-slate-400">待到最后的不用再扫。要早走的话，走之前再扫一次（签退）。</span>';
+const OUT_HINT = '<b class="text-indigo-700">回家前记得再扫一次签退</b>，不然这次只算 0.5 分。';
 
 const show = (icon, title, sub = '', tone = 'slate') => {
   $('box').innerHTML = `<div class="text-5xl">${icon}</div>
@@ -50,22 +51,23 @@ async function run() {
     return show('✅', `${esc(who.name)}，你已经签到了`, `${timeLine(t)}<br>${OUT_HINT}`, 'emerald');
   } else { next = { ...t, out: now.toISOString() }; kind = 'out'; }
 
-  // 点名的人已经手动点过（请假、迟到…）就不盖掉；签退早走才改成早退
-  const had = e.marks?.[who.id];
-  const early = kind === 'out' && e.end && hm(next.out) < e.end;
-  const mark = early ? 'T' : had || markFor(next, e.start, e.end);
+  const mark = markFor(next, e.start, e.end);
+  const pts = scanScore(next, e.start, e.end);
+  const late = lateOf(next, e.start), early = earlyOf(next, e.end);
   await updateDoc(ref, {
     [`times.${who.id}`]: next,
     [`marks.${who.id}`]: mark,
+    [`pts.${who.id}`]: pts,
     [`names.${who.id}`]: who.name,
     updatedAt: now.toISOString(),
   });
 
   if (kind === 'in') {
-    show('✅', `${esc(who.name)}，签到好了`, `${timeLine(next)}<br>这次算出席 🙏<br>${OUT_HINT}`, 'emerald');
+    show(late ? '⏰' : '✅', `${esc(who.name)}，签到好了`,
+      `${timeLine(next)}${late ? `<br><span class="text-amber-700">${ampm(e.start)} 后才到，算迟到（扣 0.2 分）</span>` : ''}<br>${OUT_HINT}`, late ? 'amber' : 'emerald');
   } else {
-    show(early ? '⏰' : '👋', `${esc(who.name)}，签退好了`,
-      `${timeLine(next)}${early ? `<br><span class="text-amber-700">${ampm(e.end)} 前走，这次算早退</span>` : '<br>辛苦了，路上小心 🙏'}`, early ? 'amber' : 'emerald');
+    show(late || early ? '⏰' : '👋', `${esc(who.name)}，签退好了`,
+      `${timeLine(next)}<br>这次 <b>${fmtPts(pts)}</b> 分${late ? '（迟到扣 0.2）' : ''}${early ? `<br><span class="text-amber-700">${ampm(e.end)} 前走，算早退（扣 0.2 分）</span>` : ''}<br>辛苦了，路上小心 🙏`, late || early ? 'amber' : 'emerald');
   }
 }
 

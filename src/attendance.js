@@ -5,7 +5,7 @@
 import { collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { litDay } from "./liturgy.js";
-import { DEFAULT_TIME, slotNow, tokenOf, randomSecret, hm } from "./checkin-common.js";
+import { DEFAULT_TIME, slotNow, tokenOf, randomSecret, hm, PTS, markOf, scoreOf, fmtPts } from "./checkin-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,10 +26,12 @@ let nameOf = {};             // 团员id → 名字（包括已经不在团的�
 let fullOf = {};             // 团员id → 全名
 let rsvp = {};               // 这次点名的投票（团员在「这台弥撒」页按的会来／不来）：{ 团员id: 'Y'|'N' }
 let events = {};             // 点名id → 资料
+let votes = {};              // 点名id → 投票 { 团员id: 'Y'|'N' }（rsvp/{日期_种类}，按「不来」= 请假）
 let need = 7;                // 每 3 个月要出席几次
 let unsub = null;
 
 const evId = (date, kind) => `${date}_${kind}`;
+const evKey = e => evId(e.date, e.kind);
 const curId = () => evId($('r-date').value, $('r-kind').value);
 const titleFor = (date, kind) => kind === 'mass' ? (litDay(date)?.name || '弥撒') : KIND[kind];
 
@@ -47,6 +49,7 @@ async function load() {
     getDocs(collection(db, 'members')),
     getDocs(collection(db, 'attendance')),
     getDoc(doc(db, 'config', 'attendance')).catch(() => null),
+    getDocs(collection(db, 'rsvp')).then(q => { votes = Object.fromEntries(q.docs.map(d => [d.id, d.data().votes || {}])); }).catch(() => {}),
   ]);
   const all = ms.docs.map(d => ({ id: d.id, ...d.data() }));
   nameOf = Object.fromEntries(all.map(m => [m.id, m.name]));
@@ -70,7 +73,7 @@ function openEvent() {
     renderRoll();
   }, err => console.error(err));
   rsvp = {};
-  getDoc(doc(db, 'rsvp', id)).then(s => { if (curId() === id) { rsvp = s.exists() ? s.data().votes || {} : {}; renderRoll(); } }).catch(() => {});
+  getDoc(doc(db, 'rsvp', id)).then(s => { votes[id] = s.exists() ? s.data().votes || {} : {}; if (curId() === id) { rsvp = votes[id]; renderRoll(); } }).catch(() => {});
   renderRoll();
 }
 
@@ -79,24 +82,28 @@ function renderRoll() {
   const marks = e?.marks || {};
   const q = $('r-q').value.trim().toLowerCase();
   const people = members.concat(Object.keys(marks).filter(id => !members.some(m => m.id === id)).map(id => ({ id, name: nameOf[id] || '（已离团）', gone: true })));
-  const n = k => people.filter(p => marks[p.id] === k).length;
-  const none = people.filter(p => !marks[p.id]).length;
+  const k = p => markOf(e, p.id, rsvp[p.id]);
+  const n = x => people.filter(p => k(p) === x).length;
+  const none = people.filter(p => !k(p)).length;
+  const autoL = people.filter(p => !marks[p.id] && rsvp[p.id] === 'N').length;
   const yes = Object.values(rsvp).filter(v => v === 'Y').length, no = Object.values(rsvp).filter(v => v === 'N').length;
   $('r-count').innerHTML = `<div class="flex flex-wrap gap-x-4 gap-y-1">
       <span>✅ 有到 <b>${n('P')}</b></span><span>⏰ 迟到/早退 <b>${n('T')}</b></span>
-      <span>📝 请假 <b>${n('L')}</b></span><span>❌ 缺席 <b>${n('A')}</b></span>
+      <span>📝 请假 <b>${n('L')}</b>${autoL ? `<span class="text-xs text-slate-400">（${autoL} 位在 App 按了不来）</span>` : ''}</span><span>❌ 缺席 <b>${n('A')}</b></span>
       <span class="${none ? 'text-slate-500' : 'text-emerald-600'}">${none ? `还没点 <b>${none}</b> 人（不点就算缺席）` : '✓ 全部点完了'}</span>
     </div>
     ${yes + no ? `<div class="text-xs text-slate-600 mt-1">🗳️ App 投票：🙋 说会来 <b>${yes}</b>　🙅 说不来 <b>${no}</b>（名字旁边有标）</div>` : ''}
-    <div class="text-xs text-slate-400 mt-1">点一下就存好了，再点一次同一个就取消。扫 QR 签到的会自动变「有到」；请假的要手动点。</div>`;
+    <div class="text-xs text-slate-400 mt-1">点一下就存好了，再点一次同一个就取消。扫 QR 的会自动点好；在「这台弥撒」按了不来的，自动算请假。</div>
+    <div class="text-[11px] text-slate-400 mt-0.5">积分：有到 1 · 迟到/早退 0.8（扫码的照实际：各扣 0.2）· 只签到没签退 0.5 · 请假 0.1 · 缺席 0</div>`;
   $('r-list').innerHTML = people.filter(p => !q || `${p.name} ${p.fullName || ''}`.toLowerCase().includes(q)).map(p => `
     <div class="flex flex-wrap items-center gap-2 px-3 py-2.5">
       <div class="flex-1 min-w-[6rem] text-sm">
         <span class="font-semibold">${esc(p.name)}</span>
         ${p.fullName && p.fullName !== p.name ? `<span class="text-xs text-slate-400 ml-1">${esc(p.fullName)}</span>` : ''}
         ${p.gone ? '<span class="text-xs text-slate-400 ml-1">不在名单了</span>' : ''}
-        ${rsvp[p.id] === 'Y' ? '<span class="text-xs text-emerald-700 ml-1">🙋 说会来</span>' : rsvp[p.id] === 'N' ? '<span class="text-xs text-slate-500 ml-1">🙅 说不来</span>' : ''}
-        ${e?.times?.[p.id] ? `<div class="text-[11px] text-slate-400">📱 到 ${hm(e.times[p.id].in)}${e.times[p.id].out ? ` · 走 ${hm(e.times[p.id].out)}` : ''}</div>` : ''}
+        ${rsvp[p.id] === 'Y' ? '<span class="text-xs text-emerald-700 ml-1">🙋 说会来</span>' : rsvp[p.id] === 'N' ? `<span class="text-xs text-sky-700 ml-1">🙅 说不来${marks[p.id] ? '' : '（算请假）'}</span>` : ''}
+        ${k(p) ? `<span class="text-xs text-slate-400 ml-1">${fmtPts(scoreOf(e, p.id, rsvp[p.id]))} 分</span>` : ''}
+        ${e?.times?.[p.id] ? `<div class="text-[11px] text-slate-400">📱 到 ${hm(e.times[p.id].in)}${e.times[p.id].out ? ` · 走 ${hm(e.times[p.id].out)}` : ' · <span class="text-amber-600">还没签退</span>'}</div>` : ''}
       </div>
       <div class="flex gap-1">
         ${MARKS.map(m => `<button data-id="${esc(p.id)}" data-mark="${m.k}" class="px-2 py-1 text-xs rounded-lg border ${marks[p.id] === m.k ? m.on : 'border-slate-200 text-slate-500 hover:bg-slate-50'}">${m.label}</button>`).join('')}
@@ -125,12 +132,12 @@ async function mark(id, k) {
   const e = events[curId()];
   const off = e?.marks?.[id] === k;
   // 先在画面上改好，再存
-  events[curId()] = { ...(e || base()), marks: { ...(e?.marks || {}), [id]: off ? undefined : k } };
-  if (off) delete events[curId()].marks[id];
+  events[curId()] = { ...(e || base()), marks: { ...(e?.marks || {}), [id]: off ? undefined : k }, pts: { ...(e?.pts || {}), [id]: off ? undefined : PTS[k] } };
+  if (off) { delete events[curId()].marks[id]; delete events[curId()].pts[id]; }
   renderRoll();
   try {
-    if (off) await updateDoc(ref, { [`marks.${id}`]: deleteField(), updatedAt: new Date().toISOString() });
-    else await setDoc(ref, { ...base(), marks: { [id]: k }, names: { [id]: nameOf[id] || '' } }, { merge: true });
+    if (off) await updateDoc(ref, { [`marks.${id}`]: deleteField(), [`pts.${id}`]: deleteField(), updatedAt: new Date().toISOString() });
+    else await setDoc(ref, { ...base(), marks: { [id]: k }, pts: { [id]: PTS[k] }, names: { [id]: nameOf[id] || '' } }, { merge: true });
     toast('✓ 存好了');
   } catch (err) { console.error(err); toast('❌ 没存到，检查网络再点一次', true); }
 }
@@ -157,11 +164,14 @@ $('r-rest').addEventListener('click', async () => {
   const marks = events[curId()]?.marks || {};
   const rest = members.filter(m => !marks[m.id]);
   if (!rest.length) return toast('全部都点了');
-  if (!confirm(`还没点的 ${rest.length} 个人，全部算「缺席」？\n（请假的要先点「请假」）\n\n${rest.map(m => m.name).join('、')}`)) return;
+  const kOf = m => rsvp[m.id] === 'N' ? 'L' : 'A';   // 在 App 按了不来 → 请假
+  const lv = rest.filter(m => kOf(m) === 'L'), ab = rest.filter(m => kOf(m) === 'A');
+  if (!confirm(`还没点的 ${rest.length} 个人：\n${ab.length ? `\n❌ 算缺席（${ab.length}）：${ab.map(m => m.name).join('、')}\n` : ''}${lv.length ? `\n📝 在 App 按了不来，算请假（${lv.length}）：${lv.map(m => m.name).join('、')}\n` : ''}\n确定？（别的请假要先点「请假」）`)) return;
   try {
     await setDoc(doc(db, 'attendance', curId()), {
       ...base(),
-      marks: Object.fromEntries(rest.map(m => [m.id, 'A'])),
+      marks: Object.fromEntries(rest.map(m => [m.id, kOf(m)])),
+      pts: Object.fromEntries(rest.map(m => [m.id, PTS[kOf(m)]])),
       names: Object.fromEntries(rest.map(m => [m.id, m.name])),
     }, { merge: true });
     toast('✓ 存好了');
@@ -180,14 +190,16 @@ $('r-del').addEventListener('click', async () => {
 let qrTimer = null, qrObj = null;
 async function openQr() {
   const id = curId(), e = events[id];
-  const [, de] = DEFAULT_TIME[$('r-kind').value] || ['', ''];
+  const [ds, de] = DEFAULT_TIME[$('r-kind').value] || ['', ''];
   const patch = { ...base() };
   if (!e?.qr) patch.qr = randomSecret();
+  if (e?.start === undefined) patch.start = ds;
   if (e?.end === undefined) patch.end = de;
   try { await setDoc(doc(db, 'attendance', id), patch, { merge: true }); }
   catch (err) { console.error(err); return toast('❌ 开不到，检查网络', true); }
   events[id] = { ...(events[id] || {}), ...patch, marks: events[id]?.marks || {} };
   $('qr-title').textContent = `${dm($('r-date').value)} ${titleFor($('r-date').value, $('r-kind').value)}`;
+  $('qr-start').value = events[id].start || '';
   $('qr-end').value = events[id].end || '';
   $('qr-box').classList.remove('hidden');
   try { await navigator.wakeLock?.request('screen'); } catch { /* 没关系 */ }
@@ -225,7 +237,7 @@ function renderQrCount() {
 }
 $('r-qr').addEventListener('click', openQr);
 $('qr-close').addEventListener('click', closeQr);
-['end'].forEach(k => $('qr-' + k).addEventListener('change', async () => {
+['start', 'end'].forEach(k => $('qr-' + k).addEventListener('change', async () => {
   try { await updateDoc(doc(db, 'attendance', curId()), { [k]: $('qr-' + k).value, updatedAt: new Date().toISOString() }); toast('✓ 时间改好了'); }
   catch (err) { console.error(err); toast('❌ 没存到', true); }
 }));
@@ -271,37 +283,45 @@ function renderStats() {
   evs.forEach(e => Object.keys(e.marks || {}).forEach(id => ids.add(id)));
   const rows = [...ids].map(id => {
     const c = { P: 0, T: 0, L: 0, A: 0, none: 0 };
-    evs.forEach(e => { const k = e.marks?.[id]; k ? c[k]++ : c.none++; });
+    let score = 0;
+    evs.forEach(e => {
+      const v = votes[evKey(e)]?.[id];
+      const k = markOf(e, id, v);
+      k ? c[k]++ : c.none++;
+      score += scoreOf(e, id, v);
+    });
+    score = Math.round(score * 10) / 10;
     const att = c.P + c.T;
-    return { id, name: nameOf[id] || '（已离团）', gone: !members.some(m => m.id === id), c, att, ok: want ? att >= want : null };
+    return { id, name: nameOf[id] || '（已离团）', gone: !members.some(m => m.id === id), c, att, score, ok: want ? score >= want : null };
   }).filter(r => !r.gone || r.att + r.c.L + r.c.A);
   // 出席最多的排最前面（看谁最活跃）；一次都没出席的收在最后一行
-  rows.sort((a, b) => b.att - a.att || a.c.A - b.c.A || a.name.localeCompare(b.name, 'zh'));
+  rows.sort((a, b) => b.score - a.score || b.att - a.att || a.name.localeCompare(b.name, 'zh'));
   const came = rows.filter(r => r.att), zero = rows.filter(r => !r.att);
   const okN = rows.filter(r => r.ok).length;
   const first = Object.values(events).map(e => e.date).sort()[0];
   const pct = r => Math.round(r.att / evs.length * 100);
-  const top = came.filter(r => r.att === came[0]?.att).map(r => r.name);
-  const rank = r => came.findIndex(x => x.att === r.att) + 1;   // 一样多次的同一名
+  const top = came.filter(r => r.score === came[0]?.score).map(r => r.name);
+  const rank = r => came.findIndex(x => x.score === r.score) + 1;   // 一样多分的同一名
 
   $('s-head').innerHTML = !evs.length
     ? '<div class="text-slate-500">这段时间还没有点名记录。</div>'
-    : `<div class="font-semibold text-base">🏆 出席最多${came.length ? `（${came[0].att} 次${came[0].att === evs.length ? '，全勤' : ''}）` : ''}：${top.map(esc).join('、') || '—'}</div>
+    : `<div class="font-semibold text-base">🏆 积分最高${came.length ? `（${fmtPts(came[0].score)} 分${came[0].score === evs.length ? '，全勤' : ''}）` : ''}：${top.map(esc).join('、') || '—'}</div>
        <div class="text-slate-600">这段时间点了 <b>${evs.length}</b> 次名（${dm(evs[0].date)}–${dm(evs.at(-1).date)}），<b>${came.length}</b> 人有来过。</div>
-       ${want ? `<div class="text-slate-600">${okN ? `✅ <b>${okN}</b> 人已经够 ${want} 次。` : ''}${p.q >= 4 ? `一年出席 <b>${want}</b> 次就可以提名、晋升` : `这段时间要 <b>${want}</b> 次`}（每 3 个月 ${need} 次，会一直累积上去）。</div>` : ''}
+       ${want ? `<div class="text-slate-600">${okN ? `✅ <b>${okN}</b> 人已经够 ${want} 次。` : ''}${p.q >= 4 ? `一年积分 <b>${want}</b> 分就可以提名、晋升` : `这段时间要 <b>${want}</b> 分`}（每 3 个月 ${need} 分，会一直累积上去）。</div>` : ''}
+       <div class="text-xs text-slate-400">积分：完整出席 1 · 迟到、早退各扣 0.2 · 只签到没签退 0.5 · 请假 0.1（在 App 按不来也算）· 缺席 0</div>
        ${first && first > p.from && p.key !== 'all' ? `<div class="text-xs text-slate-400">点名记录从 ${dm(first)} 才开始，之前纸上的没算进来，次数会慢慢累积。</div>` : ''}`;
 
   $('s-list').innerHTML = evs.length ? came.map(r => `
     <div class="flex items-center gap-3 px-3.5 py-2.5">
       <div class="w-6 shrink-0 text-center text-xs ${rank(r) <= 3 ? 'font-semibold text-amber-600' : 'text-slate-400'}">${rank(r)}</div>
       <div class="flex-1 min-w-0">
-        <div class="font-semibold">${esc(r.name)}${r.ok ? ' <span class="text-xs font-normal text-emerald-600">✅ 够 ' + want + ' 次</span>' : ''}${r.gone ? ' <span class="text-xs font-normal text-slate-400">不在名单了</span>' : ''}</div>
-        ${want ? `<div class="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${r.ok ? 'bg-emerald-500' : 'bg-indigo-400'}" style="width:${Math.min(100, r.att / want * 100)}%"></div></div>` : ''}
-        <div class="text-xs text-slate-500 mt-0.5">${r.c.T ? `含迟到/早退 ${r.c.T} · ` : ''}请假 ${r.c.L} · 缺席 ${r.c.A + r.c.none}${r.c.none ? `（其中 ${r.c.none} 次没点到）` : ''}</div>
+        <div class="font-semibold">${esc(r.name)}${r.ok ? ' <span class="text-xs font-normal text-emerald-600">✅ 够 ' + want + ' 分</span>' : ''}${r.gone ? ' <span class="text-xs font-normal text-slate-400">不在名单了</span>' : ''}</div>
+        ${want ? `<div class="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${r.ok ? 'bg-emerald-500' : 'bg-indigo-400'}" style="width:${Math.min(100, r.score / want * 100)}%"></div></div>` : ''}
+        <div class="text-xs text-slate-500 mt-0.5">出席 ${r.att} 次${r.c.T ? `（迟到/早退 ${r.c.T}）` : ''} · 请假 ${r.c.L} · 缺席 ${r.c.A + r.c.none}${r.c.none ? `（其中 ${r.c.none} 次没点到）` : ''}</div>
       </div>
       <div class="text-right shrink-0">
-        <div class="font-semibold">${r.att}${want ? `<span class="text-xs font-normal text-slate-400"> / ${want}</span>` : ''} 次</div>
-        <div class="text-xs text-slate-400">${pct(r)}%</div>
+        <div class="font-semibold">${fmtPts(r.score)}${want ? `<span class="text-xs font-normal text-slate-400"> / ${want}</span>` : ''} 分</div>
+        <div class="text-xs text-slate-400">出席 ${pct(r)}%</div>
       </div>
     </div>`).join('') + (zero.length ? `
     <div class="px-3.5 py-2.5 text-xs text-slate-400 leading-relaxed">这段时间还没出席记录（${zero.length} 位）：${zero.map(r => esc(r.name)).join('、')}</div>` : '') : '';
@@ -323,8 +343,9 @@ $('s-copy').addEventListener('click', async () => {
   const s = lastStats; if (!s?.evs.length) return;
   const kindTxt = s.kind ? `只算${KIND[s.kind]}，` : '';
   let t = `📊 *乐韵歌咏团出席率*\n${s.p.label}（${dm(s.evs[0].date)}–${dm(s.evs.at(-1).date)}），${kindTxt}点名 ${s.evs.length} 次`;
-  t += `\n\n🏆 出席最多的：\n${s.rows.map(r => `${s.rows.findIndex(x => x.att === r.att) + 1}. ${r.name} ${r.att} 次（${Math.round(r.att / s.evs.length * 100)}%）${r.ok ? ' ✅' : ''}`).join('\n')}`;
-  if (s.want) t += `\n\n✅ = 已经够 ${s.want} 次${s.p.q >= 4 ? '（一年 ' + s.want + ' 次可以提名、晋升）' : ''}`;
+  t += `\n\n🏆 积分（出席次数）：\n${s.rows.map(r => `${s.rows.findIndex(x => x.score === r.score) + 1}. ${r.name} ${fmtPts(r.score)} 分（${r.att} 次）${r.ok ? ' ✅' : ''}`).join('\n')}`;
+  if (s.want) t += `\n\n✅ = 已经够 ${s.want} 分${s.p.q >= 4 ? '（一年 ' + s.want + ' 分可以提名、晋升）' : ''}`;
+  t += `\n\n积分：完整出席 1｜迟到、早退各扣 0.2｜只签到没签退 0.5｜请假 0.1｜缺席 0`;
   try { await navigator.clipboard.writeText(t); toast('✓ 复制了，去 WhatsApp 贴上'); }
   catch { prompt('复制这段：', t); }
 });
@@ -334,10 +355,10 @@ $('s-csv').addEventListener('click', () => {
   const s = lastStats; if (!s?.evs.length) return;
   const WORD = { P: '有到', T: '迟到/早退', L: '请假', A: '缺席' };
   const cell = v => { const t = String(v ?? ''); return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
-  const head = ['名字', '全名', '出席次数', '出席率%', '有到', '迟到/早退', '请假', '缺席（含没点到）', '其中没点到', ...(s.want ? [`够 ${s.want} 次`] : []),
+  const head = ['名字', '全名', '积分', '出席次数', '出席率%', '有到', '迟到/早退', '请假', '缺席（含没点到）', '其中没点到', ...(s.want ? [`够 ${s.want} 次`] : []),
     ...s.evs.map(e => `${e.date} ${KIND[e.kind] || ''}`)];
-  const body = s.rows.concat(s.zero).map(r => [r.name, fullOf[r.id] || '', r.att, Math.round(r.att / s.evs.length * 100), r.c.P, r.c.T, r.c.L, r.c.A + r.c.none, r.c.none,
-    ...(s.want ? [r.ok ? '✅' : ''] : []), ...s.evs.map(e => WORD[e.marks?.[r.id]] || '缺席（没点到）')]);
+  const body = s.rows.concat(s.zero).map(r => [r.name, fullOf[r.id] || '', r.score, r.att, Math.round(r.att / s.evs.length * 100), r.c.P, r.c.T, r.c.L, r.c.A + r.c.none, r.c.none,
+    ...(s.want ? [r.ok ? '✅' : ''] : []), ...s.evs.map(e => { const v = votes[evKey(e)]?.[r.id], k = markOf(e, r.id, v); return k ? `${WORD[k]}${!e.marks?.[r.id] ? '（App 不来）' : ''} ${fmtPts(scoreOf(e, r.id, v))}` : '缺席（没点到） 0'; })]);
   const csv = '\ufeff' + [head, ...body].map(row => row.map(cell).join(',')).join('\r\n');   // 前面加 BOM，Excel 打开中文才不会乱码
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));

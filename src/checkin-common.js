@@ -22,9 +22,29 @@ export async function tokenOk(secret, k) {
 export const randomSecret = () => [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
 
 export const hm = iso => iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
-// 2026-10-18 起：扫了签到就算整场到（P）；只有早走、走前签退在 end 之前 → T（早退）
-// 不再照签到时间自动算迟到（忘了扫、晚上才补扫的人会被冤枉）；真的迟到由点名的人手动改
+// 迟到（start 后才签到）或早退（end 前签退）→ T；不然 P
+export const lateOf = (t, start) => !!(start && t?.in && hm(t.in) > start);
+export const earlyOf = (t, end) => !!(end && t?.out && hm(t.out) < end);
 export function markFor(t, start, end) {
-  const early = end && t?.out && hm(t.out) < end;
-  return early ? 'T' : 'P';
+  return lateOf(t, start) || earlyOf(t, end) ? 'T' : 'P';
 }
+
+// ───────── 出席积分（2026-10-18 Ronald 定，暂时版）─────────
+// 完整出席 1 分；迟到扣 0.2、早退扣 0.2；有签到没签退只给 0.5（不知道几点走）；请假 0.1；缺席 0
+// 每次点名存在 attendance/{id}.pts[团员id]；手动点的照下面 PTS；没点到、但在「这台弥撒」按了不来 → 算请假
+export const PTS = { P: 1, T: 0.8, L: 0.1, A: 0 };
+export const IN_ONLY = 0.5;
+const r1 = x => Math.round(x * 10) / 10;
+export function scanScore(t, start, end) {
+  if (!t?.in) return 0;
+  if (!t.out) return IN_ONLY;
+  return r1(1 - (lateOf(t, start) ? 0.2 : 0) - (earlyOf(t, end) ? 0.2 : 0));
+}
+// 这一次点名，这个人算什么（P/T/L/A，没点又没投票 → ''）
+export const markOf = (e, id, vote) => e?.marks?.[id] || (vote === 'N' ? 'L' : '');
+export function scoreOf(e, id, vote) {
+  if (e?.pts && id in e.pts && e.marks?.[id]) return e.pts[id];
+  const k = markOf(e, id, vote);
+  return k ? PTS[k] : 0;
+}
+export const fmtPts = x => String(r1(x));

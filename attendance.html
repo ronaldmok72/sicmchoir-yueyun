@@ -68,10 +68,10 @@
           </select>
         </div>
         <div class="flex flex-wrap items-center gap-2 text-slate-600">
-          章程：每 3 个月要出席
+          章程：每 3 个月要有
           <input id="s-need" type="number" min="1" max="60" class="w-16 border border-slate-300 rounded-lg px-2 py-1 text-center">
-          次
-          <span class="text-xs text-slate-400">（一年加起来 = 4 倍；有到 + 迟到早退都算出席，请假不算）</span>
+          分
+          <span class="text-xs text-slate-400">（一年加起来 = 4 倍；完整出席一次 = 1 分）</span>
         </div>
       </div>
       <div id="s-head" class="bg-white rounded-2xl border border-slate-200 p-4 text-sm space-y-1"></div>
@@ -88,14 +88,15 @@
       <div class="min-h-full flex flex-col items-center justify-center p-4 text-center">
         <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
         <div id="qr-title" class="text-xl font-semibold mt-1"></div>
-        <div class="text-slate-600 mt-1">📱 到了扫一次＝签到（算出席）　·　要早走的人，走前再扫一次＝签退</div>
+        <div class="text-slate-600 mt-1">📱 到了扫一次签到，回家前再扫一次签退（没签退只算 0.5 分）</div>
         <div id="qr" class="my-4 p-3 bg-white rounded-2xl border border-slate-200"></div>
         <div id="qr-count" class="text-sm text-slate-700"></div>
         <div id="qr-recent" class="text-xs text-slate-500 mt-1 max-w-md"></div>
         <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-sm text-slate-600">
+          几点后到算迟到 <input id="qr-start" type="time" class="border border-slate-300 rounded-lg px-2 py-1">
           几点前走算早退 <input id="qr-end" type="time" class="border border-slate-300 rounded-lg px-2 py-1">
         </div>
-        <div class="text-xs text-slate-400 mt-1">练歌 8pm–10.30pm：10pm 前签退算早退。签到不管几点都算出席（忘了扫、晚上才补扫的也一样）；真的迟到，在点名表手动改「迟到/早退」。</div>
+        <div class="text-xs text-slate-400 mt-1">积分：签到＋签退 1 分；迟到扣 0.2、早退扣 0.2；只签到没签退 0.5；请假 0.1；缺席 0。<br>练歌 8pm–10.30pm：8.30pm 后签到算迟到，10pm 前签退算早退。忘了扫被冤枉的，在点名表按「有到」就改回 1 分。</div>
         <div class="text-xs text-slate-400 mt-1">没有电话登录的人，照旧在点名表手点。QR 每 30 秒换一次，截图传出去也没用。</div>
         <button id="qr-close" class="mt-5 px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-semibold">关掉 QR</button>
       </div>
