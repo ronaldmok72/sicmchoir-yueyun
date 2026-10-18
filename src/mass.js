@@ -202,7 +202,7 @@ function renderSlots() {
     const songs = slot.songs.map((s, k) => `
       <div class="flex items-center gap-1.5 py-1 group">
         ${s.missing
-          ? `<span class="flex-1 min-w-0 truncate text-sm text-amber-600" title="曲库里还没有这首的谱：先到排单后台上传，再回来按 ＋ 选歌换掉它">⚠ 还没有谱：${esc(s.title)}</span>`
+          ? `<span class="flex-1 min-w-0 truncate text-sm text-amber-600" title="曲库里还没有这首的谱：按 ＋ 选歌，在选歌框按「➕ 上传新谱」就可以换掉它">⚠ 还没有谱：${esc(s.title)}</span>`
           : `<span class="flex-1 min-w-0"><a href="${esc(s.imageUrl)}" target="_blank" rel="noopener" class="block truncate text-sm text-slate-800 hover:text-indigo-600" title="看乐谱">${esc(clean(s.title))}</a>${s.note ? `<span class="block text-xs text-indigo-600">✎ ${esc(s.note)}</span>` : ''}</span>`}
         ${s.missing ? '' : `<button data-act="note" data-si="${si}" data-k="${k}" class="px-1.5 ${s.note ? 'text-indigo-500' : 'text-slate-300'} hover:text-indigo-600" title="这一台唱哪几段／特别歌词">✎</button>`}
         ${slot.songs.length > 1 ? `<button data-act="up" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-slate-600 ${k === 0 ? 'invisible' : ''}" title="上移">↑</button>` : ''}
@@ -353,6 +353,47 @@ $('picker-list').addEventListener('click', e => {
   renderSlots();
   renderHeader();
   closePicker();
+});
+
+// 选歌框里直接上传新谱（跟排单后台「➕ 新歌」一样存进曲库 custom_songs），不用离开这页，还没保存的歌不会不见
+$('picker-upload').addEventListener('change', async e => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file || pickSlot === null) return;
+  const guess = $('picker-search').value.trim() || file.name.replace(/\.[^/.]+$/, '');
+  const title = (prompt('这首歌叫什么？（会用这个名字放进曲库，大家搜得到）', guess) || '').trim();
+  if (!title) return;
+  const key = t => clean(t).trim().toLowerCase();   // 「C24 弥撒前后祷文」跟「弥撒前后祷文」当同一首
+  const same = allSongs().find(s => s.title.trim().toLowerCase() === title.toLowerCase() || key(s.title) === key(title));
+  if (same && !confirm(`曲库已经有「${same.title}」了。\n\n确定 = 用这张新的谱换掉旧的\n取消 = 不上传（直接在列表选它）`)) { $('picker-search').value = title; return renderPicker(); }
+  const btn = $('picker-upload-btn');
+  const label = btn.firstChild.textContent;
+  btn.firstChild.textContent = '上传中…';
+  btn.classList.add('pointer-events-none', 'opacity-60');
+  try {
+    const fd = new FormData();
+    const ext = file.name.split('.').pop() || 'jpg';
+    fd.append('file', new File([file], `${title}_${Date.now()}.${ext}`, { type: file.type }));
+    fd.append('upload_preset', 'ml_default');
+    const r = await (await fetch('https://api.cloudinary.com/v1_1/dsfhilcgz/image/upload', { method: 'POST', body: fd })).json();
+    if (!r.secure_url) throw new Error(r.error?.message || '图片上传失败');
+    const song = { id: same?.id || `song_custom_${Date.now()}_0`, title, imageUrl: r.secure_url };
+    await setDoc(doc(db, 'custom_songs', song.id), song);
+    if (same && LIBRARY_DATA.includes(same)) Object.assign(same, song); else { LIBRARY_DATA.push(song); EXTRA = EXTRA.filter(x => x.id !== song.id); }
+    M.slots[pickSlot].songs.push({ ...song });
+    M.manual = true;
+    setDirty();
+    renderSlots();
+    renderHeader();
+    closePicker();
+    alert(`✅「${title}」放进曲库了，也排进这个位置。\n记得按保存。`);
+  } catch (err) {
+    console.error(err);
+    alert('没上传到：' + (err.code || err.message) + '\n检查一下网络再试。');
+  } finally {
+    btn.firstChild.textContent = label;
+    btn.classList.remove('pointer-events-none', 'opacity-60');
+  }
 });
 
 // ───────── 起手：复制上一场／从排单导入 ─────────

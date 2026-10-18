@@ -103,7 +103,10 @@
           <button id="picker-close" class="text-slate-400 hover:text-slate-700 px-2 text-lg">✕</button>
         </div>
         <input id="picker-search" type="search" placeholder="搜歌名、编号（例如 C24）" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-        <label class="flex items-center gap-2 text-xs text-slate-500"><input id="picker-suggest" type="checkbox" checked> 只看适合这个位置的</label>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <label class="flex items-center gap-2 text-xs text-slate-500"><input id="picker-suggest" type="checkbox" checked> 只看适合这个位置的</label>
+          <label id="picker-upload-btn" class="cursor-pointer text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100" title="拍照或选谱的图片，放进曲库，马上排进这个位置">➕ 曲库没有这首？上传新谱<input id="picker-upload" type="file" accept="image/*" class="hidden"></label>
+        </div>
       </div>
       <div id="picker-list" class="overflow-y-auto p-2"></div>
     </div>
