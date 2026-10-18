@@ -45,6 +45,9 @@ async function getDoc(sa, path) {
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');   // 本机测试（localhost）也要能领；没有 cookie，开放没关系
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(204).end();
   let sa = null;
   try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || 'null'); } catch { /* 下面当没放 */ }
   if (req.method === 'GET') return res.status(200).end(JSON.stringify({ configured: !!sa?.private_key }));
