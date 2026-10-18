@@ -2,8 +2,8 @@
 // 歌就是排单后台的曲库（library.js + 云端 custom_songs），后台上传新歌、改名、换图，这里打开就是最新的
 // 每首歌旁边写接下来哪一台要唱、以前唱过几次（从 masses 排歌记录算）
 // songs.html#song_123 = 直接打开那一首（公告、WhatsApp 可以贴这个连结）
-// 录音：song_audio/{歌id} = { items: [{ url, label, link?, at }] }（另外放，排单后台换谱时不会被盖掉）
-//   后台（排单后台／弥撒排歌／指挥）的人在看谱页按「🎧＋」上传录音档，或贴 YouTube／Drive 连结
+// 录音：song_audio/{歌id} = { items: [{ url, label, at }] }，只放 Google Drive／YouTube 连结（另外放，排单后台换谱时不会被盖掉）
+//   后台（排单后台／弥撒排歌／指挥）的人在看谱页按「🎧＋」贴连结
 import { collection, getDocs, doc, setDoc, arrayUnion, arrayRemove, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
@@ -22,7 +22,7 @@ let songs = [];          // [{id, title, imageUrl, name, letter, next:[{date,lab
 let filter = new URLSearchParams(location.search).get('f') || 'all';   // songs.html?f=practice = 先看公告要练的
 let shown = [];          // 现在列出来的（看谱时上一首/下一首照这个顺序）
 let open = null;
-let audio = {};          // 歌 id → 录音 [{url, label, link, at}]
+let audio = {};          // 歌 id → 录音连结 [{url, label, at}]
 const canAudio = () => ['admin', 'mass', 'conduct'].some(a => window.sicStaff?.can(a));
 
 async function load() {
@@ -120,96 +120,44 @@ $('list').addEventListener('click', e => {
 });
 
 // ───────── 录音 ─────────
-const stopAudio = () => document.querySelectorAll('#v-audio audio').forEach(a => a.pause());
-const pill = on => `shrink-0 px-2 py-0.5 rounded ${on ? 'bg-indigo-600' : 'bg-white/10'}`;
+// 只放连结（Google Drive、YouTube…），按了跳过去听；录音档本身不上传，不占 Cloudinary 的位置
 function renderAudio() {
-  stopAudio();
   const list = open ? audio[open.id] || [] : [];
   const staff = canAudio();
   $('v-audio-add').classList.toggle('hidden', !staff);
   const box = $('v-audio');
   box.classList.toggle('hidden', !list.length);
-  box.innerHTML = list.map((x, i) => x.link
-    ? `<div class="flex items-center gap-2 text-sm">
-        <a href="${esc(x.url)}" target="_blank" rel="noopener" class="flex-1 min-w-0 truncate rounded-lg bg-white/10 hover:bg-white/20 px-3 py-2">▶ ${esc(x.label || '听录音')} <span class="text-[11px] text-slate-400">（另外开）</span></a>
-        ${staff ? `<button data-audio-del="${i}" class="shrink-0 w-8 h-8 rounded-lg text-slate-400 hover:text-red-400" title="拿掉">✕</button>` : ''}
-      </div>`
-    : `<div class="space-y-1">
-        <div class="flex items-center gap-1.5 text-xs">
-          <span class="flex-1 min-w-0 truncate text-slate-200">🎧 ${esc(x.label || '录音')}</span>
-          <button data-rate="0.75" data-i="${i}" class="${pill(false)}">慢一点</button>
-          <button data-rate="1" data-i="${i}" class="${pill(true)}">正常</button>
-          <button data-loop="${i}" class="${pill(false)}" title="放完自己从头再放">🔁</button>
-          ${staff ? `<button data-audio-del="${i}" class="shrink-0 px-1 text-slate-400 hover:text-red-400" title="拿掉">✕</button>` : ''}
-        </div>
-        <audio data-i="${i}" controls preload="none" src="${esc(x.url)}" class="w-full h-9"></audio>
-      </div>`).join('');
+  box.innerHTML = `<div class="flex flex-wrap gap-2">${list.map((x, i) => `
+    <span class="inline-flex items-center rounded-lg bg-white/10">
+      <a href="${esc(x.url)}" target="_blank" rel="noopener" class="px-3 py-2 text-sm hover:bg-white/10 rounded-lg">🎧 ${esc(x.label || '听录音')}</a>
+      ${staff ? `<button data-audio-del="${i}" class="px-2 py-2 text-slate-400 hover:text-red-400" title="拿掉">✕</button>` : ''}
+    </span>`).join('')}</div>`;
 }
 $('v-audio').addEventListener('click', async e => {
-  const r = e.target.closest('[data-rate]');
-  if (r) {
-    const a = $('v-audio').querySelector(`audio[data-i="${r.dataset.i}"]`);
-    a.playbackRate = a.defaultPlaybackRate = Number(r.dataset.rate);
-    r.parentElement.querySelectorAll('[data-rate]').forEach(b => { b.className = pill(b === r); });
-    return;
-  }
-  const l = e.target.closest('[data-loop]');
-  if (l) {
-    const a = $('v-audio').querySelector(`audio[data-i="${l.dataset.loop}"]`);
-    a.loop = !a.loop;
-    l.className = pill(a.loop);
-    return;
-  }
   const d = e.target.closest('[data-audio-del]');
-  if (d && open) {
-    const x = (audio[open.id] || [])[+d.dataset.audioDel];
-    if (!x || !confirm(`拿掉「${x.label || '录音'}」？`)) return;
-    try {
-      await updateDoc(doc(db, 'song_audio', open.id), { items: arrayRemove(x) });
-      audio[open.id] = audio[open.id].filter(y => y !== x);
-      renderAudio(); render();
-    } catch (err) { console.error(err); alert('没拿掉：' + (err.code || err.message)); }
-  }
+  if (!d || !open) return;
+  const x = (audio[open.id] || [])[+d.dataset.audioDel];
+  if (!x || !confirm(`拿掉「${x.label || '录音'}」这个连结？\n（Google Drive 里的录音不会被删）`)) return;
+  try {
+    await updateDoc(doc(db, 'song_audio', open.id), { items: arrayRemove(x) });
+    audio[open.id] = audio[open.id].filter(y => y !== x);
+    renderAudio(); render();
+  } catch (err) { console.error(err); alert('没拿掉：' + (err.code || err.message)); }
 });
-// 一次只放一个：按了这个，别的停
-$('v-audio').addEventListener('play', e => document.querySelectorAll('#v-audio audio').forEach(a => { if (a !== e.target) a.pause(); }), true);
-
-async function addAudio(item) {
-  item.at = new Date().toISOString();
-  await setDoc(doc(db, 'song_audio', open.id), { items: arrayUnion(item), title: open.title }, { merge: true });
-  (audio[open.id] ||= []).push(item);
-  renderAudio(); render();
-}
 $('v-audio-add').addEventListener('click', async () => {
   if (!open) return;
-  const how = prompt('加录音：\n1 = 从手机／电脑选录音档（m4a、mp3…）\n2 = 贴 YouTube／Google Drive 连结\n\n打 1 或 2', '1');
-  if (how === '1') return $('v-audio-file').click();
-  if (how !== '2') return;
-  const url = (prompt('贴连结（https://…）') || '').trim();
-  if (!/^https:\/\/\S+$/.test(url)) { if (url) alert('连结要 https:// 开头'); return; }
-  const label = (prompt('这是什么录音？（例如：全团、女高音、10/17 练歌）', '全团') || '').trim();
-  try { await addAudio({ url, label, link: true }); toast('录音连结加好了'); }
-  catch (err) { console.error(err); alert('没加到：' + (err.code || err.message)); }
-});
-$('v-audio-file').addEventListener('change', async e => {
-  const file = e.target.files?.[0];
-  e.target.value = '';
-  if (!file || !open) return;
-  if (file.size > 25 * 1024 * 1024) return alert('这个档太大了（超过 25MB）。\n录短一点，或用 WhatsApp 传过的录音（会小很多）。');
+  const url = (prompt('贴录音的连结（Google Drive 记得开「知道连结的人都可以看」）') || '').trim();
+  if (!url) return;
+  if (!/^https:\/\/\S+$/.test(url)) return alert('连结要 https:// 开头');
   const label = (prompt('这是什么录音？（例如：全团、女高音、10/17 练歌）', '全团') || '').trim();
   if (!label) return;
-  const btn = $('v-audio-add');
-  btn.textContent = '上传中…'; btn.disabled = true;
+  const item = { url, label, at: new Date().toISOString() };
   try {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_preset', 'ml_default');
-    const r = await (await fetch('https://api.cloudinary.com/v1_1/dsfhilcgz/video/upload', { method: 'POST', body: fd })).json();
-    if (!r.secure_url) throw new Error(r.error?.message || '录音上传失败');
-    await addAudio({ url: r.secure_url, label });
-    toast('录音加好了 🎧');
-  } catch (err) { console.error(err); alert('没上传到：' + (err.code || err.message)); }
-  finally { btn.textContent = '🎧＋'; btn.disabled = false; }
+    await setDoc(doc(db, 'song_audio', open.id), { items: arrayUnion(item), title: open.title }, { merge: true });
+    (audio[open.id] ||= []).push(item);
+    renderAudio(); render();
+    toast('录音连结加好了 🎧');
+  } catch (err) { console.error(err); alert('没加到：' + (err.code || err.message)); }
 });
 
 // ───────── 看谱 ─────────
@@ -240,7 +188,6 @@ function show(id, push = true) {
   if (push) history.replaceState(null, '', '#' + id);
 }
 function close() {
-  stopAudio();
   open = null;
   $('viewer').classList.add('hidden');
   document.body.style.overflow = '';
