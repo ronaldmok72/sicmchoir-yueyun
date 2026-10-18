@@ -84,7 +84,10 @@ function initStart() {
   const draft = store.get(DRAFT_KEY);
   if (draft && draft.v === QUIZ_VERSION && draft.stage !== 'done') {
     $('name-input').value = draft.name;
-    $('resume-note').textContent = `上次做到一半（${draft.name}），按"开始"会接着做。`;
+    const where = draft.stage === 'quiz' ? `选择题第 ${draft.idx + 1} 题`
+      : draft.stage === 'intent' ? '最后几个问题'
+      : draft.stage === 'tap' ? `听拍子（做完 ${tapDone(draft.tap)} / ${TOTAL_SEG} 段）` : '最后一步（交出去）';
+    $('resume-note').textContent = `上次做到一半（${draft.name}，${where}），按"开始"会接着做。`;
     $('resume-note').classList.remove('hidden');
   }
   const input = $('name-input');
@@ -358,21 +361,25 @@ const ENTRY_TRIALS = [
   { key: 'entrySlow', label: '慢歌', bpb: 4, bpm: 66, style: 'slow' },
 ];
 const TOTAL_SEG = 1 + BEAT_TRIALS.length + ENTRY_TRIALS.length;
+// 做完几段（校正算 1 段）——中途关掉网页，下次从没做完的那段开始
+const tapDone = t => !t ? 0 : (t.latencyMs !== undefined ? 1 : 0) + [...BEAT_TRIALS, ...ENTRY_TRIALS].filter(tr => t.results?.[tr.key]).length;
 
 async function startTap() {
   show('s-tap');
   setProgress('听拍子小测', 0, 0);
   const T = S.tap || { results: {} };
   S.tap = T;
+  const done = tapDone(T);
 
   const go = await waitClick(`
     <p class="text-white font-semibold">听拍子小测（约 5 分钟）</p>
+    ${done ? `<p class="text-amber-300">上次做了 ${done} / ${TOTAL_SEG} 段，这次<b>从第 ${done + 1} 段接着做</b>，做过的不用重来。</p>` : ''}
     <p>🔈 <b class="text-white">请用手机喇叭或有线耳机</b>，<b class="text-red-300">不要用蓝牙耳机</b>——蓝牙会让声音慢 0.15–0.3 秒，结果会全部不准。</p>
     <p>找个安静的地方，把音量开到听得清楚。iPhone 请把<b class="text-white">侧边的静音键拨开</b>。</p>
     <p>做法很简单：<b class="text-white">听到声音，就点下面那个大按钮</b>。一共 ${TOTAL_SEG} 段，每段开始前都会先说明。</p>
     <p class="text-zinc-400">每段只有一次机会，听清楚说明再按开始。</p>`,
-    [['现在不方便，跳过', 'skip'], ['开始', 'go', true]]);
-  if (go === 'skip') { T.skipped = true; return finishTap(); }
+    [[done ? '不做了，交出去' : '现在不方便，跳过', 'skip'], [done ? '接着做' : '开始', 'go', true]]);
+  if (go === 'skip') { skipTap(T); return finishTap(); }
 
   // 先试听，确定有声音才开始
   for (;;) {
@@ -389,7 +396,7 @@ async function startTap() {
       <p>3. 拿掉蓝牙耳机</p>
       <p>4. 还是不行：关掉这个网页再打开，会从这里接着做</p>`,
       [['跳过这部分', 'skip'], ['再听一次', 'again', true]]);
-    if (again === 'skip') { T.skipped = true; return finishTap(); }
+    if (again === 'skip') { skipTap(T); return finishTap(); }
   }
 
   // 校正
@@ -403,6 +410,7 @@ async function startTap() {
       await waitClick('<p>没点到够，再来一次。</p><p>听到"哒"就马上点大按钮，<b class="text-white">一下"哒"点一下</b>。</p>', [['好', true, true]]);
     } else {
       T.latencyMs = Math.round(lat * 1000);
+      saveDraft();
     }
   }
   const lat = T.latencyMs / 1000;
@@ -411,6 +419,7 @@ async function startTap() {
   let seg = 1;
   for (const tr of BEAT_TRIALS) {
     seg++;
+    if (T.results[tr.key]) continue; // 上次做过了
     await waitClick(`
       <p class="text-white font-semibold">第 ${seg} / ${TOTAL_SEG} 段：跟拍子（${tr.label}）</p>
       <p>钢琴会先弹 1 小节给你听，然后<b class="text-white">跟着拍子一直点</b>。</p>
@@ -426,6 +435,7 @@ async function startTap() {
   // 第二关
   for (const tr of ENTRY_TRIALS) {
     seg++;
+    if (T.results[tr.key]) continue;
     await waitClick(`
       <p class="text-white font-semibold">第 ${seg} / ${TOTAL_SEG} 段：进歌（${tr.label}）</p>
       <p>这一段<b class="text-white">不是跟拍子</b>。钢琴会弹一段前奏（大约 10 秒），弹完就停，不会有人唱。</p>
@@ -447,6 +457,12 @@ async function startTap() {
     await waitClick(`<p class="text-white font-semibold">结束</p><p>${describeEntry(tr.label, r)}</p>`, [['下一段', true, true]]);
   }
   finishTap();
+}
+
+// 跳过：一段都没做 = 跳过；做了几段才不做 = 留着做了的（partial）
+function skipTap(T) {
+  if (Object.keys(T.results || {}).length) T.partial = true;
+  else T.skipped = true;
 }
 
 function finishTap() {
