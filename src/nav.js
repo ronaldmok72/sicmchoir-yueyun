@@ -7,8 +7,8 @@
   let quizOpen = window.sicQuiz?.cached() ?? false;
   const PAGES = [
     { group: '团员' },
-    { href: '/', icon: '🎼', title: '乐谱', sub: '指挥翻到哪里，你就跟到哪里' },
-    { href: 'day.html', icon: '📅', title: '这台弥撒', sub: '这个主日唱什么、谁指挥、我坐哪里、祈祷文' },
+    { href: 'day.html', icon: '📅', title: '这台弥撒（首页）', sub: '这个主日唱什么、谁指挥、我坐哪里、祈祷文' },
+    { href: '/?score=1', icon: '🎼', title: '乐谱', sub: '指挥翻到哪里，你就跟到哪里' },
     { href: 'scan.html', icon: '📷', title: '扫描签到', sub: '练歌到了扫一次，回家前再扫一次' },
     { href: 'prayer.html', icon: '🙏', title: '练习前祈祷文', sub: '进堂咏、集祷经、圣女则济利亚祷文' },
     { href: 'songs.html', icon: '📚', title: '歌单目录', sub: '全部的歌都在这里，随时看谱学歌' },
@@ -33,7 +33,7 @@
   };
   const here = href => {
     const p = location.pathname.replace(/\/index\.html$/, '/');
-    return href === '/' ? p === '/' : p.endsWith('/' + href);
+    return href.startsWith('/?') ? p === '/' : p.endsWith('/' + href);
   };
 
   let modal = null;

@@ -3,6 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    // 首页 = 这台弥撒（2026-10-19 Ronald 定）：直接开 App／打开网站 → 跳去「这台弥撒」
+    // 从菜单「乐谱」、「打开乐谱」按钮来的（网址带 ?score 或 ?setlist）才留在乐谱；同一次打开里重新整理也留着
+    (function () {
+      try {
+        if (location.search) sessionStorage.setItem('sicScore', '1');
+        else if (!sessionStorage.getItem('sicScore')) location.replace('day.html');
+      } catch (e) { /* 读不到就留在乐谱 */ }
+    })();
+  </script>
   <title>乐韵歌咏团 - 乐谱同步</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="manifest" href="manifest.json">
