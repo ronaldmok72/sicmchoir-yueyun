@@ -22,9 +22,9 @@ export async function tokenOk(secret, k) {
 export const randomSecret = () => [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
 
 export const hm = iso => iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
-// 迟到或早退 → T；不然 P
+// 2026-10-18 起：扫了签到就算整场到（P）；只有早走、走前签退在 end 之前 → T（早退）
+// 不再照签到时间自动算迟到（忘了扫、晚上才补扫的人会被冤枉）；真的迟到由点名的人手动改
 export function markFor(t, start, end) {
-  const late = start && t?.in && hm(t.in) > start;
   const early = end && t?.out && hm(t.out) < end;
-  return late || early ? 'T' : 'P';
+  return early ? 'T' : 'P';
 }

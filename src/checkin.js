@@ -1,4 +1,4 @@
-// 团员扫了现场的 QR 来到这里：第一次扫 = 签到（记到达时间），隔 10 分钟以上再扫 = 签退（记离开时间）
+// 团员扫了现场的 QR 来到这里：第一次扫 = 签到（算整场到），隔 10 分钟以上再扫 = 签退（只有要早走的人才扫）
 // 要先用电话登录（才知道是谁）；签到 / 签退会直接改点名页那一次的记录
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
@@ -14,6 +14,7 @@ const q = new URLSearchParams(location.search);
 const evId = q.get('e'), key = q.get('k');
 const MIN_GAP = 10 * 60000;   // 签到后 10 分钟内再扫，不算签退（免得扫两次）
 let okAt = 0;
+const OUT_HINT = '<span class="text-slate-400">待到最后的不用再扫。要早走的话，走之前再扫一次（签退）。</span>';
 
 const show = (icon, title, sub = '', tone = 'slate') => {
   $('box').innerHTML = `<div class="text-5xl">${icon}</div>
@@ -46,10 +47,13 @@ async function run() {
   let next, kind;
   if (!t.in) { next = { in: now.toISOString() }; kind = 'in'; }
   else if (now - new Date(t.in) < MIN_GAP) {
-    return show('✅', `${esc(who.name)}，你已经签到了`, `${timeLine(t)}<br>回家前再扫一次，就是签退。`, 'emerald');
+    return show('✅', `${esc(who.name)}，你已经签到了`, `${timeLine(t)}<br>${OUT_HINT}`, 'emerald');
   } else { next = { ...t, out: now.toISOString() }; kind = 'out'; }
 
-  const mark = markFor(next, e.start, e.end);
+  // 点名的人已经手动点过（请假、迟到…）就不盖掉；签退早走才改成早退
+  const had = e.marks?.[who.id];
+  const early = kind === 'out' && e.end && hm(next.out) < e.end;
+  const mark = early ? 'T' : had || markFor(next, e.start, e.end);
   await updateDoc(ref, {
     [`times.${who.id}`]: next,
     [`marks.${who.id}`]: mark,
@@ -57,11 +61,8 @@ async function run() {
     updatedAt: now.toISOString(),
   });
 
-  const late = e.start && hm(next.in) > e.start;
-  const early = kind === 'out' && e.end && hm(next.out) < e.end;
   if (kind === 'in') {
-    show(late ? '⏰' : '✅', `${esc(who.name)}，签到好了`,
-      `${timeLine(next)}${late ? `<br><span class="text-amber-700">${ampm(e.start)} 后才到，这次算迟到</span>` : ''}<br>回家前再扫一次，就是签退。`, late ? 'amber' : 'emerald');
+    show('✅', `${esc(who.name)}，签到好了`, `${timeLine(next)}<br>这次算出席 🙏<br>${OUT_HINT}`, 'emerald');
   } else {
     show(early ? '⏰' : '👋', `${esc(who.name)}，签退好了`,
       `${timeLine(next)}${early ? `<br><span class="text-amber-700">${ampm(e.end)} 前走，这次算早退</span>` : '<br>辛苦了，路上小心 🙏'}`, early ? 'amber' : 'emerald');
