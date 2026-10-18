@@ -31,11 +31,30 @@
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('sicmchoir|' + pwd.trim()));
     return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  // 读密码表（不用等 Firebase 载入）；还没设过 → null
+  // 平常用 REST（快，不用等 Firebase 载入）；REST 被挡（每天额度用完 429、伺服器出错）→ 改走 Firebase SDK
+  let sdkP = null;
+  const sdk = () => sdkP || (sdkP = Promise.all([
+    import('/src/firebase.js'),
+    import('https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js'),
+  ]).then(([a, f]) => ({ db: a.db, ...f })));
+  // 回 Response，或者 null（= 要改走 SDK）
+  async function rest(url, opts) {
+    try {
+      const r = await fetch(url, opts);
+      return r.status === 429 || r.status >= 500 ? null : r;
+    } catch { return null; }
+  }
+
+  // 读密码表；还没设过 → null
   let keysCache = null;
   async function loadKeys(fresh) {
     if (keysCache && !fresh) return keysCache;
-    const r = await fetch(DOC_URL, { cache: 'no-store' });
+    const r = await rest(DOC_URL, { cache: 'no-store' });
+    if (!r) {
+      const F = await sdk();
+      const d = await F.getDoc(F.doc(F.db, 'config', 'access'));
+      return (keysCache = d.exists() ? JSON.parse(d.data().json || '[]') : null);
+    }
     if (r.status === 404) return (keysCache = null);
     if (!r.ok) throw new Error('读不到密码表 ' + r.status);
     const j = await r.json();
@@ -82,7 +101,12 @@
   // Firestore REST 回来的格式 → 普通物件（只取用得到的）
   const plain = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, 'arrayValue' in v ? (v.arrayValue.values || []).map(x => Object.values(x)[0]) : Object.values(v)[0]]));
   async function memberById(id) {
-    const r = await fetch(`${API}/members/${encodeURIComponent(id)}?key=${API_KEY}`, { cache: 'no-store' });
+    const r = await rest(`${API}/members/${encodeURIComponent(id)}?key=${API_KEY}`, { cache: 'no-store' });
+    if (!r) {
+      const F = await sdk();
+      const d = await F.getDoc(F.doc(F.db, 'members', id));
+      return d.exists() ? { id, ...d.data() } : null;
+    }
     if (r.status === 404) return null;
     if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
     return { id, ...plain((await r.json()).fields) };
@@ -90,10 +114,15 @@
   // 用电话找团员；找不到 → null
   async function findByPhone(phone) {
     const h = await phoneHash(phone);
-    const r = await fetch(`${API}:runQuery?key=${API_KEY}`, {
+    const r = await rest(`${API}:runQuery?key=${API_KEY}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'members' }], where: { fieldFilter: { field: { fieldPath: 'phoneHash' }, op: 'EQUAL', value: { stringValue: h } } }, limit: 2 } }),
     });
+    if (!r) {
+      const F = await sdk();
+      const q = await F.getDocs(F.query(F.collection(F.db, 'members'), F.where('phoneHash', '==', h), F.limit(2)));
+      return q.empty ? null : { id: q.docs[0].id, ...q.docs[0].data() };
+    }
     if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
     const hit = (await r.json()).find(x => x.document);
     return hit ? { id: hit.document.name.split('/').pop(), ...plain(hit.document.fields) } : null;
@@ -103,7 +132,11 @@
     const out = [];
     let token = '';
     do {
-      const r = await fetch(`${API}/members?key=${API_KEY}&pageSize=300${token ? '&pageToken=' + token : ''}`, { cache: 'no-store' });
+      const r = await rest(`${API}/members?key=${API_KEY}&pageSize=300${token ? '&pageToken=' + token : ''}`, { cache: 'no-store' });
+      if (!r) {
+        const F = await sdk();
+        return (await F.getDocs(F.collection(F.db, 'members'))).docs.map(d => ({ id: d.id, ...d.data() }));
+      }
       if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
       const j = await r.json();
       (j.documents || []).forEach(d => out.push({ id: d.name.split('/').pop(), ...plain(d.fields) }));
@@ -126,18 +159,20 @@
       if (info.gender && (!cur?.gender || cur.genderGuess)) { f.gender = info.gender; f.genderGuess = false; }
       // 他打了比较完整的名字（名单上 Hans，他打 Hans Chew）：先记在全名，团员名单会建议改成这个名字
       if (info.rename && !cur?.fullName) f.fullName = info.rename;
-      const r = await fetch(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&${Object.keys(f).map(k => 'updateMask.fieldPaths=' + k).join('&')}`, {
+      const r = await rest(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&${Object.keys(f).map(k => 'updateMask.fieldPaths=' + k).join('&')}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
       });
-      if (!r.ok) throw new Error('没存到 ' + r.status);
+      if (!r) { const F = await sdk(); await F.updateDoc(F.doc(F.db, 'members', m.id), f); }
+      else if (!r.ok) throw new Error('没存到 ' + r.status);
       return { ...cur, ...f };
     }
     Object.assign(f, { name: info.name.trim(), fullName: (info.fullName || '').trim(), gender: info.gender || '', active: true, selfJoined: true, createdAt: now });
-    const r = await fetch(`${API}/members?key=${API_KEY}`, {
+    const r = await rest(`${API}/members?key=${API_KEY}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
     });
+    if (!r) { const F = await sdk(); return { id: (await F.addDoc(F.collection(F.db, 'members'), f)).id, ...f }; }
     if (!r.ok) throw new Error('没存到 ' + r.status);
     return { id: (await r.json()).name.split('/').pop(), ...f };
   }
@@ -159,11 +194,12 @@
   // 第一次：设 PIN（写进团员名单），然后当作已解锁
   async function memberSetPin(m, pin) {
     const h = await pinHash(m.id, pin);
-    const r = await fetch(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&updateMask.fieldPaths=pinHash`, {
+    const r = await rest(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&updateMask.fieldPaths=pinHash`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: { pinHash: { stringValue: h } } }),
     });
-    if (!r.ok) throw new Error('PIN 没存到 ' + r.status);
+    if (!r) { const F = await sdk(); await F.updateDoc(F.doc(F.db, 'members', m.id), { pinHash: h }); }
+    else if (!r.ok) throw new Error('PIN 没存到 ' + r.status);
     m.pinHash = h;
     return memberUnlock(m, pin);
   }
@@ -210,18 +246,24 @@
   const quizRemember = open => { try { localStorage.setItem(QUIZ_KEY, open ? '1' : '0'); } catch { /* 没关系 */ } return open; };
   async function quizLoad() {
     try {
-      const r = await fetch(`${API}/config/quiz?key=${API_KEY}`, { cache: 'no-store' });
+      const r = await rest(`${API}/config/quiz?key=${API_KEY}`, { cache: 'no-store' });
+      if (!r) {
+        const F = await sdk();
+        const d = await F.getDoc(F.doc(F.db, 'config', 'quiz'));
+        return quizRemember(d.exists() && !!d.data().open);
+      }
       if (r.status === 404) return quizRemember(false);
       if (!r.ok) return quizCached();
       return quizRemember(!!(await r.json()).fields?.open?.booleanValue);
     } catch { return quizCached(); }   // 没网络就照上次
   }
   async function quizSet(open) {
-    const r = await fetch(`${API}/config/quiz?key=${API_KEY}&updateMask.fieldPaths=open&updateMask.fieldPaths=updatedAt`, {
+    const r = await rest(`${API}/config/quiz?key=${API_KEY}&updateMask.fieldPaths=open&updateMask.fieldPaths=updatedAt`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: { open: { booleanValue: !!open }, updatedAt: { stringValue: new Date().toISOString() } } }),
     });
-    if (!r.ok) throw new Error('没存到 ' + r.status);
+    if (!r) { const F = await sdk(); await F.setDoc(F.doc(F.db, 'config', 'quiz'), { open: !!open, updatedAt: new Date().toISOString() }, { merge: true }); }
+    else if (!r.ok) throw new Error('没存到 ' + r.status);
     return quizRemember(!!open);
   }
   window.sicQuiz = { cached: quizCached, load: quizLoad, set: quizSet };
