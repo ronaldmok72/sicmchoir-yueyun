@@ -690,7 +690,15 @@ $('guest-form').addEventListener('submit', async e => {
   let fresh = 0;
   try {
     for (const n of names) {
-      const m = memberOf(n) || findMember(n, members) || findMember(n, allM);   // 名单上找得到 = 团员，不当 guest
+      // 名字完全一样 = 团员；只是第一个字一样（Theresa Ng / Theresa 玉娥、Gabriel / Gabriel Chong）→ 问一下，不自己猜
+      let m = memberOf(n) || findMember(n, members, true) || findMember(n, allM, true);
+      if (!m) {
+        const guess = findMember(n, members) || findMember(n, allM);
+        if (guess && confirm(`「${n}」就是名单上的「${guess.name}」吗？
+
+确定 = 同一个人
+取消 = 不同人，当 guest 加进来`)) m = guess;
+      }
       if (m) msgs.push(await addKnown(m));
       else { cur.guests.push({ name: n, group, gender: g }); fresh++; }
     }

@@ -18,15 +18,15 @@ export function timeText(t) {
   return `${h % 12 || 12}.${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
 }
 // 名字 → 团员：名字／全名一样就是他（大小写、空格、中文名不管：「Agnes Tan」= Agnes Tan 陈玉华）
-// 找不到再看第一个字：「Michael Ong」→ 团员名单里只有一个叫 Michael 的就是他
-export function findMember(name, members) {
+// 找不到再看第一个字：「Michael Ong」→ 团员名单里只有一个叫 Michael 的就是他（strict = 只认完全一样的）
+export function findMember(name, members, strict = false) {
   const n = s => String(s || '').toLowerCase().replace(/\s+/g, '');
   const latin = s => n(String(s || '').replace(/[㐀-鿿]+/g, ''));
   const x = n(name);
   if (!x) return null;
   const keys = m => [m.name, m.fullName].flatMap(v => [n(v), latin(v)]).filter(Boolean);
   const exact = members.find(m => keys(m).includes(x));
-  if (exact) return exact;
+  if (exact || strict) return exact || null;
   const first = n(String(name).trim().split(/\s+/)[0]);
   const hit = members.filter(m => latin(String(m.name).split(/\s+/)[0]) === first);
   return hit.length === 1 ? hit[0] : null;

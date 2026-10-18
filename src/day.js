@@ -287,9 +287,13 @@ function renderSpecials(isStaff) {
   const box = $('specials');
   box.classList.toggle('hidden', !list.length);
   const meM = me ? findMember(me, memberList) || { name: me } : null;
-  const isMe = n => meM && findMember(n, [meM]) === meM;
+  const isMe0 = n => meM && findMember(n, [meM]) === meM;
+  const sameName = n => meM && findMember(n, [meM], true) === meM;
   const song = x => `<a href="${esc(x.imageUrl)}" target="_blank" rel="noopener" class="text-slate-800 hover:text-indigo-600 underline decoration-slate-200 underline-offset-4" title="${esc(x.title)}">${esc(waTitle(x.title))}</a>`;
   box.innerHTML = list.map(w => {
+    // 座位表加的 guest（Theresa Ng）不要因为第一个字一样就当成团员 Theresa 玉娥
+    const guests = new Set((wseats[w.id]?.guests || []).map(g => String(g.name).toLowerCase()));
+    const isMe = n => !guests.has(String(n).toLowerCase()) && isMe0(n);
     const roles = (w.roles || []).filter(r => r.name);
     const mine = roles.filter(r => isMe(r.name)).map(r => roleZh(r.role)).concat((w.singers || []).some(isMe) ? ['唱'] : []);
     return `<section class="bg-white rounded-2xl border border-rose-200 p-4">
@@ -310,7 +314,7 @@ function renderSpecials(isStaff) {
           <div class="text-sm truncate">${esc(r.name)}</div>
         </div>`).join('')}</div>` : ''}
       ${(w.singers || []).length ? `<div class="mt-3 text-sm"><span class="text-slate-500">🎤 来唱（${w.singers.length}）：</span>${w.singers.map(n => isMe(n) ? `<b class="text-rose-700">${esc(n)}</b>` : esc(n)).join('、')}</div>` : ''}
-      ${wedSeats(w, isMe)}
+      ${wedSeats(w, sameName)}
       ${photoBlock(w.id)}
     </section>`;
   }).join('');
