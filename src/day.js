@@ -435,9 +435,14 @@ const WD = ['星期日', '星期一', '星期二', '星期三', '星期四', '�
 const wd = dt => WD[new Date(dt + 'T12:00').getDay()];
 const canSlot = () => can('attendance') || can('admin');
 let slotForm = false;
+// 平时的时间（只是显示；迟到／早退怎么算看 checkin-common.js 的 DEFAULT_TIME）
+const SLOT_TIME = { practice: { start: '20:00', end: '22:30' }, mass: { start: '11:00', end: '12:30' } };
+const h12 = t => { const [h, m] = t.split(':').map(Number); return `${h > 12 ? h - 12 : h || 12}:${String(m).padStart(2, '0')}`; };
+const ampm = t => { const h = Number(t.split(':')[0]); return h < 12 ? '早上' : h < 13 ? '中午' : h < 18 ? '下午' : '晚上'; };
+const timeRange = (a, b) => a ? `${ampm(a)} ${h12(a)}${b ? `–${h12(b)}` : ''}` : '';
 const rsvpSlots = d => {
   const base = [[addDays(d, -3), 'practice', '星期四练歌'], [addDays(d, -1), 'practice', '星期六练歌'], [d, 'mass', '主日弥撒']]
-    .map(([dt, kind, label]) => ({ id: `${dt}_${kind}`, date: dt, kind, label }));
+    .map(([dt, kind, label]) => ({ id: `${dt}_${kind}`, date: dt, kind, label, ...SLOT_TIME[kind] }));
   const lo = addDays(d, -6);
   const extra = Object.entries(rsvps).filter(([, v]) => v.extra && v.date >= lo && v.date <= d)
     .map(([id, v]) => ({ id, date: v.date, kind: 'other', label: v.label || '特别练习', start: v.start, end: v.end, extra: true }));
@@ -463,7 +468,7 @@ function renderRsvp() {
         const btn = (k, txt, on) => `<button data-vote="${x.id}" data-v="${k}" class="px-3 py-1.5 rounded-lg border text-sm ${mine === k ? on : 'border-slate-200 text-slate-600 hover:bg-slate-50'}">${txt}</button>`;
         return `<div class="py-2.5 flex flex-wrap items-center gap-2">
           <div class="flex-1 min-w-[8rem]">
-            <div class="text-sm font-semibold">${x.extra ? '⭐ ' : ''}${esc(x.label)} <span class="font-normal text-slate-400">${x.extra ? `${wd(x.date)} ` : ''}${md(x.date)}${x.start ? ` · ${x.start}${x.end ? `–${x.end}` : ''}` : ''}</span>
+            <div class="text-sm font-semibold">${x.extra ? '⭐ ' : ''}${esc(x.label)} <span class="font-normal text-slate-400">${x.extra ? `${wd(x.date)} ` : ''}${md(x.date)}${x.start ? ` · ${timeRange(x.start, x.end)}` : ''}</span>
               ${x.extra && canSlot() ? `<a href="attendance.html?d=${x.date}&k=other" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">📋 点名</a><button data-slot-del="${x.id}" class="ml-1 text-xs font-normal text-slate-400 hover:text-red-500" title="拿掉这个特别练习">✕</button>` : ''}</div>
             <div class="text-xs text-slate-500">🙋 ${yes.length} 会来　🙅 ${no.length} 不来</div>
             ${isStaff && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${no.map(esc).join('、')}` : ''}</div>` : ''}

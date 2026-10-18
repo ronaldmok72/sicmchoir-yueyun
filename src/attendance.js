@@ -190,7 +190,7 @@ $('r-del').addEventListener('click', async () => {
 });
 
 // ---------- 现场 QR 签到 ----------
-// 开 QR 时这一次的点名还没有 qr 密码就生一个，开始/结束时间照种类先填好（练歌 8pm–10pm）
+// 开 QR 时这一次的点名还没有 qr 密码就生一个，开始/结束时间照种类先填好（练歌 8pm–10.30pm：8.30pm 后到算迟到、10pm 前走算早退）
 let qrTimer = null, qrObj = null;
 async function openQr() {
   const id = curId(), e = events[id];
