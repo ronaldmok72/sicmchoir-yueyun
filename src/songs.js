@@ -2,7 +2,9 @@
 // 歌就是排单后台的曲库（library.js + 云端 custom_songs），后台上传新歌、改名、换图，这里打开就是最新的
 // 每首歌旁边写接下来哪一台要唱、以前唱过几次（从 masses 排歌记录算）
 // songs.html#song_123 = 直接打开那一首（公告、WhatsApp 可以贴这个连结）
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+// 录音：song_audio/{歌id} = { items: [{ url, label, link?, at }] }（另外放，排单后台换谱时不会被盖掉）
+//   后台（排单后台／弥撒排歌／指挥）的人在看谱页按「🎧＋」上传录音档，或贴 YouTube／Drive 连结
+import { collection, getDocs, doc, setDoc, arrayUnion, arrayRemove, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { clean, waTitle } from "./mass-common.js";
@@ -20,9 +22,12 @@ let songs = [];          // [{id, title, imageUrl, name, letter, next:[{date,lab
 let filter = new URLSearchParams(location.search).get('f') || 'all';   // songs.html?f=practice = 先看公告要练的
 let shown = [];          // 现在列出来的（看谱时上一首/下一首照这个顺序）
 let open = null;
+let audio = {};          // 歌 id → 录音 [{url, label, link, at}]
+const canAudio = () => ['admin', 'mass', 'conduct'].some(a => window.sicStaff?.can(a));
 
 async function load() {
-  const [, ma, no] = await Promise.all([loadLibrary(db), getDocs(collection(db, 'masses')), loadNotices(db).catch(() => ({ active: [] }))]);
+  const [, ma, no, au] = await Promise.all([loadLibrary(db), getDocs(collection(db, 'masses')), loadNotices(db).catch(() => ({ active: [] })), getDocs(collection(db, 'song_audio')).catch(() => ({ docs: [] }))]);
+  audio = Object.fromEntries(au.docs.map(d => [d.id, d.data().items || []]));
   const practice = {};   // 歌 id → 哪几个公告要练
   no.active.forEach(n => (n.songs || []).forEach(x => (practice[x.id] ||= []).push(n.title)));
   const use = {};        // 歌 id → 哪几台用到
@@ -60,6 +65,7 @@ const FILTERS = [
   ['practice', '📢 公告要练的', s => s.practice.length],
   ['next', '📅 接下来要唱', s => s.next.length],
   ['sung', '🔁 唱过的', s => s.past.length],
+  ['audio', '🎧 有录音', s => (audio[s.id] || []).length],
 ];
 
 function render() {
@@ -70,7 +76,7 @@ function render() {
   if (filter === 'next') shown.sort((a, b) => a.next[0].date.localeCompare(b.next[0].date));
   if (filter === 'sung') shown.sort((a, b) => b.past.length - a.past.length || b.past.at(-1).localeCompare(a.past.at(-1)));
 
-  $('filters').innerHTML = FILTERS.filter(([k, , fn]) => k !== 'practice' || songs.some(fn)).map(([k, label, fn]) => `
+  $('filters').innerHTML = FILTERS.filter(([k, , fn]) => (k !== 'practice' && k !== 'audio') || songs.some(fn)).map(([k, label, fn]) => `
     <button data-f="${k}" class="shrink-0 px-3 py-1.5 rounded-full border ${k === filter ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}">${label} <span class="${k === filter ? 'text-indigo-100' : 'text-slate-400'}">${songs.filter(fn).length}</span></button>`).join('');
 
   const groups = filter === 'all' ? [...new Set(shown.map(s => s.letter))] : [];
@@ -87,7 +93,7 @@ function render() {
     const extra = clean(s.title) !== s.name ? clean(s.title).replace(s.name, '').replace(/^[\s\-_]+/, '') : '';
     return `<button data-id="${esc(s.id)}" class="w-full text-left flex items-center gap-3 px-3.5 py-2.5 hover:bg-indigo-50/60">
       <div class="flex-1 min-w-0">
-        <div class="text-sm truncate">${esc(s.name)}</div>
+        <div class="text-sm truncate">${esc(s.name)}${(audio[s.id] || []).length ? ' <span title="有录音">🎧</span>' : ''}</div>
         ${extra || tag ? `<div class="text-[11px] truncate">${tag}${tag && extra ? '<span class="text-slate-300"> · </span>' : ''}<span class="text-slate-400">${esc(extra)}</span></div>` : ''}
       </div>
       <span class="shrink-0 text-slate-300">›</span>
@@ -113,6 +119,99 @@ $('list').addEventListener('click', e => {
   const b = e.target.closest('[data-id]'); if (b) show(b.dataset.id);
 });
 
+// ───────── 录音 ─────────
+const stopAudio = () => document.querySelectorAll('#v-audio audio').forEach(a => a.pause());
+const pill = on => `shrink-0 px-2 py-0.5 rounded ${on ? 'bg-indigo-600' : 'bg-white/10'}`;
+function renderAudio() {
+  stopAudio();
+  const list = open ? audio[open.id] || [] : [];
+  const staff = canAudio();
+  $('v-audio-add').classList.toggle('hidden', !staff);
+  const box = $('v-audio');
+  box.classList.toggle('hidden', !list.length);
+  box.innerHTML = list.map((x, i) => x.link
+    ? `<div class="flex items-center gap-2 text-sm">
+        <a href="${esc(x.url)}" target="_blank" rel="noopener" class="flex-1 min-w-0 truncate rounded-lg bg-white/10 hover:bg-white/20 px-3 py-2">▶ ${esc(x.label || '听录音')} <span class="text-[11px] text-slate-400">（另外开）</span></a>
+        ${staff ? `<button data-audio-del="${i}" class="shrink-0 w-8 h-8 rounded-lg text-slate-400 hover:text-red-400" title="拿掉">✕</button>` : ''}
+      </div>`
+    : `<div class="space-y-1">
+        <div class="flex items-center gap-1.5 text-xs">
+          <span class="flex-1 min-w-0 truncate text-slate-200">🎧 ${esc(x.label || '录音')}</span>
+          <button data-rate="0.75" data-i="${i}" class="${pill(false)}">慢一点</button>
+          <button data-rate="1" data-i="${i}" class="${pill(true)}">正常</button>
+          <button data-loop="${i}" class="${pill(false)}" title="放完自己从头再放">🔁</button>
+          ${staff ? `<button data-audio-del="${i}" class="shrink-0 px-1 text-slate-400 hover:text-red-400" title="拿掉">✕</button>` : ''}
+        </div>
+        <audio data-i="${i}" controls preload="none" src="${esc(x.url)}" class="w-full h-9"></audio>
+      </div>`).join('');
+}
+$('v-audio').addEventListener('click', async e => {
+  const r = e.target.closest('[data-rate]');
+  if (r) {
+    const a = $('v-audio').querySelector(`audio[data-i="${r.dataset.i}"]`);
+    a.playbackRate = a.defaultPlaybackRate = Number(r.dataset.rate);
+    r.parentElement.querySelectorAll('[data-rate]').forEach(b => { b.className = pill(b === r); });
+    return;
+  }
+  const l = e.target.closest('[data-loop]');
+  if (l) {
+    const a = $('v-audio').querySelector(`audio[data-i="${l.dataset.loop}"]`);
+    a.loop = !a.loop;
+    l.className = pill(a.loop);
+    return;
+  }
+  const d = e.target.closest('[data-audio-del]');
+  if (d && open) {
+    const x = (audio[open.id] || [])[+d.dataset.audioDel];
+    if (!x || !confirm(`拿掉「${x.label || '录音'}」？`)) return;
+    try {
+      await updateDoc(doc(db, 'song_audio', open.id), { items: arrayRemove(x) });
+      audio[open.id] = audio[open.id].filter(y => y !== x);
+      renderAudio(); render();
+    } catch (err) { console.error(err); alert('没拿掉：' + (err.code || err.message)); }
+  }
+});
+// 一次只放一个：按了这个，别的停
+$('v-audio').addEventListener('play', e => document.querySelectorAll('#v-audio audio').forEach(a => { if (a !== e.target) a.pause(); }), true);
+
+async function addAudio(item) {
+  item.at = new Date().toISOString();
+  await setDoc(doc(db, 'song_audio', open.id), { items: arrayUnion(item), title: open.title }, { merge: true });
+  (audio[open.id] ||= []).push(item);
+  renderAudio(); render();
+}
+$('v-audio-add').addEventListener('click', async () => {
+  if (!open) return;
+  const how = prompt('加录音：\n1 = 从手机／电脑选录音档（m4a、mp3…）\n2 = 贴 YouTube／Google Drive 连结\n\n打 1 或 2', '1');
+  if (how === '1') return $('v-audio-file').click();
+  if (how !== '2') return;
+  const url = (prompt('贴连结（https://…）') || '').trim();
+  if (!/^https:\/\/\S+$/.test(url)) { if (url) alert('连结要 https:// 开头'); return; }
+  const label = (prompt('这是什么录音？（例如：全团、女高音、10/17 练歌）', '全团') || '').trim();
+  try { await addAudio({ url, label, link: true }); toast('录音连结加好了'); }
+  catch (err) { console.error(err); alert('没加到：' + (err.code || err.message)); }
+});
+$('v-audio-file').addEventListener('change', async e => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file || !open) return;
+  if (file.size > 25 * 1024 * 1024) return alert('这个档太大了（超过 25MB）。\n录短一点，或用 WhatsApp 传过的录音（会小很多）。');
+  const label = (prompt('这是什么录音？（例如：全团、女高音、10/17 练歌）', '全团') || '').trim();
+  if (!label) return;
+  const btn = $('v-audio-add');
+  btn.textContent = '上传中…'; btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', 'ml_default');
+    const r = await (await fetch('https://api.cloudinary.com/v1_1/dsfhilcgz/video/upload', { method: 'POST', body: fd })).json();
+    if (!r.secure_url) throw new Error(r.error?.message || '录音上传失败');
+    await addAudio({ url: r.secure_url, label });
+    toast('录音加好了 🎧');
+  } catch (err) { console.error(err); alert('没上传到：' + (err.code || err.message)); }
+  finally { btn.textContent = '🎧＋'; btn.disabled = false; }
+});
+
 // ───────── 看谱 ─────────
 let zoom = false;
 function show(id, push = true) {
@@ -135,11 +234,13 @@ function show(id, push = true) {
   $('v-prev').disabled = i <= 0;
   $('v-next').disabled = i < 0 || i >= shown.length - 1;
   ['v-prev', 'v-next'].forEach(b => $(b).classList.toggle('opacity-30', $(b).disabled));
+  renderAudio();
   $('viewer').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   if (push) history.replaceState(null, '', '#' + id);
 }
 function close() {
+  stopAudio();
   open = null;
   $('viewer').classList.add('hidden');
   document.body.style.overflow = '';

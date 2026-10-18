@@ -43,9 +43,13 @@
         <div id="v-title" class="font-semibold truncate"></div>
         <div id="v-sub" class="text-[11px] text-slate-400 truncate"></div>
       </div>
+      <button id="v-audio-add" class="hidden px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="加录音">🎧＋</button>
       <button id="v-zoom" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="放大">🔍 放大</button>
       <button id="v-share" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="复制连结">🔗</button>
     </div>
+    <!-- 录音：边看谱边听（全团、各声部…）；后台的人可以加 -->
+    <div id="v-audio" class="hidden shrink-0 bg-slate-800 text-white px-3 py-2 space-y-2 max-h-[40dvh] overflow-y-auto"></div>
+    <input id="v-audio-file" type="file" accept="audio/*,.m4a,.mp3,.wav,.aac" class="hidden">
     <div id="v-body" class="flex-1 overflow-auto bg-white">
       <img id="v-img" alt="" class="block mx-auto w-full max-w-3xl">
     </div>
