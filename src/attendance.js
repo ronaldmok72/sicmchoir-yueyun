@@ -26,6 +26,7 @@ let nameOf = {};             // 团员id → 名字（包括已经不在团的�
 let fullOf = {};             // 团员id → 全名
 let rsvp = {};               // 这次点名的投票（团员在「这台弥撒」页按的会来／不来）：{ 团员id: 'Y'|'N' }
 let events = {};             // 点名id → 资料
+let extras = {};             // 这台弥撒页加的特别练习：rsvp/{日期}_other = { label, start, end }
 let votes = {};              // 点名id → 投票 { 团员id: 'Y'|'N' }（rsvp/{日期_种类}，按「不来」= 请假）
 let need = 7;                // 每 3 个月要出席几次
 let unsub = null;
@@ -33,7 +34,7 @@ let unsub = null;
 const evId = (date, kind) => `${date}_${kind}`;
 const evKey = e => evId(e.date, e.kind);
 const curId = () => evId($('r-date').value, $('r-kind').value);
-const titleFor = (date, kind) => kind === 'mass' ? (litDay(date)?.name || '弥撒') : KIND[kind];
+const titleFor = (date, kind) => kind === 'mass' ? (litDay(date)?.name || '弥撒') : kind === 'other' && extras[evId(date, kind)]?.label || KIND[kind];
 
 function toast(msg, bad) {
   const s = $('status');
@@ -49,7 +50,10 @@ async function load() {
     getDocs(collection(db, 'members')),
     getDocs(collection(db, 'attendance')),
     getDoc(doc(db, 'config', 'attendance')).catch(() => null),
-    getDocs(collection(db, 'rsvp')).then(q => { votes = Object.fromEntries(q.docs.map(d => [d.id, d.data().votes || {}])); }).catch(() => {}),
+    getDocs(collection(db, 'rsvp')).then(q => {
+      votes = Object.fromEntries(q.docs.map(d => [d.id, d.data().votes || {}]));
+      extras = Object.fromEntries(q.docs.filter(d => d.data().extra).map(d => [d.id, d.data()]));
+    }).catch(() => {}),
   ]);
   const all = ms.docs.map(d => ({ id: d.id, ...d.data() }));
   nameOf = Object.fromEntries(all.map(m => [m.id, m.name]));
@@ -190,7 +194,8 @@ $('r-del').addEventListener('click', async () => {
 let qrTimer = null, qrObj = null;
 async function openQr() {
   const id = curId(), e = events[id];
-  const [ds, de] = DEFAULT_TIME[$('r-kind').value] || ['', ''];
+  const x = extras[id];   // 特别练习：用加的时候填的时间
+  const [ds, de] = x ? [x.start || '', x.end || ''] : DEFAULT_TIME[$('r-kind').value] || ['', ''];
   const patch = { ...base() };
   if (!e?.qr) patch.qr = randomSecret();
   if (e?.start === undefined) patch.start = ds;

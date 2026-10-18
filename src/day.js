@@ -2,7 +2,7 @@
 // 团员打开就看得到；指挥（输过密码）还会看到「还要处理的」，点一下跳去那一页改
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
 // 这里会写的只有两样：团员投票会不会来（rsvp/{日期_practice|mass}）、合照（photos/{日期 或 婚礼id}，相片本身放 Cloudinary）
-import { collection, getDocs, doc, setDoc, updateDoc, deleteField, arrayUnion } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, getDocs, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
@@ -429,8 +429,21 @@ function renderNotices(isStaff) {
 // ───────── 会不会来：团员在这里按（代替 WA 投票）─────────
 // 规矩：这个礼拜或上个礼拜的星期四／六至少来一次练习，主日才排位子、拿披肩
 const addDays = (d, n) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return iso(x); };
-const rsvpSlots = d => [[addDays(d, -3), 'practice', '星期四练歌'], [addDays(d, -1), 'practice', '星期六练歌'], [d, 'mass', '主日弥撒']]
-  .map(([dt, kind, label]) => ({ id: `${dt}_${kind}`, date: dt, kind, label }));
+// 特别练习（例如周六下午加练）：点名后台的人在这里加 → rsvp/{日期}_other = { extra: true, label, start, end }
+//   一天最多一个；点名页的「其他活动」就是它，按「不来」一样自动算请假
+const WD = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+const wd = dt => WD[new Date(dt + 'T12:00').getDay()];
+const canSlot = () => can('attendance') || can('admin');
+let slotForm = false;
+const rsvpSlots = d => {
+  const base = [[addDays(d, -3), 'practice', '星期四练歌'], [addDays(d, -1), 'practice', '星期六练歌'], [d, 'mass', '主日弥撒']]
+    .map(([dt, kind, label]) => ({ id: `${dt}_${kind}`, date: dt, kind, label }));
+  const lo = addDays(d, -6);
+  const extra = Object.entries(rsvps).filter(([, v]) => v.extra && v.date >= lo && v.date <= d)
+    .map(([id, v]) => ({ id, date: v.date, kind: 'other', label: v.label || '特别练习', start: v.start, end: v.end, extra: true }));
+  const order = { practice: 0, other: 1, mass: 2 };
+  return [...base, ...extra].sort((a, b) => a.date.localeCompare(b.date) || order[a.kind] - order[b.kind]);
+};
 function renderRsvp() {
   const box = $('rsvp');
   const show = new Date(date + 'T12:00').getDay() === 0 && date >= TODAY && !onlySpecial(date);
@@ -450,7 +463,8 @@ function renderRsvp() {
         const btn = (k, txt, on) => `<button data-vote="${x.id}" data-v="${k}" class="px-3 py-1.5 rounded-lg border text-sm ${mine === k ? on : 'border-slate-200 text-slate-600 hover:bg-slate-50'}">${txt}</button>`;
         return `<div class="py-2.5 flex flex-wrap items-center gap-2">
           <div class="flex-1 min-w-[8rem]">
-            <div class="text-sm font-semibold">${x.label} <span class="font-normal text-slate-400">${md(x.date)}</span></div>
+            <div class="text-sm font-semibold">${x.extra ? '⭐ ' : ''}${esc(x.label)} <span class="font-normal text-slate-400">${x.extra ? `${wd(x.date)} ` : ''}${md(x.date)}${x.start ? ` · ${x.start}${x.end ? `–${x.end}` : ''}` : ''}</span>
+              ${x.extra && canSlot() ? `<a href="attendance.html?d=${x.date}&k=other" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">📋 点名</a><button data-slot-del="${x.id}" class="ml-1 text-xs font-normal text-slate-400 hover:text-red-500" title="拿掉这个特别练习">✕</button>` : ''}</div>
             <div class="text-xs text-slate-500">🙋 ${yes.length} 会来　🙅 ${no.length} 不来</div>
             ${isStaff && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${no.map(esc).join('、')}` : ''}</div>` : ''}
           </div>
@@ -459,10 +473,50 @@ function renderRsvp() {
         </div>`;
       }).join('')}
     </div>
+    ${canSlot() && date >= TODAY ? (slotForm ? `
+      <div class="mt-2 rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2 text-sm">
+        <div class="font-semibold text-indigo-800">➕ 加一个特别练习</div>
+        <div class="flex flex-wrap gap-2 items-center">
+          <input id="slot-date" type="date" min="${addDays(date, -6)}" max="${date}" value="${addDays(date, -1)}" class="border border-slate-300 rounded-lg px-2 py-1.5">
+          <input id="slot-start" type="time" value="14:00" class="border border-slate-300 rounded-lg px-2 py-1.5"> 到
+          <input id="slot-end" type="time" value="16:00" class="border border-slate-300 rounded-lg px-2 py-1.5">
+        </div>
+        <input id="slot-label" placeholder="叫什么？例如：周六下午加练" value="特别练习" class="w-full border border-slate-300 rounded-lg px-2 py-1.5">
+        <div class="flex gap-2">
+          <button id="slot-save" class="px-4 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold">加上去</button>
+          <button id="slot-cancel" class="px-4 py-1.5 rounded-lg border border-slate-300 text-slate-600">取消</button>
+        </div>
+        <div class="text-[11px] text-slate-500">加了之后团员就可以按会来／请假；当天在点名页选「其他活动」点名、开 QR。</div>
+      </div>` : '<button id="slot-add" class="mt-2 text-sm font-semibold text-indigo-600 hover:underline">➕ 加特别练习（例如周六下午）</button>') : ''}
     <div class="text-[11px] text-slate-400 mt-2">这个礼拜或上个礼拜的星期四／六至少来一次练习，主日才排位子、拿披肩。按「会来」的可以先排位子。</div>`;
   $('btn-login-vote')?.addEventListener('click', () => window.sicLogin?.open());
+  $('slot-add')?.addEventListener('click', () => { slotForm = true; renderRsvp(); });
+  $('slot-cancel')?.addEventListener('click', () => { slotForm = false; renderRsvp(); });
+  $('slot-save')?.addEventListener('click', async () => {
+    const dt = $('slot-date').value, label = $('slot-label').value.trim() || '特别练习';
+    const start = $('slot-start').value, end = $('slot-end').value;
+    if (!dt || dt < addDays(date, -6) || dt > date) return alert('日期要在这个礼拜里（星期一到这个主日）');
+    const id = `${dt}_other`;
+    if (rsvps[id]?.extra) return alert(`${md(dt)} 已经有一个特别练习了（一天只能一个）。要改的话先按 ✕ 拿掉再加。`);
+    const v = { date: dt, kind: 'other', extra: true, label, start, end, by: window.sicStaff?.me()?.name || '', updatedAt: new Date().toISOString() };
+    try {
+      await setDoc(doc(db, 'rsvp', id), v, { merge: true });
+      rsvps[id] = { ...(rsvps[id] || {}), ...v };
+      slotForm = false;
+      renderRsvp();
+    } catch (err) { console.error(err); alert('没存到，检查一下网络。'); }
+  });
 }
 $('rsvp').addEventListener('click', async e => {
+  const del = e.target.closest('[data-slot-del]');
+  if (del) {
+    const id = del.dataset.slotDel, v = rsvps[id] || {};
+    const n = Object.keys(v.votes || {}).length;
+    if (!confirm(`拿掉「${v.label || '特别练习'}」（${md(v.date)}）？${n ? `\n已经有 ${n} 个人按了会来／请假，这些也会一起没掉。` : ''}`)) return;
+    try { await deleteDoc(doc(db, 'rsvp', id)); delete rsvps[id]; renderRsvp(); }
+    catch (err) { console.error(err); alert('没拿掉，检查一下网络。'); }
+    return;
+  }
   const b = e.target.closest('[data-vote]'); if (!b) return;
   const meM = window.sicStaff?.me(); if (!meM) return;
   const id = b.dataset.vote, v = b.dataset.v;
