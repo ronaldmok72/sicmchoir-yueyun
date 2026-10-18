@@ -79,7 +79,8 @@ module.exports = async (req, res) => {
     for (const p of pins) {
       if (typeof p?.m !== 'string' || typeof p?.h !== 'string') continue;
       const doc = await getDoc(sa, 'members/' + encodeURIComponent(p.m));
-      if (doc && doc.pinHash && doc.pinHash === p.h) (doc.areas || []).forEach(a => areas.add(a));
+      // 「密码管理」只给 Ronald 的总密码，不经 PIN（跟 App 一样）
+      if (doc && doc.pinHash && doc.pinHash === p.h) (doc.areas || []).filter(a => a !== 'access').forEach(a => areas.add(a));
     }
 
     if (!areas.size && !member) return res.status(401).end(JSON.stringify({ error: '密码／电话对不上' }));

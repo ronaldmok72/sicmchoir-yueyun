@@ -1,0 +1,31 @@
+rules_version = '2';
+// 乐韵 App 的资料库锁（第 3 步：宽松版）
+// 贴到 Firebase → Firestore → 规则（Rules）→ 发布。这个文件只是留底，改了要再贴一次。
+// 大家都看得到；有通行证（App 登录／输过后台密码）才能改。
+// 例外：新团员第一次用电话注册（还没有通行证）、没登录也可以交测验。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function changedOnly(ks) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(ks); }
+
+    match /{document=**} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    // 新团员自己注册：新建一位（selfJoined），或给名单上还没有电话的名字补上电话
+    match /members/{id} {
+      allow create: if request.resource.data.selfJoined == true
+        && request.resource.data.keys().hasOnly(['phoneHash', 'phoneTail', 'voiceSelf', 'registeredAt', 'updatedAt',
+             'name', 'fullName', 'gender', 'active', 'selfJoined', 'createdAt']);
+      allow update: if (!('phoneHash' in resource.data) || resource.data.phoneHash == '')
+        && changedOnly(['phoneHash', 'phoneTail', 'voiceSelf', 'registeredAt', 'updatedAt', 'gender', 'genderGuess', 'fullName']);
+    }
+
+    // 团员小测验：没登录也可以交；重做听拍子只能改拍子那几格
+    match /quiz_results/{id} {
+      allow create: if true;
+      allow update: if changedOnly(['tap', 'tapPrev', 'tapRetakeAt']);
+    }
+  }
+}

@@ -36,7 +36,13 @@
   const sdk = () => sdkP || (sdkP = Promise.all([
     import('/src/firebase.js'),
     import('https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js'),
+    idToken().catch(() => null),   // 有通行证就先载入 Firebase 登录，SDK 写资料才会带上
   ]).then(([a, f]) => ({ db: a.db, ...f })));
+  // REST 写资料用的 headers：有通行证就带上（资料库锁起来之后，没带会被挡）
+  async function wh() {
+    const t = await idToken().catch(() => null);
+    return { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) };
+  }
   // 回 Response，或者 null（= 要改走 SDK）
   async function rest(url, opts) {
     try {
@@ -160,7 +166,7 @@
       // 他打了比较完整的名字（名单上 Hans，他打 Hans Chew）：先记在全名，团员名单会建议改成这个名字
       if (info.rename && !cur?.fullName) f.fullName = info.rename;
       const r = await rest(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&${Object.keys(f).map(k => 'updateMask.fieldPaths=' + k).join('&')}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: await wh(),
         body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
       });
       if (!r) { const F = await sdk(); await F.updateDoc(F.doc(F.db, 'members', m.id), f); }
@@ -169,7 +175,7 @@
     }
     Object.assign(f, { name: info.name.trim(), fullName: (info.fullName || '').trim(), gender: info.gender || '', active: true, selfJoined: true, createdAt: now });
     const r = await rest(`${API}/members?key=${API_KEY}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: await wh(),
       body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
     });
     if (!r) { const F = await sdk(); return { id: (await F.addDoc(F.collection(F.db, 'members'), f)).id, ...f }; }
@@ -199,7 +205,7 @@
   async function memberSetPin(m, pin) {
     const h = await pinHash(m.id, pin);
     const r = await rest(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&updateMask.fieldPaths=pinHash`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', headers: await wh(),
       body: JSON.stringify({ fields: { pinHash: { stringValue: h } } }),
     });
     if (!r) { const F = await sdk(); await F.updateDoc(F.doc(F.db, 'members', m.id), { pinHash: h }); }
@@ -265,7 +271,7 @@
   }
   async function quizSet(open) {
     const r = await rest(`${API}/config/quiz?key=${API_KEY}&updateMask.fieldPaths=open&updateMask.fieldPaths=updatedAt`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', headers: await wh(),
       body: JSON.stringify({ fields: { open: { booleanValue: !!open }, updatedAt: { stringValue: new Date().toISOString() } } }),
     });
     if (!r) { const F = await sdk(); await F.setDoc(F.doc(F.db, 'config', 'quiz'), { open: !!open, updatedAt: new Date().toISOString() }, { merge: true }); }
