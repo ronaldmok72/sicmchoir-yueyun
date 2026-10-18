@@ -27,9 +27,13 @@
   <!-- 顶部悬浮导航栏 (响应式优化版) -->
   <header class="absolute top-2 left-2 right-2 md:top-4 md:left-4 md:right-4 z-50 flex justify-between items-center px-3 py-2 md:px-5 md:py-3 bg-zinc-900/80 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl transition-all duration-300">
     
-    <!-- 左侧：排单选择 (手机端变窄) -->
-    <div class="flex items-center gap-2 flex-shrink-0">
-      <div class="relative w-28 md:w-48">
+    <!-- 左侧：☰ 菜单（最左上角、白色，一眼看到：这台弥撒、测验、签到…都从这里去）+ 排单选择 -->
+    <div class="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+      <button id="btn-menu" data-nav-open class="flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1.5 px-2 py-1 md:px-3 md:py-2 rounded-xl bg-white text-zinc-900 hover:bg-zinc-200 font-bold shadow-sm transition-all shrink-0" title="菜单：所有功能都在这里">
+        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        <span class="text-[10px] md:text-sm leading-none">菜单</span>
+      </button>
+      <div class="relative w-24 md:w-48">
         <select id="setlist-select" class="w-full appearance-none bg-zinc-800/60 text-zinc-200 border border-white/10 text-xs md:text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block px-2 md:px-4 py-2 pr-6 md:pr-8 outline-none transition-all cursor-pointer hover:bg-zinc-800 shadow-inner truncate">
           <option value="">加载中...</option>
         </select>
@@ -55,10 +59,6 @@
     <!-- 右侧：操作按钮 (手机端只显示图标，隐藏文字) -->
     <div id="header-actions" class="flex items-center justify-end gap-1.5 md:gap-3 flex-shrink-0">
 
-      <!-- 菜单：所有页面的入口（测验、排歌、后台…） -->
-      <button id="btn-menu" data-nav-open class="p-2 md:p-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm" title="更多功能">
-        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-      </button>
 
       <!-- 指挥模式开关 -->
       <button id="btn-conductor" class="flex items-center gap-1.5 p-2 md:px-4 md:py-2.5 rounded-xl bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm" title="开启指挥模式">
