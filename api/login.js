@@ -1,15 +1,23 @@
-// 领通行证：手机上输对的后台密码／电话登录，拿来这里换一张 Firebase 通行证（custom token）。
-// 资料库锁起来之后，有通行证才能改资料；通行证里写着这个人开了哪几区（areas）、是哪个团员（member）。
+// 登录服务：后台密码、PIN、电话都在这里对，手机只拿到「对／不对、开哪几区」，看不到打乱过的密码表。
+// 对了就发一张 Firebase 通行证（custom token）；资料库锁起来之后，有通行证才能改资料。
 // 服务器钥匙放在 Vercel 的环境变量 FIREBASE_SERVICE_ACCOUNT（整个 JSON），只有这里看得到，网页拿不到。
 //
-// POST { keys: ['打乱后的密码', ...], pins: [{ m: 团员id, h: pinHash }], member: { id, phoneHash } }
-//   → { token, uid, areas, member }，全部对不上 → 401
+// POST { action, keys: ['打乱后的密码', ...], pins: [{ m: 团员id, h: pinHash }], member: { id, phoneHash }, ... }
+//   action 'token'（默认）→ { token, uid, areas, member }，全部对不上 → 401
+//   action 'check'    → { keys: [开的区 或 null], pins: [开的区 或 null], member: true/false }（不发通行证）
+//   action 'find'     { phoneHash } → 名单上那一位（不含打乱过的电话／PIN，有 hasPin）；找不到 → 404
+//   action 'register' { id（名单上的那一位，新团员不用）, info } → 注册好的那一位
+//   action 'setPin'   { member, h } → 第一次设 PIN（要电话对得上、还没设过）→ { areas }
 // GET → { configured: true/false }（看钥匙放好了没有）
 const crypto = require('crypto');
 
 const PROJECT = 'sicmchoir-yueyun';
 const API = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
 const ALL = ['conduct', 'mass', 'duties', 'seating', 'members', 'attendance', 'notice', 'admin', 'quiz', 'photos', 'access'];
+const sha = s => crypto.createHash('sha256').update(s).digest('hex');
+// 还没在「密码管理」设过任何密码之前，旧密码 sic 暂时当最高权限（跟 App 一样）
+const BOOT = sha('sicmchoir|sic');
+const SECRET = ['phoneHash', 'pinHash'];
 
 const b64url = x => Buffer.from(typeof x === 'string' ? x : JSON.stringify(x)).toString('base64url');
 function jwt(sa, payload) {
@@ -19,7 +27,7 @@ function jwt(sa, payload) {
   return `${head}.${body}.${sig}`;
 }
 
-// 用服务器钥匙读资料库（不受锁影响）
+// 用服务器钥匙读写资料库（不受锁影响）
 let cached = null;
 async function accessToken(sa) {
   if (cached && cached.exp > Date.now() + 60000) return cached.token;
@@ -34,18 +42,134 @@ async function accessToken(sa) {
   cached = { token: j.access_token, exp: Date.now() + (j.expires_in || 3600) * 1000 };
   return cached.token;
 }
-const plain = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, 'arrayValue' in v ? (v.arrayValue.values || []).map(x => Object.values(x)[0]) : Object.values(v)[0]]));
-async function getDoc(sa, path) {
-  const r = await fetch(`${API}/${path}`, { headers: { Authorization: 'Bearer ' + await accessToken(sa) } });
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`读不到 ${path}：${r.status}`);
-  return plain((await r.json()).fields);
+// Firestore REST 的格式 ↔ 普通物件
+const val = v => 'mapValue' in v ? plain(v.mapValue.fields) : 'arrayValue' in v ? (v.arrayValue.values || []).map(val)
+  : 'integerValue' in v ? Number(v.integerValue) : 'nullValue' in v ? null : Object.values(v)[0];
+const plain = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, val(v)]));
+const fv = v => typeof v === 'boolean' ? { booleanValue: v } : { stringValue: String(v) };
+const fields = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, fv(v)]));
+async function call(sa, url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { Authorization: 'Bearer ' + await accessToken(sa), 'Content-Type': 'application/json' } });
+  if (!r.ok && r.status !== 404) throw new Error(`资料库 ${r.status}`);
+  return r.status === 404 ? null : r.json();
 }
+const getDoc = async (sa, path) => { const j = await call(sa, `${API}/${path}`); return j ? plain(j.fields) : null; };
+const idOf = d => d.name.split('/').pop();
+async function byPhone(sa, h) {
+  const j = await call(sa, `${API}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: 'members' }], where: { fieldFilter: { field: { fieldPath: 'phoneHash' }, op: 'EQUAL', value: { stringValue: h } } }, limit: 2 } }) });
+  const hit = (j || []).find(x => x.document);
+  return hit ? { id: idOf(hit.document), ...plain(hit.document.fields) } : null;
+}
+// 给手机看的：拿掉打乱过的电话和 PIN
+const pub = m => { const o = { ...m, hasPin: !!m.pinHash }; SECRET.forEach(k => delete o[k]); return o; };
+const str = (x, n = 200) => typeof x === 'string' && x.length <= n ? x : '';
+
+// 这次带来的密码／PIN／电话，逐个对：回传每一个开的区、是哪位团员、全部加起来开的区
+async function verify(sa, body) {
+  const keys = (Array.isArray(body.keys) ? body.keys : []).map(h => str(h, 100)).slice(0, 10);
+  const pins = (Array.isArray(body.pins) ? body.pins : []).slice(0, 5).map(p => ({ m: str(p?.m), h: str(p?.h, 100) }));
+  const out = { keys: [], pins: [], member: null, areas: new Set() };
+
+  // 1. 后台密码（密码管理页设的，config/access）
+  if (keys.length) {
+    const acc = await getDoc(sa, 'config/access');
+    const list = acc ? JSON.parse(acc.json || '[]') : null;
+    out.keys = keys.map(h => {
+      const k = list ? list.find(k => h && k.hash === h) : (h === BOOT ? { master: true } : null);
+      return k ? (k.master ? ALL : (k.areas || []).filter(a => ALL.includes(a))) : null;
+    });
+  }
+  // 2. 团员：电话（phoneHash）要跟名单上的一样
+  const m = body.member;
+  if (str(m?.id) && str(m?.phoneHash, 100)) {
+    const doc = await getDoc(sa, 'members/' + encodeURIComponent(m.id));
+    if (doc && doc.phoneHash && doc.phoneHash === m.phoneHash) out.member = m.id;
+  }
+  // 3. 有开后台的团员：PIN（members/{id}.pinHash），开的区照名单上的 areas
+  for (const p of pins) {
+    const doc = p.m && p.h ? await getDoc(sa, 'members/' + encodeURIComponent(p.m)) : null;
+    // 「密码管理」只给 Ronald 的总密码，不经 PIN（跟 App 一样）
+    const a = doc && doc.pinHash && doc.pinHash === p.h ? (doc.areas || []).filter(a => ALL.includes(a) && a !== 'access') : [];
+    out.pins.push(a.length ? a : null);
+  }
+  [...out.keys, ...out.pins].forEach(a => (a || []).forEach(x => out.areas.add(x)));
+  return out;
+}
+
+function token(sa, areas, member) {
+  const uid = member ? 'm_' + member : 'staff_' + sha([...areas].sort().join(',')).slice(0, 16);
+  const now = Math.floor(Date.now() / 1000);
+  return { uid, token: jwt(sa, {
+    iss: sa.client_email, sub: sa.client_email,
+    aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
+    iat: now, exp: now + 3600, uid,
+    claims: { areas: [...areas], member: member || '' },
+  }) };
+}
+
+const ACTIONS = {
+  async token(sa, body, res) {
+    const v = await verify(sa, body);
+    if (!v.areas.size && !v.member) return res.status(401).end(JSON.stringify({ error: '密码／电话对不上' }));
+    const t = token(sa, v.areas, v.member);
+    return res.status(200).end(JSON.stringify({ ...t, areas: [...v.areas], member: v.member }));
+  },
+  async check(sa, body, res) {
+    const v = await verify(sa, body);
+    return res.status(200).end(JSON.stringify({ keys: v.keys, pins: v.pins, member: !!v.member }));
+  },
+  async find(sa, body, res) {
+    const h = str(body.phoneHash, 100);
+    const m = h && await byPhone(sa, h);
+    if (!m) return res.status(404).end('{}');
+    return res.status(200).end(JSON.stringify(pub(m)));
+  },
+  // 第一次用：自己注册（电话还没登记的人）。info：{ phoneHash, phoneTail, gender, voiceSelf, rename, name, fullName }
+  async register(sa, body, res) {
+    const i = body.info || {};
+    const h = str(i.phoneHash, 100), tail = str(i.phoneTail, 4);
+    if (!/^[0-9a-f]{64}$/.test(h) || !/^\d{4}$/.test(tail)) return res.status(400).end(JSON.stringify({ error: '电话不对' }));
+    if (await byPhone(sa, h)) return res.status(409).end(JSON.stringify({ code: 'phone-taken' }));
+    const now = new Date().toISOString();
+    const f = { phoneHash: h, phoneTail: tail, voiceSelf: ['S', 'A', 'T', 'B'].includes(i.voiceSelf) ? i.voiceSelf : '', registeredAt: now, updatedAt: now };
+    const gender = ['F', 'M'].includes(i.gender) ? i.gender : '';
+    const id = str(body.id);
+    if (id) {
+      const cur = await getDoc(sa, 'members/' + encodeURIComponent(id));
+      if (!cur) return res.status(404).end('{}');
+      if (cur.phoneHash) return res.status(409).end(JSON.stringify({ code: 'name-taken', tail: cur.phoneTail || '' }));
+      // 男女：名单没写、或者是猜的，才照他自己选的
+      if (gender && (!cur.gender || cur.genderGuess)) { f.gender = gender; f.genderGuess = false; }
+      // 他打了比较完整的名字（名单上 Hans，他打 Hans Chew）：先记在全名，团员名单会建议改成这个名字
+      if (str(i.rename) && !cur.fullName) f.fullName = i.rename.trim();
+      await call(sa, `${API}/members/${encodeURIComponent(id)}?${Object.keys(f).map(k => 'updateMask.fieldPaths=' + k).join('&')}`,
+        { method: 'PATCH', body: JSON.stringify({ fields: fields(f) }) });
+      return res.status(200).end(JSON.stringify(pub({ id, ...cur, ...f })));
+    }
+    const name = str(i.name, 80).trim();
+    if (!name) return res.status(400).end(JSON.stringify({ error: '名字不能空' }));
+    Object.assign(f, { name, fullName: str(i.fullName, 120).trim(), gender, active: true, selfJoined: true, createdAt: now });
+    const d = await call(sa, `${API}/members`, { method: 'POST', body: JSON.stringify({ fields: fields(f) }) });
+    return res.status(200).end(JSON.stringify(pub({ id: idOf(d), ...f })));
+  },
+  // 第一次设 PIN：电话要对得上，而且还没设过（忘了 PIN 要 Ronald 在密码管理清掉）
+  async setPin(sa, body, res) {
+    const v = await verify(sa, { member: body.member });
+    const h = str(body.h, 100);
+    if (!v.member || !/^[0-9a-f]{64}$/.test(h)) return res.status(401).end('{}');
+    const cur = await getDoc(sa, 'members/' + encodeURIComponent(v.member));
+    if (cur.pinHash) return res.status(409).end(JSON.stringify({ code: 'pin-set' }));
+    await call(sa, `${API}/members/${encodeURIComponent(v.member)}?updateMask.fieldPaths=pinHash`,
+      { method: 'PATCH', body: JSON.stringify({ fields: { pinHash: { stringValue: h } } }) });
+    return res.status(200).end(JSON.stringify({ areas: (cur.areas || []).filter(a => ALL.includes(a) && a !== 'access') }));
+  },
+};
 
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Access-Control-Allow-Origin', '*');   // 本机测试（localhost）也要能领；没有 cookie，开放没关系
+  res.setHeader('Access-Control-Allow-Origin', '*');   // 本机测试（localhost）也要能用；没有 cookie，开放没关系
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
   let sa = null;
@@ -56,43 +180,10 @@ module.exports = async (req, res) => {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const areas = new Set();
-
-    // 1. 后台密码（密码管理页设的，config/access）
-    const keys = (Array.isArray(body.keys) ? body.keys : []).filter(h => typeof h === 'string').slice(0, 10);
-    if (keys.length) {
-      const acc = await getDoc(sa, 'config/access');
-      const list = acc ? JSON.parse(acc.json || '[]') : [];
-      keys.forEach(h => { const k = list.find(k => k.hash === h); if (k) (k.master ? ALL : k.areas || []).forEach(a => areas.add(a)); });
-    }
-
-    // 2. 团员：电话（phoneHash）要跟名单上的一样
-    let member = null;
-    const m = body.member;
-    if (m && typeof m.id === 'string' && typeof m.phoneHash === 'string' && m.id.length < 200) {
-      const doc = await getDoc(sa, 'members/' + encodeURIComponent(m.id));
-      if (doc && doc.phoneHash && doc.phoneHash === m.phoneHash) member = m.id;
-    }
-
-    // 3. 有开后台的团员：PIN（members/{id}.pinHash），开的区照名单上的 areas
-    const pins = (Array.isArray(body.pins) ? body.pins : []).slice(0, 5);
-    for (const p of pins) {
-      if (typeof p?.m !== 'string' || typeof p?.h !== 'string') continue;
-      const doc = await getDoc(sa, 'members/' + encodeURIComponent(p.m));
-      // 「密码管理」只给 Ronald 的总密码，不经 PIN（跟 App 一样）
-      if (doc && doc.pinHash && doc.pinHash === p.h) (doc.areas || []).filter(a => a !== 'access').forEach(a => areas.add(a));
-    }
-
-    if (!areas.size && !member) return res.status(401).end(JSON.stringify({ error: '密码／电话对不上' }));
-    const uid = member ? 'm_' + member : 'staff_' + crypto.createHash('sha256').update([...areas].sort().join(',')).digest('hex').slice(0, 16);
-    const now = Math.floor(Date.now() / 1000);
-    const token = jwt(sa, {
-      iss: sa.client_email, sub: sa.client_email,
-      aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
-      iat: now, exp: now + 3600, uid,
-      claims: { areas: [...areas].filter(a => ALL.includes(a)), member: member || '' },
-    });
-    return res.status(200).end(JSON.stringify({ token, uid, areas: [...areas], member }));
+    const name = body.action || 'token';
+    const act = Object.hasOwn(ACTIONS, name) && ACTIONS[name];
+    if (!act) return res.status(400).end(JSON.stringify({ error: '不认识的 action' }));
+    return await act(sa, body, res);
   } catch (e) {
     return res.status(500).end(JSON.stringify({ error: String(e.message || e) }));
   }

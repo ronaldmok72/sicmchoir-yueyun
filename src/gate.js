@@ -18,8 +18,6 @@
   const ALL = AREAS.map(a => a.key).concat('access');   // access = 密码管理，只有最高权限
   const KEY = 'sicAccess';                               // 这部手机输过哪些密码：[{ h: 打乱后的密码, areas }]
   const DOC_URL = 'https://firestore.googleapis.com/v1/projects/sicmchoir-yueyun/databases/(default)/documents/config/access?key=AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U';
-  // 还没在「密码管理」设过任何密码之前，暂时用旧密码 sic 当最高权限，第一次进去就要换掉
-  const BOOT = [{ id: 'boot', name: '最高权限（暂时）', hash: '', plain: 'sic', master: true, areas: ALL }];
 
   const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
   const write = g => { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* 没关系 */ } queueAuth(); };
@@ -66,19 +64,15 @@
     const j = await r.json();
     return (keysCache = JSON.parse(j.fields?.json?.stringValue || '[]'));
   }
-  const areasOf = k => k.master ? ALL : (k.areas || []);
 
-  // 试一个密码：对了就记在这部手机，回传它开的区
+  // 试一个密码：拿去登录服务对（手机看不到密码表），对了就记在这部手机，回传它开的区
   async function tryPassword(pwd) {
     if (!pwd || !pwd.trim()) return null;
     const h = await hash(pwd);
-    const keys = await loadKeys(true);
-    const k = keys ? keys.find(k => k.hash === h) : BOOT.find(k => k.plain === pwd.trim());
-    if (!k) return null;
-    const g = read().filter(x => x.h !== h);
-    g.push({ h, areas: areasOf(k), boot: !keys });
-    write(g);
-    return areasOf(k);
+    const a = (await callLogin('check', { keys: [h] })).j.keys?.[0];
+    if (!a) return null;
+    write(read().filter(x => x.h !== h).concat({ h, areas: a }));
+    return a;
   }
 
   // 要进某一区：这部手机有了就直接进；没有就问密码
@@ -117,21 +111,11 @@
     if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
     return { id, ...plain((await r.json()).fields) };
   }
-  // 用电话找团员；找不到 → null
+  // 用电话找团员（登录服务找）；找不到 → null。phoneHash 是这边自己算的，拿来领通行证
   async function findByPhone(phone) {
     const h = await phoneHash(phone);
-    const r = await rest(`${API}:runQuery?key=${API_KEY}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'members' }], where: { fieldFilter: { field: { fieldPath: 'phoneHash' }, op: 'EQUAL', value: { stringValue: h } } }, limit: 2 } }),
-    });
-    if (!r) {
-      const F = await sdk();
-      const q = await F.getDocs(F.query(F.collection(F.db, 'members'), F.where('phoneHash', '==', h), F.limit(2)));
-      return q.empty ? null : { id: q.docs[0].id, ...q.docs[0].data() };
-    }
-    if (!r.ok) throw new Error('读不到团员名单 ' + r.status);
-    const hit = (await r.json()).find(x => x.document);
-    return hit ? { id: hit.document.name.split('/').pop(), ...plain(hit.document.fields) } : null;
+    const { status, j } = await callLogin('find', { phoneHash: h });
+    return status === 404 ? null : { ...j, phoneHash: h };
   }
   // 第一次用：自己注册（电话还没登记的人）
   async function listMembers() {
@@ -150,37 +134,17 @@
     } while (token);
     return out;
   }
-  const fv = v => typeof v === 'boolean' ? { booleanValue: v } : { stringValue: String(v) };
   // m = 名单上的那一位（照名字选的）；m 没有 = 新团员，info.name / fullName 新建一位
   // info：{ phone, gender: 'F'|'M', voiceSelf: 'S'|'A'|'T'|'B'|''（还不知道）}
+  // 登录服务帮他写进名单（电话已经有人登记 → code phone-taken；那个名字已经有电话 → code name-taken）
   async function register(m, info) {
-    const n = normPhone(info.phone);
-    if (await findByPhone(n)) throw Object.assign(new Error('这个电话已经登记了'), { code: 'phone-taken' });
-    const now = new Date().toISOString();
-    const f = { phoneHash: await phoneHash(n), phoneTail: n.slice(-4), voiceSelf: info.voiceSelf || '', registeredAt: now, updatedAt: now };
-    if (m) {
-      const cur = await memberById(m.id);
-      if (cur?.phoneHash) throw Object.assign(new Error('这个名字已经有电话了'), { code: 'name-taken', tail: cur.phoneTail });
-      // 男女：名单没写、或者是猜的，才照他自己选的
-      if (info.gender && (!cur?.gender || cur.genderGuess)) { f.gender = info.gender; f.genderGuess = false; }
-      // 他打了比较完整的名字（名单上 Hans，他打 Hans Chew）：先记在全名，团员名单会建议改成这个名字
-      if (info.rename && !cur?.fullName) f.fullName = info.rename;
-      const r = await rest(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&${Object.keys(f).map(k => 'updateMask.fieldPaths=' + k).join('&')}`, {
-        method: 'PATCH', headers: await wh(),
-        body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
-      });
-      if (!r) { const F = await sdk(); await F.updateDoc(F.doc(F.db, 'members', m.id), f); }
-      else if (!r.ok) throw new Error('没存到 ' + r.status);
-      return { ...cur, ...f };
-    }
-    Object.assign(f, { name: info.name.trim(), fullName: (info.fullName || '').trim(), gender: info.gender || '', active: true, selfJoined: true, createdAt: now });
-    const r = await rest(`${API}/members?key=${API_KEY}`, {
-      method: 'POST', headers: await wh(),
-      body: JSON.stringify({ fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fv(v)])) }),
-    });
-    if (!r) { const F = await sdk(); return { id: (await F.addDoc(F.collection(F.db, 'members'), f)).id, ...f }; }
-    if (!r.ok) throw new Error('没存到 ' + r.status);
-    return { id: (await r.json()).name.split('/').pop(), ...f };
+    const n = normPhone(info.phone), h = await phoneHash(n);
+    const { status, j } = await callLogin('register', { id: m?.id || '', info: {
+      phoneHash: h, phoneTail: n.slice(-4), gender: info.gender || '', voiceSelf: info.voiceSelf || '',
+      rename: info.rename || '', name: info.name || '', fullName: info.fullName || '' } });
+    if (status === 409) throw Object.assign(new Error('已经登记了'), { code: j.code, tail: j.tail });
+    if (status !== 200) throw new Error('没存到 ' + status);
+    return { ...j, phoneHash: h };
   }
   function setMe(m) {
     const prev = me();
@@ -193,25 +157,23 @@
     } catch { /* 没关系 */ }
     queueAuth();
   }
-  // 后台 PIN：对了就把这位团员开的区记在这部手机
+  // 后台 PIN：拿去登录服务对，对了就把这位团员开的区记在这部手机（最高权限只给 Ronald 的密码，不经 PIN）
   async function memberUnlock(m, pin) {
     const h = await pinHash(m.id, pin);
-    if (h !== m.pinHash) return null;
-    const areas = (m.areas || []).filter(a => ALL.includes(a) && a !== 'access');   // 最高权限只给 Ronald 的密码，不经电话
-    write(read().filter(x => x.m !== m.id).concat({ m: m.id, h, areas }));
-    return areas;
+    const a = (await callLogin('check', { pins: [{ m: m.id, h }] })).j.pins?.[0];
+    if (!a) return null;
+    write(read().filter(x => x.m !== m.id).concat({ m: m.id, h, areas: a }));
+    return a;
   }
-  // 第一次：设 PIN（写进团员名单），然后当作已解锁
+  // 第一次：设 PIN（登录服务写进名单，要电话对得上），然后当作已解锁
   async function memberSetPin(m, pin) {
     const h = await pinHash(m.id, pin);
-    const r = await rest(`${API}/members/${encodeURIComponent(m.id)}?key=${API_KEY}&updateMask.fieldPaths=pinHash`, {
-      method: 'PATCH', headers: await wh(),
-      body: JSON.stringify({ fields: { pinHash: { stringValue: h } } }),
-    });
-    if (!r) { const F = await sdk(); await F.updateDoc(F.doc(F.db, 'members', m.id), { pinHash: h }); }
-    else if (!r.ok) throw new Error('PIN 没存到 ' + r.status);
-    m.pinHash = h;
-    return memberUnlock(m, pin);
+    const { status, j } = await callLogin('setPin', { member: { id: m.id, phoneHash: m.phoneHash || me()?.ph || '' }, h });
+    if (status === 409) return memberUnlock(m, pin);   // 刚刚已经设过了：当作输 PIN
+    if (status !== 200) throw new Error('PIN 没存到 ' + status);
+    m.hasPin = true;
+    write(read().filter(x => x.m !== m.id).concat({ m: m.id, h, areas: j.areas }));
+    return j.areas;
   }
   function logout() {
     const m = me();
@@ -227,17 +189,11 @@
   async function refresh() {
     const g = read();
     if (!g.length) return;
-    let keys;
-    try { keys = await loadKeys(true); } catch { return; }   // 没网络就先照旧
-    const next = (await Promise.all(g.map(async x => {
-      if (x.m) {
-        let m;
-        try { m = await memberById(x.m); } catch { return x; }   // 没网络就先照旧
-        return m && m.pinHash === x.h && (m.areas || []).length ? { m: x.m, h: x.h, areas: m.areas.filter(a => ALL.includes(a) && a !== 'access') } : null;
-      }
-      const k = keys ? keys.find(k => k.hash === x.h) : (x.boot ? BOOT[0] : null);
-      return k ? { h: x.h, areas: areasOf(k), boot: !keys } : null;
-    }))).filter(Boolean);
+    let v;
+    try { v = (await callLogin('check', { keys: g.filter(x => !x.m).map(x => x.h), pins: g.filter(x => x.m).map(x => ({ m: x.m, h: x.h })) })).j; }
+    catch { return; }   // 没网络就先照旧
+    let ki = 0, pi = 0;
+    const next = g.map(x => { const a = x.m ? v.pins?.[pi++] : v.keys?.[ki++]; return a ? { ...(x.m ? { m: x.m } : {}), h: x.h, areas: a } : null; }).filter(Boolean);
     write(next);
     return next;
   }
@@ -287,6 +243,13 @@
   // 一样的东西一天只换一次；什么都没有了（登出）就把通行证收回
   const AUTH_SIG = 'sicAuthSig';
   const LOGIN_URL = /^(localhost|127\.)/.test(location.hostname) ? 'https://sicmchoir-yueyun.vercel.app/api/login' : '/api/login';
+  // 叫登录服务做事：回 { status, j }；连不上／服务器出错 → 丢错
+  async function callLogin(action, body) {
+    const r = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status >= 500 || r.status === 400) throw new Error(j.error || '登录服务 ' + r.status);
+    return { status: r.status, j };
+  }
   let authP = null;
   const authSdk = () => authP || (authP = Promise.all([
     import('/src/firebase.js'),

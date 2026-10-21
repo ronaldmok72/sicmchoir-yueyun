@@ -173,7 +173,7 @@
 
   // ② 有开后台的：输 PIN（第一次设 PIN）
   function stepPin() {
-    const first = !member.pinHash;
+    const first = !member.hasPin;
     const areas = member.areas.map(a => LABEL[a]).filter(Boolean);
     shell(`
       <div class="text-white font-semibold text-base">👋 ${esc(member.name)}</div>
