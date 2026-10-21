@@ -61,6 +61,14 @@ async function byPhone(sa, h) {
   const hit = (j || []).find(x => x.document);
   return hit ? { id: idOf(hit.document), ...plain(hit.document.fields) } : null;
 }
+// 改几格（o），drop 里的那几格拿掉；只动这些，其他照旧
+const patch = (sa, path, o, drop = []) => call(sa, `${API}/${path}?${[...Object.keys(o), ...drop].map(k => 'updateMask.fieldPaths=' + k).join('&')}`,
+  { method: 'PATCH', body: JSON.stringify({ fields: fields(o) }) });
+const send = (res, code, o) => res.status(code).end(JSON.stringify(o || {}));
+const HEX = /^[0-9a-f]{64}$/;
+// 密码表（config/access）；还没设过 → null。给手机看的拿掉打乱过的密码
+const accessList = async sa => { const a = await getDoc(sa, 'config/access'); return a ? JSON.parse(a.json || '[]') : null; };
+const strip = list => list && list.map(({ hash, ...k }) => k);
 // 给手机看的：拿掉打乱过的电话和 PIN
 const pub = m => { const o = { ...m, hasPin: !!m.pinHash }; SECRET.forEach(k => delete o[k]); return o; };
 const str = (x, n = 200) => typeof x === 'string' && x.length <= n ? x : '';
@@ -160,9 +168,68 @@ const ACTIONS = {
     if (!v.member || !/^[0-9a-f]{64}$/.test(h)) return res.status(401).end('{}');
     const cur = await getDoc(sa, 'members/' + encodeURIComponent(v.member));
     if (cur.pinHash) return res.status(409).end(JSON.stringify({ code: 'pin-set' }));
-    await call(sa, `${API}/members/${encodeURIComponent(v.member)}?updateMask.fieldPaths=pinHash`,
-      { method: 'PATCH', body: JSON.stringify({ fields: { pinHash: { stringValue: h } } }) });
+    await patch(sa, 'members/' + encodeURIComponent(v.member), { pinHash: h, hasPin: true });
     return res.status(200).end(JSON.stringify({ areas: (cur.areas || []).filter(a => ALL.includes(a) && a !== 'access') }));
+  },
+
+  // ── 下面这些要带这部手机的密码／PIN／电话（keys / pins / member）证明是谁 ──
+  // 密码管理：拿密码表（不含打乱过的密码）；还没设过 → keys: null
+  async keys(sa, body, res) {
+    if (!(await verify(sa, body)).areas.has('access')) return send(res, 401);
+    return send(res, 200, { keys: strip(await accessList(sa)) });
+  },
+  // 密码管理：存整张密码表。list：[{ id, name, areas, master, hash（新的或换过的才带）}]，没带 hash 的照旧
+  async saveKeys(sa, body, res) {
+    if (!(await verify(sa, body)).areas.has('access')) return send(res, 401);
+    if (!Array.isArray(body.list) || body.list.length > 50) return send(res, 400, { error: '密码表不对' });
+    const old = new Map((await accessList(sa) || []).map(k => [k.id, k]));
+    const next = body.list.map(k => ({
+      id: str(k?.id, 40), name: str(k?.name, 80).trim(),
+      hash: HEX.test(k?.hash || '') ? k.hash : old.get(k?.id)?.hash || '',
+      ...(k?.master ? { master: true } : { areas: (Array.isArray(k?.areas) ? k.areas : []).filter(a => ALL.includes(a) && a !== 'access') }),
+    }));
+    if (next.some(k => !k.id || !k.hash) || !next.some(k => k.master)) return send(res, 400, { error: '密码表不对' });
+    if (new Set(next.map(k => k.hash)).size !== next.length) return send(res, 409, { code: 'dup' });
+    await patch(sa, 'config/access', { json: JSON.stringify(next), updatedAt: new Date().toISOString() });
+    return send(res, 200, { keys: strip(next) });
+  },
+  // 换电话：团员自己（我的资料）或最高权限（密码管理）；phoneHash 空 = 拿掉（只有最高权限）
+  async setPhone(sa, body, res) {
+    const v = await verify(sa, body);
+    const id = str(body.id), h = str(body.phoneHash, 100), tail = str(body.phoneTail, 4);
+    const admin = v.areas.has('access');
+    if (!id || !(admin || v.member === id)) return send(res, 401);
+    const path = 'members/' + encodeURIComponent(id);
+    if (!h) {
+      if (!admin) return send(res, 401);
+      await patch(sa, path, {}, ['phoneHash', 'phoneTail']);
+      return send(res, 200);
+    }
+    if (!HEX.test(h) || !/^\d{4}$/.test(tail)) return send(res, 400, { error: '电话不对' });
+    const other = await byPhone(sa, h);
+    if (other && other.id !== id) return send(res, 409, { code: 'phone-taken', name: other.name || '' });
+    await patch(sa, path, { phoneHash: h, phoneTail: tail, updatedAt: new Date().toISOString() });
+    return send(res, 200);
+  },
+  // 清掉 PIN（他忘了）：最高权限
+  async clearPin(sa, body, res) {
+    if (!(await verify(sa, body)).areas.has('access') || !str(body.id)) return send(res, 401);
+    await patch(sa, 'members/' + encodeURIComponent(body.id), {}, ['pinHash', 'hasPin']);
+    return send(res, 200);
+  },
+  // 合并同一个人的两笔：把要删掉那笔的电话、PIN 搬到留下的那笔（团员名单权限）。其他资料网页自己搬
+  async mergeSecrets(sa, body, res) {
+    if (!(await verify(sa, body)).areas.has('members')) return send(res, 401);
+    const keep = str(body.keep), drop = str(body.drop);
+    const [k, d] = keep && drop && keep !== drop ? await Promise.all([keep, drop].map(id => getDoc(sa, 'members/' + encodeURIComponent(id)))) : [];
+    if (!k || !d) return send(res, 404);
+    const p = {};
+    if (d.phoneHash && !k.phoneHash) p.phoneHash = d.phoneHash;
+    if (d.pinHash && !k.pinHash) { p.pinHash = d.pinHash; p.hasPin = true; }
+    // 先从要删掉那笔拿掉（电话不能同时在两个人身上）
+    await patch(sa, 'members/' + encodeURIComponent(drop), {}, ['phoneHash', 'pinHash', 'hasPin']);
+    if (Object.keys(p).length) await patch(sa, 'members/' + encodeURIComponent(keep), p);
+    return send(res, 200);
   },
 };
 

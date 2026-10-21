@@ -40,7 +40,7 @@ f.name.addEventListener('input', nameTip);
 
 // 名单上本来就有你（自己注册时没点到）：还没登记电话、名字第一个字一样的
 function renderMerge() {
-  const cand = me.selfJoined && !me.pendingMerge ? lookAlikes(me, members).filter(o => !o.phoneHash && !o.selfJoined) : [];
+  const cand = me.selfJoined && !me.pendingMerge ? lookAlikes(me, members).filter(o => !o.phoneTail && !o.selfJoined) : [];
   const box = $('merge-box');
   box.classList.toggle('hidden', !cand.length);
   if (!cand.length) return;
@@ -81,18 +81,23 @@ f.addEventListener('submit', async e => {
   if (!name) return err('名字不能空');
   if (members.some(m => m.id !== me.id && m.name.trim().toLowerCase() === name.toLowerCase())) return err(`名单上已经有「${name}」了。加上姓或中文名区别一下。`);
   const p = { name, fullName, updatedAt: new Date().toISOString() };
+  let ph = null;
   if (phone) {
     const n = gate.normPhone(phone);
     if (n.length < 10) return err('电话号码好像不完整');
-    const other = await gate.findByPhone(n);
-    if (other && other.id !== me.id) return err('这个电话已经是别人登记的了。有问题请跟 Ronald 说。');
-    p.phoneHash = await gate.phoneHash(n);
-    p.phoneTail = n.slice(-4);
+    ph = { phoneHash: await gate.phoneHash(n), phoneTail: n.slice(-4) };
   }
   const b = $('btn-save');
   b.disabled = true; b.textContent = '保存中…';
   try {
-    await updateDoc(doc(db, 'members', me.id), p);
+    // 换电话：登录服务帮他换（要用现在的电话证明是他）
+    if (ph) {
+      const { status } = await gate.staffCall('setPhone', { id: me.id, ...ph });
+      if (status === 409) { b.disabled = false; b.textContent = '保存'; return err('这个电话已经是别人登记的了。有问题请跟 Ronald 说。'); }
+      if (status !== 200) throw new Error(status === 401 ? '要先用电话重新登录一次' : '电话没存到 ' + status);
+      p.phoneHash = ph.phoneHash;
+    }
+    await updateDoc(doc(db, 'members', me.id), { name, fullName, updatedAt: p.updatedAt });
     // 职务表、座位表里的名字也换掉；改不到（资料库锁着）→ 记下来，管理员打开团员名单时自动换
     if (name !== me.name) await renameEverywhere(db, me.name, name).catch(async x => {
       if (x.code !== 'permission-denied') throw x;

@@ -73,7 +73,7 @@ function renderSummary() {
       ${['S', 'A', 'T', 'B', ''].map(k => `<span class="px-2 py-0.5 rounded-md bg-slate-100">${VOICE_NAME[k]} <b>${cnt(k)}</b></span>`).join('')}
     </div>
     <div class="text-slate-600">女声 <b>${act.filter(m => genderOf(m) === 'F').length}</b>　男声 <b>${act.filter(m => genderOf(m) === 'M').length}</b>${act.some(m => !genderOf(m)) ? `　<span class="text-amber-700">还不知道男女：${act.filter(m => !genderOf(m)).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
-    <div class="text-slate-600">📱 用电话注册了 <b>${act.filter(m => m.phoneHash).length}</b> / ${act.length} 位${act.some(m => !m.phoneHash) ? `　<span class="text-xs text-slate-400">（下面选「还没用电话注册的」看是谁）</span>` : ''}${act.some(m => m.selfJoined) ? `　<span class="text-indigo-700">🆕 自己注册的新团员：${act.filter(m => m.selfJoined).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
+    <div class="text-slate-600">📱 用电话注册了 <b>${act.filter(m => m.phoneTail).length}</b> / ${act.length} 位${act.some(m => !m.phoneTail) ? `　<span class="text-xs text-slate-400">（下面选「还没用电话注册的」看是谁）</span>` : ''}${act.some(m => m.selfJoined) ? `　<span class="text-indigo-700">🆕 自己注册的新团员：${act.filter(m => m.selfJoined).map(m => esc(m.name)).join('、')}</span>` : ''}</div>
     <div class="text-xs text-slate-400">每个人都会唱主旋律；上面 S A T B 是另外会唱声部的人${quiz.length ? '' : '（测验答完会自动出现建议）'}</div>
     ${guessed.length ? `<div class="text-amber-700">⏳ ${guessed.length} 位的男女是照名字猜的（名单上标「猜的」），看一下对不对：${guessed.map(m => esc(m.name)).join('、')}</div>` : ''}
     ${dup.length ? `<div class="text-red-600">🔴 披肩号码重复：${dup.map(([c, n]) => `#${c} ${n.map(esc).join('、')}`).join('；')}</div>` : ''}`;
@@ -92,12 +92,12 @@ function renderDupBox() {
     <div class="text-xs text-amber-800">是同一个人就按合并：留名单上本来那一笔（披肩、职务、点名记录都在），把电话、声部搬过去。不是同一个人就不用理。</div>
     ${pairs.map((p, i) => `
       <div class="flex flex-wrap items-center gap-2">
-        <span class="flex-1 min-w-0"><b>${esc(p.n.name)}</b> <span class="text-slate-500">（自己注册）</span> ↔ <b>${esc(p.o.name)}</b> <span class="text-slate-500">（名单上本来就有${p.o.phoneHash ? `，已经用 …${esc(p.o.phoneTail || '')} 登记` : ''}）</span></span>
+        <span class="flex-1 min-w-0"><b>${esc(p.n.name)}</b> <span class="text-slate-500">（自己注册）</span> ↔ <b>${esc(p.o.name)}</b> <span class="text-slate-500">（名单上本来就有${p.o.phoneTail ? `，已经用 …${esc(p.o.phoneTail || '')} 登记` : ''}）</span></span>
         <button data-merge="${i}" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs">是同一个人，合并（叫 ${esc(nameOf(p))}）</button>
       </div>`).join('')}`;
   box.querySelectorAll('[data-merge]').forEach(b => b.addEventListener('click', async () => {
     const p = pairs[+b.dataset.merge];
-    if (p.o.phoneHash && !confirm(`${p.o.name} 已经用另一个电话 …${p.o.phoneTail} 登记了。还是要合并？（会留旧的电话）`)) return;
+    if (p.o.phoneTail && !confirm(`${p.o.name} 已经用另一个电话 …${p.o.phoneTail} 登记了。还是要合并？（会留旧的电话）`)) return;
     b.disabled = true; b.textContent = '合并中…';
     try { await mergeMembers(db, p.o.id, p.n.id, nameOf(p)); } catch (err) { console.error(err); alert('合并失败：' + (err.code || err.message)); }
     await load();
@@ -156,7 +156,7 @@ function renderList() {
   const q = $('search').value.trim().toLowerCase();
   const f = $('filter').value;
   let list = members.filter(m =>
-    (f === 'all' || (f === 'inactive' ? m.active === false : m.active !== false && (f !== 'nogender' || !genderOf(m) || m.genderGuess) && (f !== 'nophone' || !m.phoneHash)))
+    (f === 'all' || (f === 'inactive' ? m.active === false : m.active !== false && (f !== 'nogender' || !genderOf(m) || m.genderGuess) && (f !== 'nophone' || !m.phoneTail)))
     && (!q || `${m.name} ${m.fullName || ''} ${m.cape || ''}`.toLowerCase().includes(q)));
   const groups = ['S', 'A', 'T', 'B', ''].map(k => ({ k, items: list.filter(m => normVoice(m.voice) === k) })).filter(g => g.items.length);
   groups.forEach(g => g.items.sort((a, b) => (a.cape || 999) - (b.cape || 999) || a.name.localeCompare(b.name)));
@@ -184,7 +184,7 @@ function subLine(m) {
   if (v2.length) bits.push(`也唱 ${v2.map(v => VOICE_SHORT[v]).join('、')}`);
   const g = genderOf(m);
   if (m.selfJoined) bits.push('<span class="text-indigo-600">🆕 自己注册</span>');
-  if (!m.phoneHash && m.active !== false) bits.push('<span class="text-slate-300">📱 还没注册</span>');
+  if (!m.phoneTail && m.active !== false) bits.push('<span class="text-slate-300">📱 还没注册</span>');
   if (!normVoice(m.voice) || m.genderGuess) bits.push(g ? `${g === 'F' ? '女声' : '男声'}${m.genderGuess ? '<span class="text-amber-600">（猜的）</span>' : ''}` : '<span class="text-amber-600">还不知道男女</span>');
   return bits.length ? `<span class="block truncate text-xs text-slate-400">${bits.join('　')}</span>` : '';
 }
@@ -214,9 +214,9 @@ function openEditor(m) {
   $('quiz-hint').textContent = [q ? `测验（${q.name}）写：${q.raw || '没答'}` : '', m?.registeredAt ? `注册时自己选：${normVoice(m.voiceSelf) ? VOICE_NAME[m.voiceSelf] : '还不知道'}` : ''].filter(Boolean).join('　');
   // 电话只存打乱过的样子，这里只看得到最后 4 码
   const ph = $('phone-hint');
-  ph.className = `text-xs rounded-lg px-3 py-2 ${m?.phoneHash ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'}`;
+  ph.className = `text-xs rounded-lg px-3 py-2 ${m?.phoneTail ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'}`;
   ph.innerHTML = !m ? '📱 加好之后，他打开 App 用电话注册时，在名单上选自己的名字就会连起来。'
-    : m.phoneHash ? `📱 电话已登记：…${esc(m.phoneTail || '')}${m.registeredAt ? `（${new Date(m.registeredAt).toLocaleDateString('en-GB')} 自己注册）` : ''}　<span class="text-slate-400">完整号码不会存，换号码到「🔑 密码管理」</span>`
+    : m.phoneTail ? `📱 电话已登记：…${esc(m.phoneTail || '')}${m.registeredAt ? `（${new Date(m.registeredAt).toLocaleDateString('en-GB')} 自己注册）` : ''}　<span class="text-slate-400">完整号码不会存，换号码到「🔑 密码管理」</span>`
     : '📱 还没登记电话。叫他打开 App，用自己的电话注册一次就好（或在「🔑 密码管理」帮他加）。';
   $('edit-delete').classList.toggle('hidden', !m);
   renderChips();

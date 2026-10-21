@@ -1,7 +1,5 @@
 // 密码管理：每个密码开哪几页。存在 Firestore config/access { json: '[{ id, name, hash, areas, master }]' }
-// 密码本身不存，只存 gate.js 打乱过的样子（hash）
-import { doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+// 密码本身不存，只存 gate.js 打乱过的样子（hash）；读、存都经登录服务（/api/login），这页看不到打乱过的密码
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -13,7 +11,9 @@ let keys = null;   // null = 还没设过（还在用 sic）
 
 async function load() {
   $('status').textContent = '读取中…';
-  keys = await gate.loadKeys(true);
+  const { status, j } = await gate.staffCall('keys');
+  if (status !== 200) throw new Error(status === 401 ? '这部手机没有最高权限，重新输一次密码' : '读不到密码表 ' + status);
+  keys = j.keys;
   $('status').textContent = '';
   render();
 }
@@ -41,18 +41,21 @@ function render() {
   if (!$('add-areas').innerHTML) $('add-areas').innerHTML = AREAS.map(a => box('', a, false)).join('');
 }
 
+// 新的、换过的密码带 hash；其他的登录服务照旧。密码跟别人一样 → code dup
 async function save(msg) {
   $('status').textContent = '保存中…';
-  await setDoc(doc(db, 'config', 'access'), { json: JSON.stringify(keys), updatedAt: new Date().toISOString() });
+  const { status, j } = await gate.staffCall('saveKeys', { list: keys });
+  if (status === 409) { $('status').textContent = ''; throw Object.assign(new Error('这个密码已经有别人在用，换一个。'), { code: 'dup' }); }
+  if (status !== 200) { $('status').textContent = ''; throw new Error(status === 401 ? '这部手机没有最高权限' : '没存到 ' + status); }
+  keys = j.keys;
   $('status').textContent = `✓ ${msg || '已保存'} ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
+const failed = err => { console.error(err); alert(err.code === 'dup' ? err.message : '保存失败：' + (err.code || err.message)); };
 
-// 新密码：至少 4 个字、不能跟别的密码一样
-async function checkNew(pwd, exceptId) {
+// 新密码：至少 4 个字（跟别的密码一样的话，存的时候登录服务会挡）
+async function checkNew(pwd) {
   if (!pwd || pwd.trim().length < 4) { alert('密码至少 4 个字。'); return null; }
-  const h = await gate.hash(pwd);
-  if (keys?.some(k => k.hash === h && k.id !== exceptId)) { alert('这个密码已经有别人在用，换一个。'); return null; }
-  return h;
+  return gate.hash(pwd);
 }
 const newId = () => Math.random().toString(36).slice(2, 10);
 
@@ -70,7 +73,7 @@ $('boot-form').addEventListener('submit', async e => {
     await gate.tryPassword(f.p1.value);   // 这部手机换成新密码
     f.reset();
     render();
-  } catch (err) { console.error(err); keys = null; alert('保存失败：' + (err.code || err.message)); }
+  } catch (err) { keys = null; failed(err); }
 });
 
 $('add-form').addEventListener('submit', async e => {
@@ -90,7 +93,7 @@ $('add-form').addEventListener('submit', async e => {
     $('add-areas').innerHTML = '';
     render();
     alert(`开好了 ✅\n\n${name}：${pwd}\n可以进：${areas.map(a => LABEL[a]).join('、')}\n\n这里之后看不到密码，现在记下来发给他们。`);
-  } catch (err) { console.error(err); keys.pop(); alert('保存失败：' + (err.code || err.message)); }
+  } catch (err) { keys.pop(); failed(err); }
 });
 
 $('list').addEventListener('change', async e => {
@@ -99,7 +102,7 @@ $('list').addEventListener('change', async e => {
   const set = new Set(k.areas || []);
   i.checked ? set.add(i.dataset.area) : set.delete(i.dataset.area);
   k.areas = AREAS.map(a => a.key).filter(a => set.has(a));
-  try { await save(); render(); } catch (err) { console.error(err); alert('保存失败：' + (err.code || err.message)); load(); }
+  try { await save(); render(); } catch (err) { failed(err); load(); }
 });
 
 $('list').addEventListener('click', async e => {
@@ -115,7 +118,7 @@ $('list').addEventListener('click', async e => {
     } else if (b.dataset.repwd) {
       const v = prompt(`「${k.name}」的新密码（至少 4 个字）：\n换了之后，旧密码的手机都要重新输。`);
       if (v === null) return;
-      const h = await checkNew(v, k.id);
+      const h = await checkNew(v);
       if (!h) return;
       k.hash = h;
       await save('密码换好了');
@@ -127,7 +130,7 @@ $('list').addEventListener('click', async e => {
       await save('删掉了');
     }
     render();
-  } catch (err) { console.error(err); alert('保存失败：' + (err.code || err.message)); load(); }
+  } catch (err) { failed(err); load(); }
 });
 
 load().catch(err => { console.error(err); $('status').textContent = '读取失败：' + (err.code || err.message); });

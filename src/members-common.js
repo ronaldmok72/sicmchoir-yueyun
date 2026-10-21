@@ -48,8 +48,12 @@ export async function mergeMembers(db, keepId, dropId, name) {
   const [ks, ds] = await Promise.all([getDoc(doc(db, 'members', keepId)), getDoc(doc(db, 'members', dropId))]);
   if (!ks.exists() || !ds.exists()) throw new Error('找不到这位团员');
   const keep = ks.data(), drop = ds.data();
+  // 打乱过的电话、PIN 由登录服务搬（网页看不到）；没有团员名单权限 → permission-denied（我的资料会改成先记下来）
+  const { status } = await window.sicStaff.staffCall('mergeSecrets', { keep: keepId, drop: dropId });
+  if (status === 401) throw Object.assign(new Error('没有团员名单权限'), { code: 'permission-denied' });
+  if (status !== 200) throw new Error('电话没搬到 ' + status);
   const p = { updatedAt: new Date().toISOString(), selfJoined: false };
-  ['phoneHash', 'phoneTail', 'registeredAt', 'pinHash'].forEach(k => { if (drop[k] && !keep[k]) p[k] = drop[k]; });
+  ['phoneTail', 'registeredAt'].forEach(k => { if (drop[k] && !keep[k]) p[k] = drop[k]; });
   if (drop.voiceSelf && !keep.voiceSelf) p.voiceSelf = drop.voiceSelf;
   if (drop.gender && (!keep.gender || keep.genderGuess)) { p.gender = drop.gender; p.genderGuess = false; }
   if (!keep.fullName && (drop.fullName || drop.name !== keep.name)) p.fullName = drop.fullName || drop.name;

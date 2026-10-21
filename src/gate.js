@@ -17,7 +17,6 @@
   ];
   const ALL = AREAS.map(a => a.key).concat('access');   // access = 密码管理，只有最高权限
   const KEY = 'sicAccess';                               // 这部手机输过哪些密码：[{ h: 打乱后的密码, areas }]
-  const DOC_URL = 'https://firestore.googleapis.com/v1/projects/sicmchoir-yueyun/databases/(default)/documents/config/access?key=AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U';
 
   const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
   const write = g => { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* 没关系 */ } queueAuth(); };
@@ -49,22 +48,6 @@
     } catch { return null; }
   }
 
-  // 读密码表；还没设过 → null
-  let keysCache = null;
-  async function loadKeys(fresh) {
-    if (keysCache && !fresh) return keysCache;
-    const r = await rest(DOC_URL, { cache: 'no-store' });
-    if (!r) {
-      const F = await sdk();
-      const d = await F.getDoc(F.doc(F.db, 'config', 'access'));
-      return (keysCache = d.exists() ? JSON.parse(d.data().json || '[]') : null);
-    }
-    if (r.status === 404) return (keysCache = null);
-    if (!r.ok) throw new Error('读不到密码表 ' + r.status);
-    const j = await r.json();
-    return (keysCache = JSON.parse(j.fields?.json?.stringValue || '[]'));
-  }
-
   // 试一个密码：拿去登录服务对（手机看不到密码表），对了就记在这部手机，回传它开的区
   async function tryPassword(pwd) {
     if (!pwd || !pwd.trim()) return null;
@@ -88,8 +71,9 @@
   }
 
   // ───────── 团员登录（电话号码）─────────
-  // 团员名单 members/{id} 只存电话打乱过的样子 phoneHash（+ 最后 4 码 phoneTail），看不到原本的号码
-  // 有开后台的团员（members/{id}.areas）还要 4 位数 PIN（pinHash）；登入后记在 sicAccess：{ m: 团员id, h: pinHash, areas }
+  // 团员名单 members/{id} 只存电话打乱过的样子 phoneHash（+ 最后 4 码 phoneTail，有 phoneTail = 登记了电话），看不到原本的号码
+  // 有开后台的团员（members/{id}.areas）还要 4 位数 PIN（pinHash，hasPin = 设了）；登入后记在 sicAccess：{ m: 团员id, h: pinHash, areas }
+  // 打乱过的电话、PIN、密码表只有登录服务（/api/login）在对，网页不自己比
   const ME_KEY = 'sicMe';                                // 这部手机是谁：{ id, name }
   const API = 'https://firestore.googleapis.com/v1/projects/sicmchoir-yueyun/databases/(default)/documents';
   const API_KEY = 'AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U';
@@ -255,13 +239,19 @@
     import('/src/firebase.js'),
     import('https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js'),
   ]).then(([a, f]) => ({ auth: f.getAuth(a.app), ...f })));
-  async function syncAuth() {
+  // 这部手机输过的密码／PIN／电话（打乱过的）：领通行证、叫登录服务做后台的事，都拿这个证明是谁
+  function proof() {
     const g = read(), m = me();
-    const body = {
+    return {
       keys: g.filter(x => !x.m && x.h).map(x => x.h),
       pins: g.filter(x => x.m && x.h).map(x => ({ m: x.m, h: x.h })),
       member: m?.ph ? { id: m.id, phoneHash: m.ph } : null,
     };
+  }
+  // 后台的事（密码管理、换电话、清 PIN、合并团员）交给登录服务做，带上证明
+  const staffCall = (action, body) => callLogin(action, { ...proof(), ...body });
+  async function syncAuth() {
+    const body = proof();
     const sig = JSON.stringify(body);
     const empty = !body.keys.length && !body.pins.length && !body.member;
     const old = lsGet(AUTH_SIG);
@@ -343,7 +333,7 @@
     if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
   }
 
-  window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, loadKeys,
+  window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, staffCall,
     cloudUsage, cloudBanner, idToken, syncAuth,
     me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById, syncMe };
 

@@ -86,7 +86,7 @@
       const k = norm(q.value);
       if (!k) { hits.innerHTML = '<div class="text-xs text-zinc-500">打一两个字就会出来</div>'; return; }
       const list = roster.filter(m => norm(`${m.name} ${m.fullName || ''}`).includes(k)).slice(0, 6);
-      hits.innerHTML = list.map(m => m.phoneHash
+      hits.innerHTML = list.map(m => m.phoneTail
         ? `<div class="rounded-xl bg-white/5 px-4 py-2.5 text-zinc-500"><div>${esc(m.name)}</div><div class="text-[11px]">已经用 …${esc(m.phoneTail || '')} 登记了。换了电话请跟 Ronald 说</div></div>`
         : `<button data-pick="${esc(m.id)}" class="w-full text-left rounded-xl bg-white/5 hover:bg-indigo-600/30 px-4 py-2.5"><div class="text-white">${esc(m.name)}</div>${m.fullName ? `<div class="text-[11px] text-zinc-400">${esc(m.fullName)}</div>` : ''}</button>`).join('')
         || '<div class="text-xs text-zinc-500">找不到。换个写法试试，或者按下面「我是新来的」。</div>';
@@ -119,7 +119,7 @@
       if (same) return err(`名单上已经有「${same.name}」。是你的话，按「回去名单找」选他；不是的话，名字加点区别，例如「${name} Tan」。`);
       // 名单上可能本来就有他（打 Hans Chew，名单上是 Hans）→ 先问是不是他
       const first = norm(name.split(/\s+/)[0]);
-      const maybe = first.length >= 2 ? (roster || []).filter(m => !m.phoneHash && m.active !== false && [m.name, m.fullName].some(v => norm(String(v || '').split(/\s+/)[0]) === first)) : [];
+      const maybe = first.length >= 2 ? (roster || []).filter(m => !m.phoneTail && m.active !== false && [m.name, m.fullName].some(v => norm(String(v || '').split(/\s+/)[0]) === first)) : [];
       if (!maybe.length) return stepVoice({ phone, name, fullName });
       shell(`
         <div class="text-white font-semibold text-base">名单上的这位是你吗？</div>
