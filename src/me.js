@@ -98,7 +98,7 @@ f.addEventListener('submit', async e => {
       if (x.code !== 'permission-denied') throw x;
       await updateDoc(doc(db, 'members', me.id), { pendingRename: { from: me.pendingRename?.from || me.name, to: name } });
     });
-    gate.setMe({ id: me.id, name });
+    gate.setMe({ id: me.id, name, ...(p.phoneHash ? { phoneHash: p.phoneHash } : {}) });   // 换了电话 → 通行证也用新的
     f.phone.value = '';
     $('phone-box').classList.add('hidden');
     await load();

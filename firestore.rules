@@ -1,20 +1,46 @@
 rules_version = '2';
-// 乐韵 App 的资料库锁（第 3 步：宽松版）
+// 乐韵 App 的资料库锁（第 4 步：收紧版）
 // 贴到 Firebase → Firestore → 规则（Rules）→ 发布。这个文件只是留底，改了要再贴一次。
-// 大家都看得到；有通行证（App 登录／输过后台密码）才能改。
-// 例外：新团员第一次用电话注册（还没有通行证）、没登录也可以交测验。
+// 大家都看得到。改资料要通行证（App 登录／输过后台密码），而且：
+//   后台的资料 → 要有那一区（密码管理开的区）；最高权限（access）什么都能改
+//   团员 → 只能改自己的「会来／请假」、自己扫码签到、自己的资料
+// 例外：新团员第一次用电话注册（还没有通行证）、没登录也可以交测验
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function areas() { return signedIn() ? request.auth.token.get('areas', []) : []; }
+    function can(list) { return areas().hasAny(list) || areas().hasAny(['access']); }
+    function me() { return signedIn() ? request.auth.token.get('member', '') : ''; }
     function changedOnly(ks) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(ks); }
+    // 这一格（例如 votes）里只动到自己那一个
+    function ownOnly(f) { return request.resource.data.get(f, {}).diff(resource.data.get(f, {})).affectedKeys().hasOnly([me()]); }
 
+    // 其他没列出来的（例如 config/access 密码表）：只有最高权限
     match /{document=**} {
       allow read: if true;
-      allow write: if signedIn();
+      allow write: if can([]);
     }
 
-    // 新团员自己注册：新建一位（selfJoined），或给名单上还没有电话的名字补上电话
+    match /setlists/{id}      { allow write: if can(['admin', 'mass', 'conduct']); }
+    match /custom_songs/{id}  { allow write: if can(['admin', 'mass', 'conduct']); }
+    match /song_renames/{id}  { allow write: if can(['admin', 'conduct']); }
+    match /song_audio/{id}    { allow write: if can(['admin', 'mass', 'conduct']); }
+    match /masses/{id}        { allow write: if can(['mass', 'duties', 'seating', 'admin', 'members']); }
+    match /duties/{id}        { allow write: if can(['duties', 'mass', 'members']); }
+    match /seatings/{id}      { allow write: if can(['seating', 'members']); }
+    match /photos/{id}        { allow write: if can(['photos']); }
+    match /announcements/{id} { allow write: if can(['notice']); }
+    match /prayers/{id}       { allow write: if signedIn(); }
+    match /config/quiz        { allow write: if can(['quiz']); }
+    match /config/attendance  { allow write: if can(['attendance']); }
+
     match /members/{id} {
+      allow write: if can(['members', 'seating']);
+      // 自己改自己：名字、电话；改名／合并的待办
+      allow update: if me() == id && changedOnly(['name', 'fullName', 'updatedAt', 'phoneHash', 'phoneTail', 'pendingRename', 'pendingMerge']);
+      // 第一次设后台 PIN
+      allow update: if me() == id && (!('pinHash' in resource.data) || resource.data.pinHash == '') && changedOnly(['pinHash']);
+      // 新团员自己注册：新建一位（selfJoined），或给名单上还没有电话的名字补上电话
       allow create: if request.resource.data.selfJoined == true
         && request.resource.data.keys().hasOnly(['phoneHash', 'phoneTail', 'voiceSelf', 'registeredAt', 'updatedAt',
              'name', 'fullName', 'gender', 'active', 'selfJoined', 'createdAt']);
@@ -22,10 +48,26 @@ service cloud.firestore {
         && changedOnly(['phoneHash', 'phoneTail', 'voiceSelf', 'registeredAt', 'updatedAt', 'gender', 'genderGuess', 'fullName']);
     }
 
-    // 团员小测验：没登录也可以交；重做听拍子只能改拍子那几格
+    match /attendance/{id} {
+      allow write: if can(['attendance', 'members']);
+      // 团员自己扫码签到／签退：只动自己那一格
+      allow update: if me() != '' && changedOnly(['times', 'marks', 'pts', 'names', 'updatedAt'])
+        && ownOnly('times') && ownOnly('marks') && ownOnly('pts') && ownOnly('names');
+    }
+
+    match /rsvp/{id} {
+      allow write: if can(['attendance', 'admin']);
+      // 团员按「会来／请假」：只动自己那一票
+      allow create: if me() != '' && request.resource.data.keys().hasOnly(['date', 'kind', 'votes', 'names', 'updatedAt'])
+        && request.resource.data.get('votes', {}).keys().hasOnly([me()]) && request.resource.data.get('names', {}).keys().hasOnly([me()]);
+      allow update: if me() != '' && changedOnly(['votes', 'names', 'updatedAt'])
+        && ownOnly('votes') && ownOnly('names');
+    }
+
     match /quiz_results/{id} {
       allow create: if true;
-      allow update: if changedOnly(['tap', 'tapPrev', 'tapRetakeAt']);
+      allow update: if changedOnly(['tap', 'tapPrev', 'tapRetakeAt']) || can(['quiz', 'members']);
+      allow delete: if can(['quiz']);
     }
   }
 }
