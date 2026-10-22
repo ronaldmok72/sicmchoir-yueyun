@@ -115,7 +115,7 @@ f.addEventListener('submit', async e => {
 $('btn-login').addEventListener('click', () => window.sicLogin?.open());
 document.addEventListener('sic-login', () => { window.sicLogin?.close(); load(); });
 $('btn-logout').addEventListener('click', () => {
-  if (!confirm('登出？这部手机就不会记得你是谁（后台 PIN 也要重输）。')) return;
+  if (!confirm('登出？这部手机就不会记得你是谁，后台也会锁回去（PIN、后台密码都要重输）。')) return;
   gate.logout();
   location.href = '/';
 });

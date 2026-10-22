@@ -159,11 +159,10 @@
     write(read().filter(x => x.m !== m.id).concat({ m: m.id, h, areas: j.areas }));
     return j.areas;
   }
+  // 登出：这部手机什么都不记得了（是谁、PIN、输过的后台密码），锁全部锁回去
   function logout() {
-    const m = me();
     try {
-      localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName');
-      if (m) write(read().filter(x => x.m !== m.id));
+      localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName'); localStorage.removeItem(KEY);
     } catch { /* 没关系 */ }
     queueAuth();
   }

@@ -56,7 +56,7 @@
       if (e.target === modal || e.target.closest('[data-close]')) return close();
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'login') { close(); if (window.sicLogin) window.sicLogin.open(); else location.href = 'me.html'; return; }
-      if (act === 'logout') { if (confirm('登出？这部手机就不会记得你是谁（后台 PIN 也要重输）。')) { window.sicStaff?.logout(); render(); } return; }
+      if (act === 'logout') { if (confirm('登出？这部手机就不会记得你是谁，后台也会锁回去（PIN、后台密码都要重输）。')) { window.sicStaff?.logout(); render(); } return; }
       const a = e.target.closest('a[data-staff]');
       if (!a) return;
       if (a.dataset.here) { e.preventDefault(); close(); return; }
