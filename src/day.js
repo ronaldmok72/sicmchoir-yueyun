@@ -40,13 +40,29 @@ window.sicNavDate = () => date;   // 菜单去排歌／职务表／座位表时�
 let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 
+// 团员名单（七十几人）：一般团员的手机记 30 分钟，来回开这一页不用每次整份重读；
+// 管理的人（输过后台密码）每次都读最新的，改了披肩／名字马上看得到
+const MEMBERS_KEY = 'sicMembersCache';
+async function loadMembers() {
+  if (!window.sicStaff?.isStaff()) {
+    try {
+      const c = JSON.parse(localStorage.getItem(MEMBERS_KEY) || 'null');
+      if (c && Date.now() - c.at < 30 * 60000) return c.list;
+    } catch { /* 没关系 */ }
+  }
+  const list = (await getDocs(collection(db, 'members')).catch(() => ({ docs: [] }))).docs.map(d => d.data());
+  try { if (list.length) localStorage.setItem(MEMBERS_KEY, JSON.stringify({ at: Date.now(), list })); } catch { /* 手机存满了：下次再读 */ }
+  return list;
+}
+
 async function load() {
   // 职务表一直累积（一年几十份）：只读最近 45 天以后的，省读取次数
   const cut = new Date(TODAY + 'T12:00'); cut.setDate(cut.getDate() - 45);
   const get = c => getDocs(c === 'duties' ? query(collection(db, c), where(documentId(), '>=', iso(cut))) : collection(db, c)).catch(() => ({ docs: [] }));
-  const [[ma, du, se, mb, rv, ph], cs] = await Promise.all([
-    Promise.all(['masses', 'duties', 'seatings', 'members', 'rsvp', 'photos'].map(get)),
+  const [[ma, du, se, rv, ph], cs, mb] = await Promise.all([
+    Promise.all(['masses', 'duties', 'seatings', 'rsvp', 'photos'].map(get)),
     customSongs(db).catch(() => []),
+    loadMembers(),
   ]);
   rsvps = Object.fromEntries(rv.docs.map(d => [d.id, d.data()]));
   photos = Object.fromEntries(ph.docs.map(d => [d.id, d.data()]));
@@ -61,7 +77,7 @@ async function load() {
   duties = Object.fromEntries(du.docs.map(d => [d.id, d.data()]));
   seatings = Object.fromEntries(se.docs.filter(d => !d.id.includes('_')).map(d => [d.id, d.data()]));
   wseats = Object.fromEntries(se.docs.filter(d => d.id.includes('_')).map(d => [d.id, d.data()]));
-  members = Object.fromEntries(mb.docs.map(d => d.data()).filter(m => m.active !== false).map(m => [m.name.toLowerCase(), m]));
+  members = Object.fromEntries(mb.filter(m => m.active !== false).map(m => [m.name.toLowerCase(), m]));
   memberList = Object.values(members);
   Object.values(specials).flat().forEach(w => (w.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   const list = dates();
