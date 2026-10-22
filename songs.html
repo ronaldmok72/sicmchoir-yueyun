@@ -37,22 +37,30 @@
 
   <!-- 看谱 -->
   <div id="viewer" class="hidden fixed inset-0 z-50 bg-slate-900 flex flex-col">
-    <div class="flex items-center gap-2 px-3 py-2 text-white shrink-0">
-      <button id="v-close" class="w-9 h-9 rounded-lg hover:bg-white/10 text-lg" aria-label="关掉">✕</button>
+    <div id="v-head" class="flex items-center gap-2 px-3 py-2 text-white shrink-0">
+      <button id="v-close" class="min-w-9 h-9 px-2 rounded-lg hover:bg-white/10 text-lg" aria-label="关掉">✕</button>
       <div class="flex-1 min-w-0">
         <div id="v-title" class="font-semibold truncate"></div>
         <div id="v-sub" class="text-[11px] text-slate-400 truncate"></div>
       </div>
       <button id="v-audio-add" class="hidden px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="加录音">🎧＋</button>
-      <button id="v-zoom" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="放大">🔍 放大</button>
+      <button id="v-zoom" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="放大">🔍<span class="hidden sm:inline"> 放大</span></button>
+      <button id="v-full" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="全屏">⛶ 全屏</button>
       <button id="v-share" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="复制连结">🔗</button>
     </div>
     <!-- 录音：Google Drive／YouTube 连结，按了另外打开来听（不放进 Cloudinary，省位置）；后台的人可以加 -->
     <div id="v-audio" class="hidden shrink-0 bg-slate-800 text-white px-3 py-2 space-y-2 max-h-[40dvh] overflow-y-auto"></div>
-    <div id="v-body" class="flex-1 overflow-auto bg-white">
-      <img id="v-img" alt="" class="block mx-auto w-full max-w-3xl">
+    <!-- 两指放大缩小、双击放大；一指拖着看 -->
+    <div id="v-body" class="flex-1 overflow-auto bg-white" style="touch-action: pan-x pan-y">
+      <img id="v-img" alt="" class="block mx-auto w-full max-w-3xl select-none" draggable="false">
     </div>
-    <div class="flex items-center gap-2 px-3 py-2 text-white text-sm shrink-0">
+    <!-- 全屏时：只留这几个小按钮 -->
+    <div id="v-float" class="hidden fixed top-3 right-3 z-[55] flex gap-1.5 text-sm">
+      <button id="vf-prev" class="w-10 h-10 rounded-full bg-slate-900/60 text-white backdrop-blur" aria-label="上一首">‹</button>
+      <button id="vf-next" class="w-10 h-10 rounded-full bg-slate-900/60 text-white backdrop-blur" aria-label="下一首">›</button>
+      <button id="vf-exit" class="px-3 h-10 rounded-full bg-slate-900/60 text-white backdrop-blur">✕ 退出全屏</button>
+    </div>
+    <div id="v-foot" class="flex items-center gap-2 px-3 py-2 text-white text-sm shrink-0">
       <button id="v-prev" class="px-3 h-9 rounded-lg bg-white/10 hover:bg-white/20">‹ 上一首</button>
       <div id="v-info" class="flex-1 min-w-0 text-center text-[11px] text-slate-300 truncate"></div>
       <button id="v-next" class="px-3 h-9 rounded-lg bg-white/10 hover:bg-white/20">下一首 ›</button>

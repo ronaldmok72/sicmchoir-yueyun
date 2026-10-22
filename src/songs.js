@@ -53,7 +53,7 @@ async function load() {
   }).sort((a, b) => a.letter === b.letter ? clean(a.title).localeCompare(clean(b.title), 'zh') : ORDER(a.letter) - ORDER(b.letter));
   $('loading').classList.add('hidden');
   render();
-  openFromHash();
+  openFromHash(true);
 }
 
 // 开头没有字母的：圣咏/答唱咏放一组，排在 A–Z 后面，其他的放最后
@@ -161,7 +161,12 @@ $('v-audio-add').addEventListener('click', async () => {
 });
 
 // ───────── 看谱 ─────────
-let zoom = false;
+// 放大缩小跟乐谱一样：两指放大缩小、双击放大、电脑用 Ctrl＋滚轮；⛶ 全屏只留谱
+let zoom = 1;        // 1 = 刚好跟屏幕一样宽
+let full = false;
+// 从别页点进来的（例如公告「要练的歌」）：✕ 变成「‹ 返回」，按了回去原来那一页
+let cameIn = false;
+const fromPage = (() => { try { const u = new URL(document.referrer); return u.origin === location.origin && u.pathname !== location.pathname ? u : null; } catch { return null; } })();
 function show(id, push = true) {
   const s = songs.find(x => x.id === id);
   if (!s) return;
@@ -170,8 +175,8 @@ function show(id, push = true) {
   $('v-sub').textContent = clean(s.title);
   $('v-img').src = s.imageUrl;
   $('v-img').alt = s.name;
+  setZoom(1);
   $('v-body').scrollTo(0, 0);
-  setZoom(false);
   const info = [
     s.practice.length ? `📢 要练：${s.practice.join('、')}` : '',
     s.next.length ? `接下来：${s.next.slice(0, 3).map(x => `${md(x.date)} ${x.label}`).join('、')}${s.next.length > 3 ? ` 等 ${s.next.length} 台` : ''}` : '',
@@ -188,6 +193,8 @@ function show(id, push = true) {
   if (push) history.replaceState(null, '', '#' + id);
 }
 function close() {
+  if (full) setFull(false);
+  if (cameIn) return history.length > 1 ? history.back() : location.assign(fromPage.href);
   open = null;
   $('viewer').classList.add('hidden');
   document.body.style.overflow = '';
@@ -197,20 +204,80 @@ function step(d) {
   const i = shown.findIndex(x => x.id === open?.id);
   if (i >= 0 && shown[i + d]) show(shown[i + d].id);
 }
-function setZoom(on) {
-  zoom = on;
-  $('v-img').className = `block mx-auto ${on ? 'max-w-none w-[200%]' : 'w-full max-w-3xl'}`;
-  $('v-zoom').textContent = on ? '🔍 缩小' : '🔍 放大';
+// z = 几倍；(cx, cy) = 手指／滑鼠在哪里，放大后那一点留在原地（不给就是画面中间）
+function setZoom(z, cx, cy) {
+  const body = $('v-body'), img = $('v-img');
+  z = Math.min(5, Math.max(1, z));
+  const r = body.getBoundingClientRect();
+  const px = (cx ?? r.left + r.width / 2) - r.left, py = (cy ?? r.top + r.height / 2) - r.top;
+  const fx = (body.scrollLeft + px) / (body.scrollWidth || 1), fy = (body.scrollTop + py) / (body.scrollHeight || 1);
+  zoom = z;
+  const base = full ? body.clientWidth : Math.min(body.clientWidth, 768);   // 768 = max-w-3xl
+  img.style.width = z === 1 ? '' : Math.round(base * z) + 'px';
+  img.style.maxWidth = z === 1 ? '' : 'none';
+  body.scrollLeft = fx * body.scrollWidth - px;
+  body.scrollTop = fy * body.scrollHeight - py;
+  $('v-zoom').lastChild.textContent = z > 1 ? ' 缩小' : ' 放大';
 }
-function openFromHash() {
+// 全屏：手机／电脑支持的话真的全屏；iPhone 不支持就把上下的按钮收起来，只留谱
+function setFull(on) {
+  full = on;
+  const v = $('viewer');
+  ['v-head', 'v-foot', 'v-audio'].forEach(id => $(id).classList.toggle('!hidden', on));
+  $('v-float').classList.toggle('hidden', !on);
+  $('v-img').classList.toggle('max-w-3xl', !on);
+  try {
+    if (on && !document.fullscreenElement) (v.requestFullscreen || v.webkitRequestFullscreen)?.call(v)?.catch?.(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  } catch { /* 不支持全屏就算了 */ }
+  setZoom(1);
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && full) setFull(false); });
+
+// 两指放大缩小
+const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+const mid = t => [(t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2];
+let pinch = null, lastTap = 0;
+$('v-body').addEventListener('touchstart', e => { if (e.touches.length === 2) pinch = { d: dist(e.touches), z: zoom }; }, { passive: true });
+$('v-body').addEventListener('touchmove', e => {
+  if (e.touches.length !== 2 || !pinch) return;
+  e.preventDefault();
+  setZoom(pinch.z * dist(e.touches) / pinch.d, ...mid(e.touches));
+}, { passive: false });
+$('v-body').addEventListener('touchend', e => {
+  if (pinch) { if (e.touches.length < 2) pinch = null; lastTap = 0; return; }
+  // 双击：放大到 2.5 倍／回到刚好一样宽
+  const t = e.changedTouches[0], now = Date.now();
+  if (now - lastTap < 300) { e.preventDefault(); setZoom(zoom > 1 ? 1 : 2.5, t.clientX, t.clientY); lastTap = 0; }
+  else lastTap = now;
+});
+$('v-body').addEventListener('dblclick', e => setZoom(zoom > 1 ? 1 : 2.5, e.clientX, e.clientY));
+// 电脑：Ctrl＋滚轮（触控板两指捏也是这个）
+$('v-body').addEventListener('wheel', e => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  setZoom(zoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+}, { passive: false });
+
+function openFromHash(first) {
   const id = decodeURIComponent(location.hash.slice(1));
-  if (id && songs.some(s => s.id === id)) show(id, false);
+  if (!id || !songs.some(s => s.id === id)) return;
+  if (first === true && fromPage) {
+    cameIn = true;
+    $('v-close').textContent = '‹ 返回';
+    $('v-close').classList.add('text-sm');
+  }
+  show(id, false);
 }
 
 $('v-close').addEventListener('click', close);
 $('v-prev').addEventListener('click', () => step(-1));
 $('v-next').addEventListener('click', () => step(1));
-$('v-zoom').addEventListener('click', () => setZoom(!zoom));
+$('v-zoom').addEventListener('click', () => setZoom(zoom > 1 ? 1 : 2));
+$('v-full').addEventListener('click', () => setFull(true));
+$('vf-exit').addEventListener('click', () => setFull(false));
+$('vf-prev').addEventListener('click', () => step(-1));
+$('vf-next').addEventListener('click', () => step(1));
 $('v-share').addEventListener('click', async () => {
   if (!open) return;
   const text = `🎼 ${open.name}\n${location.origin}${location.pathname}#${open.id}`;
@@ -219,7 +286,7 @@ $('v-share').addEventListener('click', async () => {
 });
 document.addEventListener('keydown', e => {
   if (!open) return;
-  if (e.key === 'Escape') close();
+  if (e.key === 'Escape') { if (full) setFull(false); else close(); }
   if (e.key === 'ArrowLeft') step(-1);
   if (e.key === 'ArrowRight') step(1);
 });
