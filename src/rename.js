@@ -2,10 +2,12 @@
 // 歌名以曲库 custom_songs 为准（靠 id 认歌）；排单里只改那一首，不会把整份排单盖回去
 // 每次改名都记在 song_renames，密码管理旁边的「改名记录」看得到、改得回去
 import { doc, getDoc, setDoc, addDoc, collection, runTransaction } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { bumpSongs } from "./song-cache.js";
 
 // r = { id, imageUrl, oldTitle, newTitle, where, setlistId, at }
 export async function renameSong(db, r) {
   await setDoc(doc(db, 'custom_songs', r.id), { id: r.id, title: r.newTitle, imageUrl: r.imageUrl }, { merge: true });
+  bumpSongs(db);
   if (r.setlistId) {
     const ref = doc(db, 'setlists', r.setlistId);
     await runTransaction(db, async t => {

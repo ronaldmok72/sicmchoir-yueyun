@@ -2,8 +2,9 @@
 // 团员打开就看得到；指挥（输过密码）还会看到「还要处理的」，点一下跳去那一页改
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
 // 这里会写的只有两样：团员投票会不会来（rsvp/{日期_practice|mass}）、合照（photos/{日期 或 婚礼id}，相片本身放 Cloudinary）
-import { collection, getDocs, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, getDocs, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
+import { customSongs } from "./song-cache.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
 import { loadNotices, noticeHtml } from "./notices-common.js";
@@ -40,7 +41,13 @@ let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 
 async function load() {
-  const [ma, du, se, mb, cs, rv, ph] = await Promise.all(['masses', 'duties', 'seatings', 'members', 'custom_songs', 'rsvp', 'photos'].map(c => getDocs(collection(db, c)).catch(() => ({ docs: [] }))));
+  // 职务表一直累积（一年几十份）：只读最近 45 天以后的，省读取次数
+  const cut = new Date(TODAY + 'T12:00'); cut.setDate(cut.getDate() - 45);
+  const get = c => getDocs(c === 'duties' ? query(collection(db, c), where(documentId(), '>=', iso(cut))) : collection(db, c)).catch(() => ({ docs: [] }));
+  const [[ma, du, se, mb, rv, ph], cs] = await Promise.all([
+    Promise.all(['masses', 'duties', 'seatings', 'members', 'rsvp', 'photos'].map(get)),
+    customSongs(db).catch(() => []),
+  ]);
   rsvps = Object.fromEntries(rv.docs.map(d => [d.id, d.data()]));
   photos = Object.fromEntries(ph.docs.map(d => [d.id, d.data()]));
   notices = (await loadNotices(db).catch(() => ({ active: [] }))).active;
@@ -49,7 +56,7 @@ async function load() {
   specials = {};
   all.filter(m => m.kind).sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach(w => (specials[w.date] ||= []).push(w));
   // 歌名以曲库为准（改过名的歌显示新名字）
-  const title = songTitles = Object.fromEntries(cs.docs.map(d => [d.id, d.data().title]));
+  const title = songTitles = Object.fromEntries(cs.map(s => [s.id, s.title]));
   Object.values(masses).forEach(m => (m.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   duties = Object.fromEntries(du.docs.map(d => [d.id, d.data()]));
   seatings = Object.fromEntries(se.docs.filter(d => !d.id.includes('_')).map(d => [d.id, d.data()]));

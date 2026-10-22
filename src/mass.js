@@ -2,6 +2,7 @@
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
+import { bumpSongs } from "./song-cache.js";
 import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
 import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER } from "./autofill.js";
 import { WEDDING_ROLES, WEDDING_TIMES, timeText, findMember, roleZh } from "./weddings-common.js";
@@ -379,6 +380,7 @@ $('picker-upload').addEventListener('change', async e => {
     if (!r.secure_url) throw new Error(r.error?.message || '图片上传失败');
     const song = { id: same?.id || `song_custom_${Date.now()}_0`, title, imageUrl: r.secure_url };
     await setDoc(doc(db, 'custom_songs', song.id), song);
+    bumpSongs(db);
     if (same && LIBRARY_DATA.includes(same)) Object.assign(same, song); else { LIBRARY_DATA.push(song); EXTRA = EXTRA.filter(x => x.id !== song.id); }
     M.slots[pickSlot].songs.push({ ...song });
     M.manual = true;

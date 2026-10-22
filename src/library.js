@@ -1,6 +1,6 @@
 // 曲库母本（原本写在 admin.html 里，抽出来给排单后台和弥撒排歌共用）
 // 云端 custom_songs 里同 id 的歌会覆盖这里的（改名、换图都在云端）
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { customSongs } from "./song-cache.js";
 
 export const LIBRARY_DATA = [
   {"id":"song_001","title":"12 days of Christmas - 公青报佳音","imageUrl":"https://res.cloudinary.com/dsfhilcgz/image/upload/12_days_of_Christmas_-_%E5%85%AC%E9%9D%92%E6%8A%A5%E4%BD%B3%E9%9F%B3.jpg"},
@@ -495,9 +495,7 @@ export const LIBRARY_DATA = [
 
 // 合并云端新歌／改过的歌，返回同一个数组
 export async function loadLibrary(db) {
-  const snap = await getDocs(collection(db, "custom_songs"));
-  snap.forEach(d => {
-    const data = d.data();
+  (await customSongs(db)).forEach(data => {
     const i = LIBRARY_DATA.findIndex(s => s.id === data.id);
     if (i !== -1) LIBRARY_DATA[i] = data; else LIBRARY_DATA.push(data);
   });

@@ -237,6 +237,7 @@
       try {
         const querySnapshot = await getDocs(collection(db, "custom_songs"));
         querySnapshot.forEach((doc) => {
+          if (doc.id === "_v") return;   // 曲库版本（不是歌）
           const data = doc.data();
           const existingIndex = LIBRARY_DATA.findIndex(s => s.id === data.id);
           if (existingIndex !== -1) {
@@ -718,6 +719,7 @@
 
           // 保存到 Firebase
           await setDoc(doc(db, "custom_songs", songId), songData);
+          await setDoc(doc(db, "custom_songs", "_v"), { at: Date.now() });   // 曲库版本：大家的手机下次打开就会重读
 
           // 暴力更新本地数据
           if (isUpdate) {
@@ -771,6 +773,7 @@
         try {
           // 强制从 Firebase 数据库中删除
           await deleteDoc(doc(db, "custom_songs", id));
+          await setDoc(doc(db, "custom_songs", "_v"), { at: Date.now() });
           
           // 从本地数组中移除
           const index = LIBRARY_DATA.findIndex(s => s.id === id);
