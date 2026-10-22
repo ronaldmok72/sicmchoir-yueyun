@@ -11,6 +11,8 @@ let keys = null;   // null = 还没设过（还在用 sic）
 
 async function load() {
   $('status').textContent = '读取中…';
+  // 打乱过的电话、PIN、密码表还在公开的地方的话，先搬去藏起来（搬过了就没事做）
+  try { await gate.staffCall('migrate'); } catch (err) { console.warn('搬去藏起来', err); }
   const { status, j } = await gate.staffCall('keys');
   if (status !== 200) throw new Error(status === 401 ? '这部手机没有最高权限，重新输一次密码' : '读不到密码表 ' + status);
   keys = j.keys;

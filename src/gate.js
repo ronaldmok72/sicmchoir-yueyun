@@ -189,7 +189,6 @@
     try { m = await memberById(cur.id); } catch { return; }   // 没网络就先照旧
     if (!m) { logout(); return; }
     if (m.name !== cur.name) { setMe(m); document.dispatchEvent(new CustomEvent('sic-me')); }
-    else if (!cur.ph && m.phoneHash) setMe(m);   // 以前登录的手机：补上 ph，才领得到通行证
   }
   // ───────── 团员小测验：开／关 ─────────
   // Firestore config/quiz.open；Ronald 在「测验结果」页按开关。这部手机记住上次看到的，菜单一打开就对
