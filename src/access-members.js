@@ -2,8 +2,8 @@
 // members/{id}：phoneTail（电话最后 4 码，有 = 登记了电话）、areas（开哪几区）、hasPin（他设了 4 位数 PIN）
 // 电话、清 PIN 经登录服务（/api/login）改，这页看不到打乱过的电话和 PIN
 // 「👑 最高权限」：他的 PIN 也开全部（含密码管理）；这个藏在 secrets，经登录服务改
-import { collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs } from "./firebase.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

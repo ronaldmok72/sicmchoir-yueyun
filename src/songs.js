@@ -4,8 +4,8 @@
 // songs.html#song_123 = 直接打开那一首（公告、WhatsApp 可以贴这个连结）
 // 录音：song_audio/{歌id} = { items: [{ url, label, at }] }，只放 Google Drive／YouTube 连结（另外放，排单后台换谱时不会被盖掉）
 //   后台（排单后台／弥撒排歌／指挥）的人在看谱页按「🎧＋」贴连结
-import { collection, getDocs, doc, setDoc, arrayUnion, arrayRemove, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc, setDoc, arrayUnion, arrayRemove, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs, history } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { clean, waTitle } from "./mass-common.js";
 import { loadNotices } from "./notices-common.js";
@@ -26,7 +26,7 @@ let audio = {};          // 歌 id → 录音连结 [{url, label, at}]
 const canAudio = () => ['admin', 'mass', 'conduct'].some(a => window.sicStaff?.can(a));
 
 async function load() {
-  const [, ma, no, au] = await Promise.all([loadLibrary(db), getDocs(collection(db, 'masses')), loadNotices(db).catch(() => ({ active: [] })), getDocs(collection(db, 'song_audio')).catch(() => ({ docs: [] }))]);
+  const [, ma, no, au] = await Promise.all([loadLibrary(db), history('masses'), loadNotices(db).catch(() => ({ active: [] })), getDocs(collection(db, 'song_audio')).catch(() => ({ docs: [] }))]);
   audio = Object.fromEntries(au.docs.map(d => [d.id, d.data().items || []]));
   const practice = {};   // 歌 id → 哪几个公告要练
   no.active.forEach(n => (n.songs || []).forEach(x => (practice[x.id] ||= []).push(n.title)));

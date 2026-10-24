@@ -1,5 +1,5 @@
-import { collection, getDocs, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, RESULTS } from "./firebase.js";
+import { collection, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, RESULTS, getDocs } from "./firebase.js";
 import { QUESTIONS, CATEGORIES, INTENT } from "./quiz-data.js";
 
 const $ = id => document.getElementById(id);

@@ -1,7 +1,8 @@
 // 公告：存在 Firestore announcements/{自动id}
 // { title, body, event: 'YYYY-MM-DD' | '', until: 'YYYY-MM-DD', songs: [{ id, title }], createdAt, updatedAt }
 // until 那天过了就算「以前的公告」；公告页、这台弥撒、歌单目录都用这里
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getDocs } from "./firebase.js";
 import { waTitle } from "./mass-common.js";
 
 const pad = n => String(n).padStart(2, '0');

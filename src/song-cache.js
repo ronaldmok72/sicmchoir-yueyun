@@ -1,6 +1,7 @@
 // 曲库云端那一份（custom_songs，两百多首）记在这部手机，省资料库读取次数：
 // 每次打开只看一下「曲库版本」（custom_songs/_v，读 1 次）；有人上传／改名／删歌才整份重读，最多一天也整份重读一次
-import { collection, getDocs, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getDocs, getDoc } from "./firebase.js";
 
 const KEY = 'sicSongCache';
 export const VERSION_ID = '_v';

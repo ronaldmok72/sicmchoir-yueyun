@@ -1,7 +1,7 @@
 // 我的资料：团员自己改名字（至少有圣名）、全名、电话；名单上本来就有他的话，自己合并
 // 改名字时，职务表、座位表、婚礼名单上的旧名字一起改（members-common.js）
-import { collection, getDocs, doc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs } from "./firebase.js";
 import { renameEverywhere, mergeMembers, lookAlikes } from "./members-common.js";
 
 const $ = id => document.getElementById(id);

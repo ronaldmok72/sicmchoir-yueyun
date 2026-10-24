@@ -2,8 +2,8 @@
 // 团员打开就看得到；指挥（输过密码）还会看到「还要处理的」，点一下跳去那一页改
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
 // 这里会写的只有两样：团员投票会不会来（rsvp/{日期_practice|mass}）、合照（photos/{日期 或 婚礼id}，相片本身放 Cloudinary）
-import { collection, getDocs, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs } from "./firebase.js";
 import { customSongs } from "./song-cache.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";

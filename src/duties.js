@@ -1,7 +1,7 @@
 // 职务表：每一场谁当指挥、答唱咏、钢琴、风琴、吉他、鼓手
 // Firestore duties/{YYYY-MM-DD}，人名存团员名单的「常用名字」（名单外的人也可以直接打名字）
-import { collection, getDocs, doc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs, history } from "./firebase.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { DUTY_SEED } from "./duties-seed.js";
 import { timeText, roleZh } from "./weddings-common.js";
@@ -40,7 +40,7 @@ const isDay = id => /^\d{4}-\d{2}-\d{2}$/.test(id);
 async function load() {
   $('status').textContent = '读取中…';
   const [ds, ms, ma] = await Promise.all([
-    getDocs(collection(db, DUTIES)), getDocs(collection(db, 'members')), getDocs(collection(db, 'masses')),
+    history(DUTIES), getDocs(collection(db, 'members')), history('masses'),
   ]);
   D = Object.fromEntries(ds.docs.map(d => [d.id, d.data()]));
   members = ms.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false);

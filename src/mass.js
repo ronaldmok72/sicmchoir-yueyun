@@ -1,6 +1,6 @@
 // 弥撒排歌：每个位置选歌 → 保存时自动生成乐谱排单（setlists），乐谱 App 不用改
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc, setDoc, deleteDoc, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs, getDoc, history } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { bumpSongs } from "./song-cache.js";
 import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
@@ -564,12 +564,12 @@ $('btn-copy').addEventListener('click', async () => {
 // 职务表（复制歌单文字时带上谁指挥、谁答唱咏）
 let DUTY = {};
 async function loadMasses() {
-  const duty = getDocs(collection(db, 'duties')).then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
+  const duty = history('duties').then(s => { DUTY = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); }).catch(() => {});
   getDocs(collection(db, 'members')).then(s => {
     MEMBERS = s.docs.map(d => d.data()).filter(m => m.active !== false).sort((a, b) => a.name.localeCompare(b.name));
     $('names').innerHTML = MEMBERS.map(m => `<option value="${esc(m.name)}">${esc(m.fullName || '')}</option>`).join('');
   }).catch(() => {});
-  const [snap] = await Promise.all([getDocs(collection(db, MASSES)), duty]);
+  const [snap] = await Promise.all([history(MASSES), duty]);
   masses = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || ''));
   // 歌名以曲库为准：改过名的歌，旧弥撒里也显示新名字
   masses.forEach(m => { m.slots = normalizeSlots(m.slots); m.slots.forEach(sl => sl.songs.forEach(x => { const t = songById(x.id)?.title; if (t) x.title = t; })); });

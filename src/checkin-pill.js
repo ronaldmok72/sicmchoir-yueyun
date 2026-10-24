@@ -1,8 +1,8 @@
 // 打开 App 时：今天有开现场 QR 签到（点名页按了「开 QR」）→ 下面浮出「📷 扫码签到」
 // 签到过了、还没签退 → 变成「📷 回家前扫码签退」；两个都扫了就不出现
 // 只给登录了的团员看；回到 App（切回来）、每 5 分钟会再看一次
-import { collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, query, where } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs } from "./firebase.js";
 
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

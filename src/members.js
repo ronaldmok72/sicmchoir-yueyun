@@ -1,7 +1,7 @@
 // 团员名单：名字、声部、披肩号码、会做的职务、还有没有在来
 // 之后的职务表、座位表都从这里拿人
-import { collection, getDocs, doc, setDoc, addDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, RESULTS } from "./firebase.js";
+import { collection, doc, setDoc, addDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, RESULTS, getDocs } from "./firebase.js";
 import { SEED } from "./members-seed.js";
 import { VOICES, VOICE_NAME, VOICE_SHORT, genderOf, genderFromVoice, normVoice } from "./people.js";
 import { renameEverywhere, mergeMembers, lookAlikes, suggestName, doPending } from "./members-common.js";

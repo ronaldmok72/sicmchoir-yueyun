@@ -1,8 +1,8 @@
 // 改歌名：乐谱（指挥模式）和排单后台共用
 // 歌名以曲库 custom_songs 为准（靠 id 认歌）；排单里只改那一首，不会把整份排单盖回去
 // 每次改名都记在 song_renames，密码管理旁边的「改名记录」看得到、改得回去
-import { doc, getDoc, setDoc, addDoc, collection, runTransaction } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { bumpSongs } from "./song-cache.js";
+import { doc, setDoc, addDoc, collection, runTransaction } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { bumpSongs, customSongs } from "./song-cache.js";
 
 // r = { id, imageUrl, oldTitle, newTitle, where, setlistId, at }
 // 谁改的：用电话登录的就记他的名字；只输了后台密码的记「用后台密码的人」
@@ -26,9 +26,10 @@ export async function renameSong(db, r) {
 }
 
 // 一份排单里的歌，换成曲库最新的歌名（别的手机改过的也会跟上）
+// 用手机记着的曲库（song-cache.js，平常只读 1 次「曲库版本」）；以前是每首歌各读一次
 export async function freshTitles(db, items) {
-  const docs = await Promise.all([...new Set(items.map(x => x.id).filter(Boolean))].map(id => getDoc(doc(db, 'custom_songs', id)).catch(() => null)));
-  const title = Object.fromEntries(docs.filter(d => d?.exists()).map(d => [d.id, d.data().title]));
+  const songs = await customSongs(db).catch(() => []);
+  const title = Object.fromEntries(songs.filter(x => x?.id).map(x => [x.id, x.title]));
   return items.map(x => title[x.id] && title[x.id] !== x.title ? { ...x, title: title[x.id] } : x);
 }
 

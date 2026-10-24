@@ -1,6 +1,6 @@
 // 改名记录：song_renames 里每一次改歌名，最新的排最前面；可以复制旧名字或改回去
-import { collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs, getDoc } from "./firebase.js";
 import { renameSong } from "./rename.js";
 
 const $ = id => document.getElementById(id);

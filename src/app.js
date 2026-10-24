@@ -1,20 +1,9 @@
 // 1. 引入新增了 updateDoc、onSnapshot、setDoc(改名功能要用)
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, setDoc, updateDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs, getDoc } from "./firebase.js";   // 跟其他页同一个连接（读过的资料记在手机，读不到时先用）
 import { freshTitles, queueRename, flushRenames, applyPending } from "./rename.js";
 import { getDrawing, putDrawing, delDrawing, migrateDrawings } from "./drawings.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
-  authDomain: "sicmchoir-yueyun.firebaseapp.com",
-  projectId: "sicmchoir-yueyun",
-  storageBucket: "sicmchoir-yueyun.firebasestorage.app",
-  messagingSenderId: "55940456186",
-  appId: "1:55940456186:web:3a4a78dfb8c430f3963343"
-};
-
-const app = initializeApp(firebaseConfig );
-const db = getFirestore(app);
 
 let PLAYLIST = [];
 let currentIndex = 0;
@@ -54,9 +43,10 @@ async function init() {
   ctx = canvas.getContext('2d', { willReadFrequently: true });
   slideContainer = document.getElementById('slide-container');
   setlistSelect = document.getElementById('setlist-select');
-  setlistSelect.addEventListener('change', () => {
+  setlistSelect.addEventListener('change', async () => {
     if (setlistSelect.value !== '__past') return;
     showPastSetlists = true;
+    if (!allLoaded) await loadSetlistOptions(true);   // 以前的排单：要看才读
     renderSetlistOptions();
     setlistSelect.value = setlistSelect.querySelector('optgroup option')?.value || '';
   });
@@ -140,6 +130,7 @@ resizeCanvas();
   window.addEventListener('online', () => flushRenames(db));
   // 从「这台弥撒」总览点「打开乐谱」：?setlist=1018 常年29主日 → 直接下载那份排单
   const want = new URLSearchParams(location.search).get('setlist');
+  if (want && !allSetlists.some(o => o.id === want)) await addSetlist(want);   // 以前的那一份：单独读
   if (want && allSetlists.some(o => o.id === want)) {
     if (!setlistSelect.querySelector(`option[value="${CSS.escape(want)}"]`)) { showPastSetlists = true; renderSetlistOptions(); }
     setlistSelect.value = want;
@@ -166,6 +157,7 @@ function startLiveSyncListener(selectedId) {
   if (unsubscribeLiveSync) unsubscribeLiveSync(); // 清除旧的监听
   
   unsubscribeLiveSync = onSnapshot(doc(db, "setlists", selectedId), (docSnap) => {
+    if (docSnap.metadata.fromCache) return;   // 手机记着的旧页码不算，等资料库的
     if (docSnap.exists()) {
       const data = docSnap.data();
       // 如果云端有页码，且和本地不同，且当前不是指挥，就自动翻页！
@@ -205,33 +197,40 @@ function renderSetlistOptions() {
   const past = allSetlists.filter(o => isPast(o) && o.id !== saved).sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
   const opt = (o) => `<option value="${o.id.replace(/"/g, '&quot;')}">${String(o.name || o.id).replace(/</g, '&lt;')}</option>`;
   let html = upcoming.map(opt).join('') || '<option value="">接下来还没有排单</option>';
-  if (past.length) html += showPastSetlists
+  if (past.length || !allLoaded) html += showPastSetlists
     ? `<optgroup label="以前的排单">${past.map(opt).join('')}</optgroup>`
-    : `<option value="__past">… 看以前的排单（${past.length}）</option>`;
+    : `<option value="__past">… 看以前的排单${allLoaded ? `（${past.length}）` : ''}</option>`;
   setlistSelect.innerHTML = html;
   if (keep && setlistSelect.querySelector(`option[value="${CSS.escape(keep)}"]`)) setlistSelect.value = keep;
 }
 
-async function loadSetlistOptions() {
+// 平常只读最近两星期建的、或今天前两星期以后的排单（排单一直累积，以前每次开乐谱都整份读）；all = 连以前的也读
+let allLoaded = false;
+const listItem = (id, d) => ({ id, name: d.name, createdAt: d.createdAt, date: setlistDate(d) });
+async function loadSetlistOptions(all) {
   try {
-    const querySnapshot = await getDocs(collection(db, "setlists"));
-    setlistSelect.innerHTML = '';
-    
-    if (querySnapshot.empty) {
-      setlistSelect.innerHTML = '<option value="">暂无排单</option>';
-      return;
-    }
-
-    allSetlists = [];
-    querySnapshot.forEach((doc) => {
-      const d = doc.data();
-      allSetlists.push({ id: doc.id, name: d.name, createdAt: d.createdAt, date: setlistDate(d) });
-    });
+    const cut = new Date(Date.now() - 14 * 864e5);
+    const cutDay = `${cut.getFullYear()}-${String(cut.getMonth() + 1).padStart(2, '0')}-${String(cut.getDate()).padStart(2, '0')}`;
+    const col = collection(db, "setlists");
+    const snaps = all ? [await getDocs(col)]
+      : await Promise.all([getDocs(query(col, where('date', '>=', cutDay))), getDocs(query(col, where('createdAt', '>=', cut.toISOString())))]);
+    const seen = new Map();
+    snaps.forEach(q => q.forEach(d => seen.set(d.id, listItem(d.id, d.data()))));
+    if (all) allLoaded = true;
+    else allSetlists.filter(o => !seen.has(o.id)).forEach(o => seen.set(o.id, o));   // 之前单独读过的留着
+    allSetlists = [...seen.values()];
+    const saved = localStorage.getItem('offline_playlist_name');
+    if (saved && !seen.has(saved)) allSetlists.push({ id: saved, name: saved, date: setlistDate({ name: saved }) });
+    if (!allSetlists.length && allLoaded) { setlistSelect.innerHTML = '<option value="">暂无排单</option>'; return; }
     renderSetlistOptions();
   } catch (error) {
     console.error("获取排单列表失败:", error);
     setlistSelect.innerHTML = '<option value="">网络错误</option>';
   }
+}
+async function addSetlist(id) {
+  const d = await getDoc(doc(db, "setlists", id)).catch(() => null);
+  if (d?.exists()) { allSetlists.push(listItem(id, d.data())); renderSetlistOptions(); }
 }
 
 async function syncSelectedSetlist() {

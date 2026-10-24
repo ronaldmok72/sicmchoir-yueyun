@@ -1,6 +1,7 @@
 // 团员改名、合并：名字在很多地方是直接存字的（职务表、座位表、婚礼来唱的人），改名要一起改，不然对不上
 // 团员名单「保存」、团员自己「修改资料」、合并重复的人都用这里
-import { collection, getDocs, doc, getDoc, updateDoc, deleteDoc, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, updateDoc, deleteDoc, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getDocs, getDoc } from "./firebase.js";
 // 职务表的职务（跟 duties.js 的 DUTY_ROLES 一样）
 const DUTY_KEYS = ['conductor', 'cantor', 'piano', 'organ', 'guitar', 'drums'];
 

@@ -1,7 +1,7 @@
 // 练习前祈祷文：祈祷文页、这台弥撒都用这里
 // 进堂咏、集祷经存 Firestore prayers/{礼仪 key}（OT29、ADV1、EASTER…）：输入一次，明年同一个主日自己出来
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { doc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDoc } from "./firebase.js";
 
 export const CECILIA = '天主，求祢因殉道者圣女则济利亚的转求，仁慈地垂允我们的祈祷，使我们能效法她心灵的纯洁，堪以歌唱永远赞美祢。以上所求是靠祢的子，我们的主天主耶稣基督，祂和祢及圣神永生永王。阿们。';
 

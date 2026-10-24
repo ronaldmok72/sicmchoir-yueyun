@@ -6,8 +6,8 @@
 // 人从团员名单拿；有职务的人（指挥、琴师、答唱咏，婚礼还有读经…）从职务表／排歌页拿，排在「还没排」最前面，座位右上角标职务
 // 💒 婚礼：seatings/{日期_时间}（跟排歌页那台的 id 一样），多了 event、noCapes（不穿披肩）；
 //   人只拿排歌页「来唱的团员」，琴师从「谁做什么」拿
-import { collection, getDocs, doc, setDoc, updateDoc, arrayUnion, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { collection, doc, setDoc, updateDoc, arrayUnion, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs, history } from "./firebase.js";
 import { litDay } from "./liturgy.js";
 import { genderOf, VOICE_SHORT, normVoice } from "./people.js";
 import { timeText, findMember } from "./weddings-common.js";
@@ -76,8 +76,8 @@ async function load() {
   // 职务表、点名一直累积：只读最近 60 天以后的（id 都是日期开头），省读取次数
   const since = c => query(collection(db, c), where(documentId(), '>=', addDays(TODAY, -60)));
   const [ms, ds, ss, wm, at, rv] = await Promise.all([
-    getDocs(collection(db, 'members')), getDocs(since('duties')), getDocs(collection(db, SEATINGS)), getDocs(collection(db, 'masses')),
-    getDocs(since('attendance')).catch(() => null), getDocs(collection(db, 'rsvp')).catch(() => null),
+    getDocs(collection(db, 'members')), getDocs(since('duties')), history(SEATINGS), history('masses'),
+    getDocs(since('attendance')).catch(() => null), history('rsvp').catch(() => null),
   ]);
   W = Object.fromEntries(wm.docs.filter(d => d.data().kind).map(d => [d.id, d.data()]));
   PRAC = (at?.docs || []).map(d => d.data()).filter(a => a.kind === 'practice');

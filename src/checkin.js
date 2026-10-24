@@ -1,8 +1,8 @@
 // 团员扫了现场的 QR 来到这里：第一次扫 = 签到，隔 10 分钟以上再扫 = 签退
 // 积分：签到 + 签退 = 1 分（迟到、早退各扣 0.2）；只签到没签退 = 0.5 分
 // 要先用电话登录（才知道是谁）；签到 / 签退会直接改点名页那一次的记录
-import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDoc } from "./firebase.js";
 import { tokenOk, hm, markFor, scanScore, lateOf, earlyOf, fmtPts } from "./checkin-common.js";
 
 const $ = id => document.getElementById(id);
