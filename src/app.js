@@ -2,6 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { freshTitles, queueRename, flushRenames, applyPending } from "./rename.js";
+import { getDrawing, putDrawing, delDrawing, migrateDrawings } from "./drawings.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -128,6 +129,7 @@ async function init() {
   setupTools();
   setupSwipe();
   setupDrawing();
+  migrateDrawings().then(() => PLAYLIST.length && restoreDrawing(PLAYLIST[currentIndex].id)).catch(err => console.warn('标注搬家', err));
   setupZoomAndPan();
 
 resizeCanvas();
@@ -378,7 +380,7 @@ function setupTools() {
     btnClear.addEventListener('click', () => {
       if(confirm('确定要清空当前页面的所有标注吗？')) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        saveDrawing();
+        saveDrawing(true);
       }
     });
   }
@@ -579,47 +581,53 @@ function stopDrawing() {
   saveDrawing();
 }
 
-function saveDrawing() {
+// 标注存在 IndexedDB（drawings.js）：空间大很多，不会再「储存空间已满」
+// 每一笔画完存一次；同一首歌连续画，只存最后那一版（免得慢的那次盖掉新的）
+const saveSeq = {};
+function saveDrawing(cleared) {
   if (!PLAYLIST || PLAYLIST.length === 0) return;
-  const song = PLAYLIST[currentIndex];
-
-  try {
-    // 🌟 修复：标注不需要跟原图一样的超高分辨率，存全尺寸很快把手机的 localStorage 塞满。
-    // 存之前先压缩到最长边 1400px 再存，画质对标注来说完全够用，储存空间省下大半。
-    const MAX_SAVE_DIM = 1400;
-    let sourceCanvas = canvas;
-    if (canvas.width > MAX_SAVE_DIM || canvas.height > MAX_SAVE_DIM) {
-      const ratio = Math.min(MAX_SAVE_DIM / canvas.width, MAX_SAVE_DIM / canvas.height);
-      const scaled = document.createElement('canvas');
-      scaled.width = Math.round(canvas.width * ratio);
-      scaled.height = Math.round(canvas.height * ratio);
-      scaled.getContext('2d').drawImage(canvas, 0, 0, scaled.width, scaled.height);
-      sourceCanvas = scaled;
-    }
-    const dataURL = sourceCanvas.toDataURL('image/png');
-    localStorage.setItem(`drawing_${song.id}`, dataURL);
-  } catch (error) {
-    // 🌟 修复：以前这里没有 try/catch，储存空间满了会静默失败——
-    // 当下看起来画上去了，但其实根本没存进去，一 refresh 或翻页回来就消失。
+  const id = PLAYLIST[currentIndex].id;
+  const n = saveSeq[id] = (saveSeq[id] || 0) + 1;
+  const fail = error => {
     console.error('保存标注失败:', error);
-    if (error && error.name === 'QuotaExceededError') {
-      alert('⚠️ 这台设备的储存空间已满，刚才这笔标注没能保存下来！\n请到浏览器设置里清除本网站的「网站数据/储存空间」以释放空间，再重新标注一次。');
-    }
+    alert('⚠️ 刚才这笔标注没能保存下来。\n再画一笔试试；还是不行就跟 Ronald 说。');
+  };
+  if (cleared) return delDrawing(id).catch(fail);
+  // 标注不需要跟原图一样的超高分辨率：最长边压到 1400px 再存
+  const MAX_SAVE_DIM = 1400;
+  let sourceCanvas = canvas;
+  if (canvas.width > MAX_SAVE_DIM || canvas.height > MAX_SAVE_DIM) {
+    const ratio = Math.min(MAX_SAVE_DIM / canvas.width, MAX_SAVE_DIM / canvas.height);
+    const scaled = document.createElement('canvas');
+    scaled.width = Math.round(canvas.width * ratio);
+    scaled.height = Math.round(canvas.height * ratio);
+    scaled.getContext('2d').drawImage(canvas, 0, 0, scaled.width, scaled.height);
+    sourceCanvas = scaled;
   }
+  sourceCanvas.toBlob(blob => {
+    if (saveSeq[id] !== n) return;
+    if (!blob) return fail(new Error('转不成图片'));
+    putDrawing(id, blob).catch(fail);
+  }, 'image/png');
 }
 
-function restoreDrawing(songId) {
+// 读回来：旧的是 dataURL 字串，新的是 Blob；读回来时已经换歌了就不画
+async function restoreDrawing(songId) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const dataURL = localStorage.getItem(`drawing_${songId}`);
-  if (dataURL) {
-    const img = new Image();
-    img.src = dataURL;
-    img.onload = () => {
-      ctx.globalCompositeOperation = 'source-over';
-      // 🌟 核心修复：强制让保存的笔迹拉伸贴合当前的画板尺寸，绝对不再走位！
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    };
-  }
+  let v;
+  try { v = await getDrawing(songId); } catch (err) { console.warn('读不到标注', err); return; }
+  if (!v || PLAYLIST[currentIndex]?.id !== songId) return;
+  const url = typeof v === 'string' ? v : URL.createObjectURL(v);
+  const img = new Image();
+  img.onload = () => {
+    if (typeof v !== 'string') URL.revokeObjectURL(url);
+    if (PLAYLIST[currentIndex]?.id !== songId) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+    // 保存的笔迹拉伸贴合当前的画板尺寸，不走位
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  };
+  img.src = url;
 }
 
 
