@@ -56,9 +56,12 @@ async function loadMembers() {
 }
 
 async function load() {
-  // 职务表一直累积（一年几十份）：只读最近 45 天以后的，省读取次数
+  // 排歌、职务、座位、会来／请假、合照一直累积：只读最近 45 天以后的（每一份的 id 都是日期开头），省读取次数
+  // 首页是大家每次打开 App 第一个看到的页，以前整个读，免费额度一天就用完
   const cut = new Date(TODAY + 'T12:00'); cut.setDate(cut.getDate() - 45);
-  const get = c => getDocs(c === 'duties' ? query(collection(db, c), where(documentId(), '>=', iso(cut))) : collection(db, c)).catch(() => ({ docs: [] }));
+  const want = new URLSearchParams(location.search).get('d');
+  const from = want && want < iso(cut) ? want : iso(cut);   // 特地看以前的某一天：从那天读起
+  const get = c => getDocs(query(collection(db, c), where(documentId(), '>=', from))).catch(() => ({ docs: [] }));
   const [[ma, du, se, rv, ph], cs, mb] = await Promise.all([
     Promise.all(['masses', 'duties', 'seatings', 'rsvp', 'photos'].map(get)),
     customSongs(db).catch(() => []),
@@ -81,7 +84,6 @@ async function load() {
   memberList = Object.values(members);
   Object.values(specials).flat().forEach(w => (w.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   const list = dates();
-  const want = new URLSearchParams(location.search).get('d');
   date = list.includes(want) ? want : (list.find(d => d >= TODAY) || list.at(-1));
   $('loading').classList.add('hidden');
   $('day').classList.remove('hidden');
