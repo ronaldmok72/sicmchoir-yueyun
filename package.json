@@ -1,0 +1,8 @@
+{
+  "name": "sicmchoir-yueyun",
+  "private": true,
+  "description": "乐韵 App：网页是静态的；这里只给 api/ 的服务器用（登录服务要 firebase-admin）",
+  "dependencies": {
+    "firebase-admin": "^13.10.0"
+  }
+}
