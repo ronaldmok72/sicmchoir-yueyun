@@ -27,7 +27,7 @@ function render() {
   $('list').innerHTML = list.map(r => {
     const now = nowTitle[r.songId];
     return `<div class="bg-white rounded-2xl border border-slate-200 p-3.5 text-sm space-y-2">
-      <div class="text-xs text-slate-400">${esc(when(r.at))} · ${esc(r.where || '')}${r.setlist ? ` · 排单 ${esc(r.setlist)}` : ''}</div>
+      <div class="text-xs text-slate-400">${esc(when(r.at))} · <span class="text-slate-600 font-medium">${r.by ? `👤 ${esc(r.by)}` : '（以前的没记是谁）'}</span> · ${esc(r.where || '')}${r.setlist ? ` · 排单 ${esc(r.setlist)}` : ''}</div>
       <div><span class="text-slate-400">旧：</span><span class="line-through decoration-slate-300">${esc(r.oldTitle)}</span></div>
       <div><span class="text-slate-400">新：</span><span class="font-semibold">${esc(r.newTitle)}</span></div>
       ${now && now !== r.newTitle ? `<div class="text-xs text-amber-600">之后又改过，现在叫「${esc(now)}」</div>` : ''}

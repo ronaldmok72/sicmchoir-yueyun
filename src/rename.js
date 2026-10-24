@@ -5,6 +5,7 @@ import { doc, getDoc, setDoc, addDoc, collection, runTransaction } from "https:/
 import { bumpSongs } from "./song-cache.js";
 
 // r = { id, imageUrl, oldTitle, newTitle, where, setlistId, at }
+// 谁改的：用电话登录的就记他的名字；只输了后台密码的记「用后台密码的人」
 export async function renameSong(db, r) {
   await setDoc(doc(db, 'custom_songs', r.id), { id: r.id, title: r.newTitle, imageUrl: r.imageUrl }, { merge: true });
   bumpSongs(db);
@@ -20,6 +21,7 @@ export async function renameSong(db, r) {
   await addDoc(collection(db, 'song_renames'), {
     songId: r.id, oldTitle: r.oldTitle, newTitle: r.newTitle, imageUrl: r.imageUrl || '',
     where: r.where || '', setlist: r.setlistId || '', at: r.at || new Date().toISOString(),
+    by: r.by || window.sicStaff?.me?.()?.name || '用后台密码的人',
   });
 }
 
@@ -34,7 +36,7 @@ export async function freshTitles(db, items) {
 const KEY = 'pending_renames';
 export const pending = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
 const savePending = l => { try { localStorage.setItem(KEY, JSON.stringify(l)); } catch { /* 没关系 */ } };
-export function queueRename(r) { savePending(pending().concat({ ...r, at: r.at || new Date().toISOString() })); }
+export function queueRename(r) { savePending(pending().concat({ ...r, at: r.at || new Date().toISOString(), by: r.by || window.sicStaff?.me?.()?.name || '' })); }
 const same = (a, b) => a.id === b.id && a.at === b.at && a.newTitle === b.newTitle;
 let running = null;   // 一次只送一轮，免得同一个改名送两次
 export async function flushRenames(db) {
