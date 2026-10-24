@@ -53,7 +53,7 @@
         member = await gate.findByPhone(phone);
         if (!member) return stepFind(phone);
         gate.setMe(member);
-        if ((member.areas || []).length) stepPin(); else done([]);
+        if ((member.areas || []).length || member.master) stepPin(); else done([]);
       } catch (x) { busy(b, false, '登录'); err('连不上，检查一下网络再试。'); console.error(x); }
     });
     box.querySelector('[data-guest]').addEventListener('click', () => {
@@ -159,7 +159,7 @@
           member = await gate.register(m, { phone: ctx.phone, name: ctx.name, fullName: ctx.fullName, gender: g, voiceSelf: v, rename: ctx.rename });
           roster = null;
           gate.setMe(member);
-          if ((member.areas || []).length) stepPin(); else done([], true);
+          if ((member.areas || []).length || member.master) stepPin(); else done([], true);
         } catch (x) {
           busy(e.target, false, '完成注册');
           if (x.code === 'name-taken') return err(`「${m.name}」刚刚已经用 …${x.tail || ''} 登记了。不是你的话请跟 Ronald 说。`);
@@ -174,7 +174,7 @@
   // ② 有开后台的：输 PIN（第一次设 PIN）
   function stepPin() {
     const first = !member.hasPin;
-    const areas = member.areas.map(a => LABEL[a]).filter(Boolean);
+    const areas = member.master ? ['最高权限（全部）'] : (member.areas || []).map(a => LABEL[a]).filter(Boolean);
     shell(`
       <div class="text-white font-semibold text-base">👋 ${esc(member.name)}</div>
       <div class="text-zinc-400">你有开后台：<span class="text-zinc-200">${esc(areas.join('、'))}</span>。${first ? '第一次要<b class="text-white">自己设一个 4 位数 PIN</b>，以后进后台用。' : '输入你的 4 位数 PIN。'}</div>
@@ -197,7 +197,7 @@
         const got = first ? await gate.memberSetPin(member, pin) : await gate.memberUnlock(member, pin);
         if (!got) { busy(b, false, '进去'); e.target.pin.value = ''; return err('PIN 不对'); }
         done(got);
-      } catch (x) { busy(b, false, first ? '设好了' : '进去'); err('连不上，检查一下网络再试。'); console.error(x); }
+      } catch (x) { busy(b, false, first ? '设好了' : '进去'); err(x.code === 'locked' ? 'PIN 输错太多次，锁住了，15 分钟后再试。' : '连不上，检查一下网络再试。'); console.error(x); }
     });
     box.querySelector('[data-skip]').addEventListener('click', () => done([]));
   }

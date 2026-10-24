@@ -141,10 +141,13 @@
     } catch { /* 没关系 */ }
     queueAuth();
   }
-  // 后台 PIN：拿去登录服务对，对了就把这位团员开的区记在这部手机（最高权限只给 Ronald 的密码，不经 PIN）
+  // 后台 PIN：拿去登录服务对，对了就把这位团员开的区记在这部手机（密码管理勾了「最高权限」的人，PIN 也开最高权限）
+  // 连错 5 次会锁 15 分钟 → 丢错 code 'locked'
   async function memberUnlock(m, pin) {
     const h = await pinHash(m.id, pin);
-    const a = (await callLogin('check', { pins: [{ m: m.id, h }] })).j.pins?.[0];
+    const { j } = await callLogin('check', { pins: [{ m: m.id, h }] });
+    const a = j.pins?.[0];
+    if (!a && j.locked) throw Object.assign(new Error('PIN 锁住了'), { code: 'locked' });
     if (!a) return null;
     write(read().filter(x => x.m !== m.id).concat({ m: m.id, h, areas: a }));
     return a;

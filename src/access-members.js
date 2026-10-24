@@ -1,7 +1,7 @@
 // 密码管理页下半部：团员权限（电话登录）
 // members/{id}：phoneTail（电话最后 4 码，有 = 登记了电话）、areas（开哪几区）、hasPin（他设了 4 位数 PIN）
 // 电话、清 PIN 经登录服务（/api/login）改，这页看不到打乱过的电话和 PIN
-// 最高权限（密码管理）不开给电话登录，只有 Ronald 的密码有
+// 「👑 最高权限」：他的 PIN 也开全部（含密码管理）；这个藏在 secrets，经登录服务改
 import { collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 
@@ -12,10 +12,12 @@ const AREAS = gate.AREAS;
 const LABEL = Object.fromEntries(AREAS.map(a => [a.key, a.label]));
 
 let members = [];
+let masters = new Set();  // PIN 也开最高权限的团员 id
 const open = new Set();   // 展开勾选的人
 
 async function load() {
-  const snap = await getDocs(collection(db, 'members'));
+  const [snap, k] = await Promise.all([getDocs(collection(db, 'members')), gate.staffCall('keys').catch(() => null)]);
+  masters = new Set(k?.j?.masters || []);
   members = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.active === false) - (b.active === false) || (b.areas?.length || 0) - (a.areas?.length || 0) || a.name.localeCompare(b.name, 'zh'));
   render();
@@ -31,7 +33,7 @@ function render() {
     return `<div class="px-3.5 py-2.5 ${m.active === false ? 'opacity-50' : ''}">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <div class="flex-1 min-w-[7rem]">
-          <span class="font-semibold">${esc(m.name)}</span>
+          <span class="font-semibold">${esc(m.name)}</span>${masters.has(m.id) ? ' <span class="text-xs text-amber-700">👑 最高权限</span>' : ''}
           ${m.fullName && m.fullName !== m.name ? `<span class="text-xs text-slate-400">${esc(m.fullName)}</span>` : ''}
         </div>
         <button data-phone="${m.id}" class="text-xs px-2 py-1 rounded-lg ${m.phoneTail ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-700'} hover:bg-slate-200">📱 ${m.phoneTail ? `…${esc(m.phoneTail || '')}` : '还没电话'}</button>
@@ -45,6 +47,10 @@ function render() {
             <span><span class="block">${esc(a.label)}</span><span class="block text-[11px] text-slate-400">${esc(a.sub)}</span></span>
           </label>`).join('')}
         </div>
+        <label class="flex items-center gap-2 mt-1.5 px-2.5 py-1.5 rounded-lg border ${masters.has(m.id) ? 'border-amber-300 bg-amber-50' : 'border-slate-200'} cursor-pointer">
+          <input type="checkbox" data-master="${m.id}" ${masters.has(m.id) ? 'checked' : ''} class="w-4 h-4">
+          <span><span class="block">👑 最高权限</span><span class="block text-[11px] text-slate-400">他用电话＋PIN 登录就全部都开，包括这一页（密码管理）。只给你自己</span></span>
+        </label>
         <div class="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-500">
           ${m.hasPin || m.pinHash ? `PIN 已设 <button data-clearpin="${m.id}" class="text-red-500 hover:underline">清掉 PIN（他忘了的话）</button>` : '还没设 PIN（他有开后台的话，第一次登录会自己设）'}
           ${!m.phoneTail && areas.length ? '<span class="text-amber-700">⚠ 还没电话，他登录不了</span>' : ''}
@@ -69,6 +75,17 @@ async function staff(action, body, msg) {
 
 $('m-q').addEventListener('input', render);
 $('m-list').addEventListener('change', async e => {
+  const x = e.target.closest('input[data-master]');
+  if (x) {
+    const m = members.find(y => y.id === x.dataset.master);
+    if (x.checked && !confirm(`让 ${m.name} 用电话＋PIN 登录就有最高权限（什么都能改，包括密码管理）？`)) { x.checked = false; return; }
+    try {
+      await staff('setMaster', { id: m.id, on: x.checked }, x.checked ? `${m.name} 有最高权限了` : `${m.name} 的最高权限拿掉了`);
+      x.checked ? masters.add(m.id) : masters.delete(m.id);
+      render();
+    } catch (err) { console.error(err); alert('保存失败：' + (err.code || err.message)); load(); }
+    return;
+  }
   const i = e.target.closest('input[data-m]'); if (!i) return;
   const m = members.find(x => x.id === i.dataset.m);
   const set = new Set(m.areas || []);

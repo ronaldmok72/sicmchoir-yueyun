@@ -8,10 +8,11 @@
 //   action 'find'     { phoneHash } → 名单上那一位（不含打乱过的电话／PIN，有 hasPin）；找不到 → 404
 //   action 'register' { id（名单上的那一位，新团员不用）, info } → 注册好的那一位
 //   action 'setPin'   { member, h } → 第一次设 PIN（要电话对得上、还没设过）→ { areas }
-//   后台的事：keys / saveKeys / setPhone / clearPin / mergeSecrets / migrate（要带证明，见下面）
+//   后台的事：keys / saveKeys / setPhone / clearPin / setMaster / mergeSecrets / migrate（要带证明，见下面）
 //
 // 打乱过的电话、PIN、密码表都藏在 secrets（资料库规则不给任何手机读写，只有这里的服务器钥匙碰得到）：
-//   secrets/m_{团员id} = { phoneHash, pinHash }　secrets/access = { json: 密码表 }
+//   secrets/m_{团员id} = { phoneHash, pinHash, master（他的 PIN 也开最高权限）, pinFails, pinLockUntil }　secrets/access = { json: 密码表 }
+//   PIN 连错 5 次 → 锁 15 分钟（PIN 只有 4 位数，不锁的话可以一个个试）
 //   团员名单上只留 phoneTail（电话最后 4 码）、hasPin（设了 PIN）
 //   还没搬（migrate）之前，members / config/access 上的旧资料照样认
 // GET → { configured: true/false }（看钥匙放好了没有）
@@ -63,10 +64,12 @@ const getDoc = async (sa, path) => { const j = await call(sa, `${API}/${path}`);
 const idOf = d => d.name.split('/').pop();
 const secPath = id => 'secrets/m_' + encodeURIComponent(id);
 // 名单上的一位，加上藏起来的电话／PIN；没有这个人 → null
+// master 只认藏起来的那一份（名单上的谁都可能被有团员名单权限的人改到）
 async function member(sa, id) {
   const [m, s] = await Promise.all([getDoc(sa, 'members/' + encodeURIComponent(id)), getDoc(sa, secPath(id))]);
-  return m && { id, ...m, ...(s || {}) };
+  return m && { id, ...m, ...(s || {}), master: !!s?.master };
 }
+const PIN_TRIES = 5, PIN_LOCK = 15 * 60000;
 async function firstWith(sa, coll, h) {
   const j = await call(sa, `${API}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery: {
     from: [{ collectionId: coll }], where: { fieldFilter: { field: { fieldPath: 'phoneHash' }, op: 'EQUAL', value: { stringValue: h } } }, limit: 1 } }) });
@@ -98,7 +101,7 @@ const str = (x, n = 200) => typeof x === 'string' && x.length <= n ? x : '';
 async function verify(sa, body) {
   const keys = (Array.isArray(body.keys) ? body.keys : []).map(h => str(h, 100)).slice(0, 10);
   const pins = (Array.isArray(body.pins) ? body.pins : []).slice(0, 5).map(p => ({ m: str(p?.m), h: str(p?.h, 100) }));
-  const out = { keys: [], pins: [], member: null, areas: new Set() };
+  const out = { keys: [], pins: [], member: null, areas: new Set(), locked: false };
 
   // 1. 后台密码（密码管理页设的）
   if (keys.length) {
@@ -114,11 +117,17 @@ async function verify(sa, body) {
     const doc = await member(sa, m.id);
     if (doc && doc.phoneHash && doc.phoneHash === m.phoneHash) out.member = m.id;
   }
-  // 3. 有开后台的团员：PIN，开的区照名单上的 areas
+  // 3. 有开后台的团员：PIN，开的区照名单上的 areas；密码管理那边勾了「最高权限」的人（Ronald）全部都开
   for (const p of pins) {
     const doc = p.m && p.h ? await member(sa, p.m) : null;
-    // 「密码管理」只给 Ronald 的总密码，不经 PIN（跟 App 一样）
-    const a = doc && doc.pinHash && doc.pinHash === p.h ? (doc.areas || []).filter(a => ALL.includes(a) && a !== 'access') : [];
+    if (!doc || !doc.pinHash) { out.pins.push(null); continue; }
+    if (Number(doc.pinLockUntil || 0) > Date.now()) { out.locked = true; out.pins.push(null); continue; }
+    const ok = doc.pinHash === p.h, fails = Number(doc.pinFails || 0);   // 存进去的数字是字串
+    if (!ok) {
+      await patch(sa, secPath(p.m), fails + 1 >= PIN_TRIES ? { pinFails: 0, pinLockUntil: Date.now() + PIN_LOCK } : { pinFails: fails + 1 });
+      if (fails + 1 >= PIN_TRIES) out.locked = true;
+    } else if (fails) await patch(sa, secPath(p.m), { pinFails: 0 });
+    const a = ok ? (doc.master ? ALL : (doc.areas || []).filter(a => ALL.includes(a) && a !== 'access')) : [];
     out.pins.push(a.length ? a : null);
   }
   [...out.keys, ...out.pins].forEach(a => (a || []).forEach(x => out.areas.add(x)));
@@ -145,7 +154,7 @@ const ACTIONS = {
   },
   async check(sa, body, res) {
     const v = await verify(sa, body);
-    return res.status(200).end(JSON.stringify({ keys: v.keys, pins: v.pins, member: !!v.member }));
+    return res.status(200).end(JSON.stringify({ keys: v.keys, pins: v.pins, member: !!v.member, locked: v.locked }));
   },
   async find(sa, body, res) {
     const h = str(body.phoneHash, 100);
@@ -191,14 +200,25 @@ const ACTIONS = {
     if (cur.pinHash) return res.status(409).end(JSON.stringify({ code: 'pin-set' }));
     await patch(sa, secPath(v.member), { pinHash: h });
     await patch(sa, 'members/' + encodeURIComponent(v.member), { hasPin: true });
-    return res.status(200).end(JSON.stringify({ areas: (cur.areas || []).filter(a => ALL.includes(a) && a !== 'access') }));
+    return res.status(200).end(JSON.stringify({ areas: cur.master ? ALL : (cur.areas || []).filter(a => ALL.includes(a) && a !== 'access') }));
   },
 
   // ── 下面这些要带这部手机的密码／PIN／电话（keys / pins / member）证明是谁 ──
   // 密码管理：拿密码表（不含打乱过的密码）；还没设过 → keys: null
   async keys(sa, body, res) {
     if (!(await verify(sa, body)).areas.has('access')) return send(res, 401);
-    return send(res, 200, { keys: strip(await accessList(sa)) });
+    // 也回哪几位团员的 PIN 开了最高权限（这个藏在 secrets，网页自己看不到）
+    const j = await call(sa, `${API}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery: {
+      from: [{ collectionId: 'secrets' }], where: { fieldFilter: { field: { fieldPath: 'master' }, op: 'EQUAL', value: { booleanValue: true } } } } }) });
+    const masters = (j || []).filter(x => x.document).map(x => decodeURIComponent(idOf(x.document)).replace(/^m_/, ''));
+    return send(res, 200, { keys: strip(await accessList(sa)), masters });
+  },
+  // 团员的 PIN 也开最高权限（只有最高权限可以改）；on = false 拿掉
+  async setMaster(sa, body, res) {
+    if (!(await verify(sa, body)).areas.has('access') || !str(body.id)) return send(res, 401);
+    if (!(await member(sa, body.id))) return send(res, 404);
+    await patch(sa, secPath(body.id), body.on ? { master: true } : {}, body.on ? [] : ['master']);
+    return send(res, 200);
   },
   // 密码管理：存整张密码表。list：[{ id, name, areas, master, hash（新的或换过的才带）}]，没带 hash 的照旧
   async saveKeys(sa, body, res) {
