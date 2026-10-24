@@ -52,16 +52,25 @@ function jwt(sa, payload) {
   return `${head}.${body}.${sig}`;
 }
 
-// 用服务器钥匙读写资料库（不受锁影响）
-// 走 Firebase 服务器 SDK（gRPC）。以前走 REST，10/24 起 REST 一直回 429，SDK 照样读得到
-let fsdb = null, Del = null;
+// 读写资料库：登录服务用自己发的「登录服务」通行证（svc），走跟 App 一样的 Firebase SDK
+// 10/24 起资料库的 REST 和服务器 SDK（firebase-admin）一直回 429，只有 App 用的这条路读得到
+// 资料库规则要有 secrets 给 svc 读写那一段（firestore.rules）
+const CONFIG = { apiKey: 'AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U', authDomain: `${PROJECT}.firebaseapp.com`, projectId: PROJECT };
+const F = require('firebase/firestore');
+let ready = null;
 function store(sa) {
-  if (fsdb) return fsdb;
-  const { initializeApp, getApps, cert } = require('firebase-admin/app');
-  const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-  const app = getApps()[0] || initializeApp({ credential: cert(sa), projectId: PROJECT });
-  Del = FieldValue.delete();
-  return (fsdb = getFirestore(app));
+  return ready || (ready = (async () => {
+    const { initializeApp } = require('firebase/app');
+    const { getAuth, signInWithCustomToken } = require('firebase/auth');
+    const app = initializeApp(CONFIG, 'login');
+    const now = Math.floor(Date.now() / 1000);
+    await signInWithCustomToken(getAuth(app), jwt(sa, {
+      iss: sa.client_email, sub: sa.client_email,
+      aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
+      iat: now, exp: now + 3600, uid: 'svc_login', claims: { svc: true, areas: ['access'], member: '' },
+    }));
+    return F.getFirestore(app);
+  })().catch(e => { ready = null; throw e; }));
 }
 // 资料库回来的 → 普通物件（时间换成字串，跟以前 REST 读回来的一样）
 const val = v => v && typeof v.toDate === 'function' ? v.toDate().toISOString() : Array.isArray(v) ? v.map(val)
@@ -69,8 +78,9 @@ const val = v => v && typeof v.toDate === 'function' ? v.toDate().toISOString() 
 const plain = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, val(v)]));
 // 存进去的：是非照存，其他一律存成字串（跟以前一样，pinFails／pinLockUntil 读的时候 Number()）
 const fields = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'boolean' ? v : String(v)]));
-const ref = (sa, path) => store(sa).doc(path.split('/').map(decodeURIComponent).join('/'));
-const getDoc = async (sa, path) => { const d = await ref(sa, path).get(); return d.exists ? plain(d.data()) : null; };
+const ref = async (sa, path) => F.doc(await store(sa), ...path.split('/').map(decodeURIComponent));
+const coll = async (sa, c) => F.collection(await store(sa), c);
+const getDoc = async (sa, path) => { const d = await F.getDoc(await ref(sa, path)); return d.exists() ? plain(d.data()) : null; };
 const secPath = id => 'secrets/m_' + encodeURIComponent(id);
 // 名单上的一位，加上藏起来的电话／PIN；没有这个人 → null
 // master 只认藏起来的那一份（名单上的谁都可能被有团员名单权限的人改到）；Ronald 本人一直都是
@@ -80,8 +90,8 @@ async function member(sa, id) {
   return m && { id, ...m, ...(s || {}), master: !!s?.master || id === OWNER };
 }
 const PIN_TRIES = 5, PIN_LOCK = 15 * 60000;
-async function firstWith(sa, coll, h) {
-  const q = await store(sa).collection(coll).where('phoneHash', '==', h).limit(1).get();
+async function firstWith(sa, c, h) {
+  const q = await F.getDocs(F.query(await coll(sa, c), F.where('phoneHash', '==', h), F.limit(1)));
   return q.empty ? null : q.docs[0].id;
 }
 // 用打乱过的电话找团员（先找藏起来的，再找还没搬的旧资料）
@@ -91,7 +101,7 @@ async function byPhone(sa, h) {
   return id ? member(sa, id) : null;
 }
 // 改几格（o），drop 里的那几格拿掉；只动这些，其他照旧
-const patch = (sa, path, o, drop = []) => ref(sa, path).set({ ...fields(o), ...Object.fromEntries(drop.map(k => [k, Del])) }, { merge: true });
+const patch = async (sa, path, o, drop = []) => F.setDoc(await ref(sa, path), { ...fields(o), ...Object.fromEntries(drop.map(k => [k, F.deleteField()])) }, { merge: true });
 const send = (res, code, o) => res.status(code).end(JSON.stringify(o || {}));
 const HEX = /^[0-9a-f]{64}$/;
 // 密码表（secrets/access，还没搬的话 config/access）；还没设过 → null。给手机看的拿掉打乱过的密码
@@ -205,7 +215,7 @@ const ACTIONS = {
     const name = str(i.name, 80).trim();
     if (!name) return res.status(400).end(JSON.stringify({ error: '名字不能空' }));
     Object.assign(f, { name, fullName: str(i.fullName, 120).trim(), gender, active: true, selfJoined: true, createdAt: now });
-    const d = await store(sa).collection('members').add(fields(f));
+    const d = await F.addDoc(await coll(sa, 'members'), fields(f));
     await patch(sa, secPath(d.id), { phoneHash: h });
     return res.status(200).end(JSON.stringify(pub({ id: d.id, ...f })));
   },
@@ -226,7 +236,7 @@ const ACTIONS = {
   async keys(sa, body, res) {
     if (!(await verify(sa, body)).areas.has('access')) return send(res, 401);
     // 也回哪几位团员的 PIN 开了最高权限（这个藏在 secrets，网页自己看不到）
-    const q = await store(sa).collection('secrets').where('master', '==', true).get();
+    const q = await F.getDocs(F.query(await coll(sa, 'secrets'), F.where('master', '==', true)));
     const masters = [...new Set([OWNER, ...q.docs.map(d => d.id.replace(/^m_/, ''))])];
     return send(res, 200, { keys: strip(await accessList(sa)), masters });
   },
@@ -299,7 +309,7 @@ const ACTIONS = {
   async migrate(sa, body, res) {
     if (!(await verify(sa, body)).areas.has('access')) return send(res, 401);
     let moved = 0;
-    for (const d of (await store(sa).collection('members').get()).docs) {
+    for (const d of (await F.getDocs(await coll(sa, 'members'))).docs) {
       const m = plain(d.data()), id = d.id;
       if (!m.phoneHash && !m.pinHash) continue;
       const s = {};
@@ -312,7 +322,7 @@ const ACTIONS = {
     const old = await getDoc(sa, 'config/access');
     if (old) {
       if (!await getDoc(sa, 'secrets/access')) await patch(sa, 'secrets/access', { json: old.json || '[]', updatedAt: new Date().toISOString() });
-      await ref(sa, 'config/access').delete();
+      await F.deleteDoc(await ref(sa, 'config/access'));
     }
     return send(res, 200, { moved, access: !!old });
   },

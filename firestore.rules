@@ -22,6 +22,9 @@ service cloud.firestore {
       allow write: if coll != 'secrets' && can([]);
     }
 
+    // secrets 只给登录服务（/api/login 自己发的 svc 通行证，只有服务器钥匙发得出）读写；App 的手机谁都碰不到
+    match /secrets/{id}       { allow read, write: if signedIn() && request.auth.token.get('svc', false) == true; }
+
     match /setlists/{id}      { allow write: if can(['admin', 'mass', 'conduct']); }
     match /custom_songs/{id}  { allow write: if can(['admin', 'mass', 'conduct']); }
     match /song_renames/{id}  { allow write: if can(['admin', 'conduct']); }
