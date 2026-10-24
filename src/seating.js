@@ -605,6 +605,13 @@ $('act-absent').addEventListener('click', () => {
   if (!cur.absent.includes(name)) cur.absent.push(name);
   changed();
 });
+// 选了人之后点其他地方（不是座位、不是还没排的名单、不是上面那条动作栏）= 完成，取消选取；免得之后点到座位又换位
+const KEEP_SEL = '[data-seat],[data-front],[data-clear-row],[data-tray],[data-absent],[data-pick],[data-pick-g],[data-pick-close],#action-bar,#tray,#seat-picker';
+document.addEventListener('click', e => {
+  if (!sel || e.target.closest(KEEP_SEL)) return;
+  sel = null;
+  render();
+});
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if ($('seat-picker')) return closePicker();
