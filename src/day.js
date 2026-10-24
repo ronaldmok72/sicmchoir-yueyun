@@ -555,10 +555,10 @@ $('rsvp').addEventListener('click', async e => {
   b.disabled = true;
   try {
     if (undo) {
-      await updateDoc(doc(db, 'rsvp', id), { [`votes.${meM.id}`]: deleteField(), updatedAt: new Date().toISOString() });
+      await window.sicStaff.withAuth(() => updateDoc(doc(db, 'rsvp', id), { [`votes.${meM.id}`]: deleteField(), updatedAt: new Date().toISOString() }));
       delete cur.votes[meM.id];
     } else {
-      await setDoc(doc(db, 'rsvp', id), { date: x.date, kind: x.kind, votes: { [meM.id]: v }, names: { [meM.id]: meM.name }, updatedAt: new Date().toISOString() }, { merge: true });
+      await window.sicStaff.withAuth(() => setDoc(doc(db, 'rsvp', id), { date: x.date, kind: x.kind, votes: { [meM.id]: v }, names: { [meM.id]: meM.name }, updatedAt: new Date().toISOString() }, { merge: true }));
       cur.votes[meM.id] = v; cur.names[meM.id] = meM.name;
     }
   } catch (err) { console.error(err); alert('没存到，检查一下网络。'); }

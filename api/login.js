@@ -108,7 +108,7 @@ async function verify(sa, body) {
   const m = body.member;
   if (str(m?.id) && str(m?.phoneHash, 100)) {
     const doc = await member(sa, m.id);
-    if (doc && doc.phoneHash && doc.phoneHash === m.phoneHash) out.member = m.id;
+    if (doc && doc.phoneHash && doc.phoneHash === m.phoneHash) { out.member = m.id; out.memberName = doc.name || ''; }
   }
   // 2. 后台密码（密码管理页设的）：一定要先用电话登录（上面对得上），才查得到是谁改的；没登录 → 全部不算
   if (keys.length && !out.member) out.keys = keys.map(() => null);
@@ -150,6 +150,10 @@ function token(sa, areas, member) {
 const ACTIONS = {
   async token(sa, body, res) {
     const v = await verify(sa, body);
+    // 保持登录：电话对得上 → 存一个 cookie 记住是谁（iPhone Safari 一阵子没开会清掉 localStorage，但服务器发的 cookie 会留着）
+    // 电话对不上 → 把这个 cookie 也拿掉
+    if (v.member) res.setHeader('Set-Cookie', `sicMe=${encodeURIComponent(JSON.stringify({ id: v.member, name: v.memberName, ph: body.member.phoneHash }))}; Path=/; Max-Age=34560000; Secure; SameSite=Lax`);
+    else if (body.member) res.setHeader('Set-Cookie', 'sicMe=; Path=/; Max-Age=0; Secure; SameSite=Lax');
     if (!v.areas.size && !v.member) return res.status(401).end(JSON.stringify({ error: '密码／电话对不上' }));
     const t = token(sa, v.areas, v.member);
     return res.status(200).end(JSON.stringify({ ...t, areas: [...v.areas], member: v.member }));

@@ -97,7 +97,7 @@ f.addEventListener('submit', async e => {
       if (status !== 200) throw new Error(status === 401 ? '要先用电话重新登录一次' : '电话没存到 ' + status);
       p.phoneHash = ph.phoneHash;
     }
-    await updateDoc(doc(db, 'members', me.id), { name, fullName, updatedAt: p.updatedAt });
+    await gate.withAuth(() => updateDoc(doc(db, 'members', me.id), { name, fullName, updatedAt: p.updatedAt }));
     // 职务表、座位表里的名字也换掉；改不到（资料库锁着）→ 记下来，管理员打开团员名单时自动换
     if (name !== me.name) await renameEverywhere(db, me.name, name).catch(async x => {
       if (x.code !== 'permission-denied') throw x;

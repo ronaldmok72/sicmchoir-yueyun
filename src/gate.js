@@ -185,6 +185,7 @@
     try {
       localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName'); localStorage.removeItem(KEY);
     } catch { /* 没关系 */ }
+    document.cookie = 'sicMe=; Path=/; Max-Age=0; Secure; SameSite=Lax';   // 保持登录的 cookie 也拿掉
     queueAuth();
   }
 
@@ -295,6 +296,26 @@
     clearTimeout(authT);
     authT = setTimeout(() => syncAuth().catch(err => console.warn('通行证', err)), 300);
   }
+  // 要写资料之前：马上把通行证领好（不等 queueAuth 那 0.3 秒）。刚登录完就签到，以前会因为通行证还没到被挡（permission-denied）
+  // force = 一天内领过也重领一次（被挡的时候用）；回：现在有没有通行证
+  async function ensureAuth(force) {
+    clearTimeout(authT);
+    if (force) lsSet(AUTH_SIG, null);
+    await syncAuth();
+    if (!lsGet(AUTH_SIG)) return false;
+    const F = await authSdk();
+    await F.auth.authStateReady();
+    return !!F.auth.currentUser;
+  }
+  // 团员写资料：先领好通行证再写；还是被挡 → 重领一次再试
+  async function withAuth(fn) {
+    await ensureAuth().catch(err => console.warn('通行证', err));
+    try { return await fn(); } catch (err) {
+      if (err.code !== 'permission-denied') throw err;
+      await ensureAuth(true);
+      return fn();
+    }
+  }
   // 现在的通行证（给要用 REST 写资料的地方加在 Authorization 上）；没有 → null
   async function idToken() {
     if (!lsGet(AUTH_SIG)) return null;
@@ -356,10 +377,23 @@
   }
 
   window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, staffCall, loggedIn, askLogin,
-    cloudUsage, cloudBanner, idToken, syncAuth,
+    cloudUsage, cloudBanner, idToken, syncAuth, ensureAuth, withAuth,
     me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById, syncMe };
 
   try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
+
+  // 保持登录：这部手机把 localStorage 清掉了（iPhone Safari 一阵子没开会清）→ 用登录服务存的 cookie 找回是谁，不用再打电话
+  (function restoreMe() {
+    if (me()) return;
+    const c = document.cookie.match(/(?:^|; )sicMe=([^;]*)/);
+    if (!c) return;
+    try {
+      const v = JSON.parse(decodeURIComponent(c[1]));
+      if (!v?.id || !v.ph) return;
+      localStorage.setItem(ME_KEY, JSON.stringify({ id: v.id, name: v.name || '', ph: v.ph }));
+      if (v.name) localStorage.setItem('sicMyName', v.name);
+    } catch { /* 读不到就算了，照常登录 */ }
+  })();
 
   const tag = document.currentScript;
   const need = tag && tag.hasAttribute('data-require') ? (tag.getAttribute('data-require') || '') : null;

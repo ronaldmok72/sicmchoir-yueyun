@@ -35,7 +35,9 @@ async function run() {
   if (await tokenOk(e.qr, key)) okAt ||= Date.now();
   if (!okAt || Date.now() - okAt > MIN_GAP) return show('⌛', 'QR 过期了', '现场的 QR 每 30 秒会换。<br>请再扫一次屏幕上的 QR。', 'amber');
 
-  const who = gate?.me();
+  let who = gate?.me();
+  // 很久以前登录的手机没记打乱过的电话 → 领不到通行证，当作没登录，请他用电话再登录一次
+  if (who && !who.ph) { gate.logout(); who = null; }
   if (!who) {
     show('📱', '先用电话登录', '登录一次，以后用这部手机扫就会直接签到。<br><span class="text-xs text-slate-400">iPhone 用相机扫会开 Safari，跟桌面上的 App 是分开的，所以 Safari 也要登录一次。<br>不想再登录：打开 App，按下面的「📷 扫码签到」。</span><br><button id="go" class="mt-3 w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3">用电话号码登录</button>');
     $('go').addEventListener('click', () => window.sicLogin?.open());
@@ -54,13 +56,23 @@ async function run() {
   const mark = markFor(next, e.start, e.end);
   const pts = scanScore(next, e.start, e.end);
   const late = lateOf(next, e.start), early = earlyOf(next, e.end);
-  await updateDoc(ref, {
-    [`times.${who.id}`]: next,
-    [`marks.${who.id}`]: mark,
-    [`pts.${who.id}`]: pts,
-    [`names.${who.id}`]: who.name,
-    updatedAt: now.toISOString(),
-  });
+  try {
+    await gate.withAuth(() => updateDoc(ref, {
+      [`times.${who.id}`]: next,
+      [`marks.${who.id}`]: mark,
+      [`pts.${who.id}`]: pts,
+      [`names.${who.id}`]: who.name,
+      updatedAt: now.toISOString(),
+    }));
+  } catch (err) {
+    if (err.code !== 'permission-denied') throw err;
+    // 重领通行证也不行：多数是电话换过了／名单上的人被合并了 → 请他重新登录
+    console.error(err);
+    gate.logout();
+    show('📱', '要重新登录一次', '这部手机记的登录过期了。<br>用电话号码再登录一次，就会马上签到。<br><button id="go" class="mt-3 w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3">用电话号码登录</button>', 'amber');
+    $('go').addEventListener('click', () => window.sicLogin?.open());
+    return;
+  }
 
   if (kind === 'in') {
     show(late ? '⏰' : '✅', `${esc(who.name)}，签到好了`,
