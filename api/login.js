@@ -27,6 +27,25 @@ const BOOT = sha('sicmchoir|sic');
 const SECRET = ['phoneHash', 'pinHash'];
 
 const b64url = x => Buffer.from(typeof x === 'string' ? x : JSON.stringify(x)).toString('base64url');
+// 团员票（ticket）：电话对得上一次之后发给那部手机，60 天有效，每次对得上就换新的
+// 资料库读不到（额度用完、429）的时候，凭票照样发「团员」通行证（可以签到、按会来）；后台的区还是要资料库对得上才开
+const TICKET_DAYS = 60;
+const hmac = (sa, x) => crypto.createHmac('sha256', sa.private_key).update(x).digest('base64url');
+function ticketFor(sa, id, ph) {
+  const body = b64url({ id, ph, exp: Date.now() + TICKET_DAYS * 864e5 });
+  return `${body}.${hmac(sa, body)}`;
+}
+function ticketOk(sa, t, m) {
+  const [body, sig] = String(t || '').split('.');
+  if (!body || !sig || sig.length !== 43) return false;
+  const want = hmac(sa, body);
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return false;
+  try {
+    const v = JSON.parse(Buffer.from(body, 'base64url').toString());
+    return v.exp > Date.now() && v.id === m?.id && v.ph === m?.phoneHash;
+  } catch { return false; }
+}
+
 function jwt(sa, payload) {
   const head = b64url({ alg: 'RS256', typ: 'JWT' });
   const body = b64url(payload);
@@ -149,14 +168,20 @@ function token(sa, areas, member) {
 
 const ACTIONS = {
   async token(sa, body, res) {
-    const v = await verify(sa, body);
+    let v;
+    try { v = await verify(sa, body); } catch (e) {
+      // 资料库读不到：带着有效团员票的，先发只有团员身份的通行证（不开后台）
+      if (!ticketOk(sa, body.ticket, body.member)) throw e;
+      const t = token(sa, new Set(), body.member.id);
+      return res.status(200).end(JSON.stringify({ ...t, areas: [], member: body.member.id, ticket: body.ticket, degraded: true }));
+    }
     // 保持登录：电话对得上 → 存一个 cookie 记住是谁（iPhone Safari 一阵子没开会清掉 localStorage，但服务器发的 cookie 会留着）
     // 电话对不上 → 把这个 cookie 也拿掉
     if (v.member) res.setHeader('Set-Cookie', `sicMe=${encodeURIComponent(JSON.stringify({ id: v.member, name: v.memberName, ph: body.member.phoneHash }))}; Path=/; Max-Age=34560000; Secure; SameSite=Lax`);
     else if (body.member) res.setHeader('Set-Cookie', 'sicMe=; Path=/; Max-Age=0; Secure; SameSite=Lax');
     if (!v.areas.size && !v.member) return res.status(401).end(JSON.stringify({ error: '密码／电话对不上' }));
     const t = token(sa, v.areas, v.member);
-    return res.status(200).end(JSON.stringify({ ...t, areas: [...v.areas], member: v.member }));
+    return res.status(200).end(JSON.stringify({ ...t, areas: [...v.areas], member: v.member, ...(v.member ? { ticket: ticketFor(sa, v.member, body.member.phoneHash) } : {}) }));
   },
   async check(sa, body, res) {
     const v = await verify(sa, body);

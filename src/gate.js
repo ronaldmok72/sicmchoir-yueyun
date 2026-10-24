@@ -183,7 +183,7 @@
   // 登出：这部手机什么都不记得了（是谁、PIN、输过的后台密码），锁全部锁回去
   function logout() {
     try {
-      localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName'); localStorage.removeItem(KEY);
+      localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName'); localStorage.removeItem(KEY); localStorage.removeItem('sicTicket');
     } catch { /* 没关系 */ }
     document.cookie = 'sicMe=; Path=/; Max-Age=0; Secure; SameSite=Lax';   // 保持登录的 cookie 也拿掉
     queueAuth();
@@ -272,9 +272,11 @@
   }
   // 后台的事（密码管理、换电话、清 PIN、合并团员）交给登录服务做，带上证明
   const staffCall = (action, body) => callLogin(action, { ...proof(), ...body });
-  async function syncAuth() {
+  // 团员票：登录服务发的，资料库读不到时凭票也领得到团员通行证（不用每次都去资料库对电话）
+  const TICKET = 'sicTicket';
+  async function syncAuth(force) {
     const body = proof();
-    const sig = JSON.stringify(body);
+    const sig = JSON.stringify(body);   // 票不算在里面（票每天换新，不然每次都以为变了）
     const empty = !body.keys.length && !body.pins.length && !body.member;
     const old = lsGet(AUTH_SIG);
     if (empty && !old) return;                       // 没登录过，不用载入 Firebase 登录
@@ -283,13 +285,16 @@
     const user = F.auth.currentUser;
     if (empty) { if (user) await F.signOut(F.auth); lsSet(AUTH_SIG, null); return; }
     const ak = [...areasNow()].sort().join();
-    if (user && old && old.sig === sig && old.ak === ak && Date.now() - old.at < 864e5) return;
-    const r = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sig });
+    if (!force && user && old && old.sig === sig && old.ak === ak && Date.now() - old.at < 864e5) return;
+    const ticket = body.member ? lsGet(TICKET) : null;
+    const r = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, ...(ticket ? { ticket } : {}) }) });
     if (r.status === 401) { if (user) await F.signOut(F.auth); lsSet(AUTH_SIG, null); return; }
     if (!r.ok) throw new Error('领不到通行证 ' + r.status);
     const j = await r.json();
     await F.signInWithCustomToken(F.auth, j.token);
-    lsSet(AUTH_SIG, { sig, ak, at: Date.now(), uid: j.uid, areas: j.areas, member: j.member });
+    if (j.ticket) lsSet(TICKET, j.ticket);
+    // 凭票领的（资料库那时读不到）：半小时后再去领一次完整的
+    lsSet(AUTH_SIG, { sig, ak, at: j.degraded ? Date.now() - 864e5 + 30 * 60000 : Date.now(), uid: j.uid, areas: j.areas, member: j.member });
   }
   let authT = null;
   function queueAuth() {
@@ -300,8 +305,8 @@
   // force = 一天内领过也重领一次（被挡的时候用）；回：现在有没有通行证
   async function ensureAuth(force) {
     clearTimeout(authT);
-    if (force) lsSet(AUTH_SIG, null);
-    await syncAuth();
+    // 登录服务出错：手机上原本的通行证照用（Firebase 登录会自己续），不收回
+    await syncAuth(force).catch(err => console.warn('通行证', err));
     if (!lsGet(AUTH_SIG)) return false;
     const F = await authSdk();
     await F.auth.authStateReady();
@@ -309,7 +314,7 @@
   }
   // 团员写资料：先领好通行证再写；还是被挡 → 重领一次再试
   async function withAuth(fn) {
-    await ensureAuth().catch(err => console.warn('通行证', err));
+    await ensureAuth();
     try { return await fn(); } catch (err) {
       if (err.code !== 'permission-denied') throw err;
       await ensureAuth(true);
