@@ -104,19 +104,20 @@ async function verify(sa, body) {
   const pins = (Array.isArray(body.pins) ? body.pins : []).slice(0, 5).map(p => ({ m: str(p?.m), h: str(p?.h, 100) }));
   const out = { keys: [], pins: [], member: null, areas: new Set(), locked: false };
 
-  // 1. 后台密码（密码管理页设的）
-  if (keys.length) {
+  // 1. 团员：电话（phoneHash）要跟名单上的一样
+  const m = body.member;
+  if (str(m?.id) && str(m?.phoneHash, 100)) {
+    const doc = await member(sa, m.id);
+    if (doc && doc.phoneHash && doc.phoneHash === m.phoneHash) out.member = m.id;
+  }
+  // 2. 后台密码（密码管理页设的）：一定要先用电话登录（上面对得上），才查得到是谁改的；没登录 → 全部不算
+  if (keys.length && !out.member) out.keys = keys.map(() => null);
+  else if (keys.length) {
     const list = await accessList(sa);
     out.keys = keys.map(h => {
       const k = list ? list.find(k => h && k.hash === h) : (h === BOOT ? { master: true } : null);
       return k ? (k.master ? ALL : (k.areas || []).filter(a => ALL.includes(a))) : null;
     });
-  }
-  // 2. 团员：电话（phoneHash）要跟名单上的一样
-  const m = body.member;
-  if (str(m?.id) && str(m?.phoneHash, 100)) {
-    const doc = await member(sa, m.id);
-    if (doc && doc.phoneHash && doc.phoneHash === m.phoneHash) out.member = m.id;
   }
   // 3. 有开后台的团员：PIN，开的区照名单上的 areas；密码管理那边勾了「最高权限」的人（Ronald）全部都开
   for (const p of pins) {
@@ -155,7 +156,7 @@ const ACTIONS = {
   },
   async check(sa, body, res) {
     const v = await verify(sa, body);
-    return res.status(200).end(JSON.stringify({ keys: v.keys, pins: v.pins, member: !!v.member, locked: v.locked }));
+    return res.status(200).end(JSON.stringify({ keys: v.keys, pins: v.pins, member: !!v.member, locked: v.locked, needLogin: !v.member && (body.keys || []).length > 0 }));
   },
   async find(sa, body, res) {
     const h = str(body.phoneHash, 100);

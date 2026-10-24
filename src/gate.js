@@ -49,10 +49,16 @@
   }
 
   // 试一个密码：拿去登录服务对（手机看不到密码表），对了就记在这部手机，回传它开的区
+  // 后台密码要先用电话登录才算数（这样改了什么都查得到是谁）；没登录 → 丢错 code 'login'
+  const loggedIn = () => !!me()?.ph;
+  const needLogin = () => Object.assign(new Error('要先用电话登录'), { code: 'login' });
   async function tryPassword(pwd) {
     if (!pwd || !pwd.trim()) return null;
+    if (!loggedIn()) throw needLogin();
     const h = await hash(pwd);
-    const a = (await callLogin('check', { keys: [h] })).j.keys?.[0];
+    const { j } = await callLogin('check', { keys: [h], member: proof().member });
+    if (j.needLogin) throw needLogin();
+    const a = j.keys?.[0];
     if (!a) return null;
     write(read().filter(x => x.h !== h).concat({ h, areas: a }));
     return a;
@@ -61,13 +67,25 @@
   // 要进某一区：这部手机有了就直接进；没有就问密码
   async function unlock(area, msg) {
     if (can(area)) return true;
+    if (!loggedIn()) { askLogin(); return false; }
     const p = prompt(msg || '🔒 后台区，请输入密码：');
     if (p === null) return false;
     let got;
-    try { got = await tryPassword(p); } catch (err) { alert('读不到密码表，检查一下网络。\n' + err.message); return false; }
+    try { got = await tryPassword(p); } catch (err) {
+      if (err.code === 'login') { askLogin(); return false; }
+      alert('读不到密码表，检查一下网络。\n' + err.message); return false;
+    }
     if (!got) { alert('❌ 密码错误'); return false; }
     if (area && !got.includes(area)) { alert('这个密码没有开这一页。要的话请 Ronald 在「密码管理」帮你的密码勾上。'); return false; }
     return true;
+  }
+
+  // 很久以前登录的手机没记打乱过的电话：当作没登录，先清掉让他重新用电话登录
+  function askLogin() {
+    if (me() && !me().ph) logout();
+    const msg = '🔒 要先用电话号码登录，才可以输后台密码。\n（这样谁改了什么都记得到）';
+    if (window.sicLogin) { alert(msg); window.sicLogin.open(); }
+    else if (confirm(msg + '\n\n现在去登录？')) location.href = 'me.html';
   }
 
   // ───────── 团员登录（电话号码）─────────
@@ -176,7 +194,7 @@
     const g = read();
     if (!g.length) return;
     let v;
-    try { v = (await callLogin('check', { keys: g.filter(x => !x.m).map(x => x.h), pins: g.filter(x => x.m).map(x => ({ m: x.m, h: x.h })) })).j; }
+    try { v = (await callLogin('check', { keys: g.filter(x => !x.m).map(x => x.h), pins: g.filter(x => x.m).map(x => ({ m: x.m, h: x.h })), member: proof().member })).j; }
     catch { return; }   // 没网络就先照旧
     let ki = 0, pi = 0;
     const next = g.map(x => { const a = x.m ? v.pins?.[pi++] : v.keys?.[ki++]; return a ? { ...(x.m ? { m: x.m } : {}), h: x.h, areas: a } : null; }).filter(Boolean);
@@ -337,7 +355,7 @@
     if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
   }
 
-  window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, staffCall,
+  window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, staffCall, loggedIn, askLogin,
     cloudUsage, cloudBanner, idToken, syncAuth,
     me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById, syncMe };
 
@@ -352,6 +370,14 @@
   const kick = () => { document.documentElement.style.display = 'none'; location.replace('/'); };
   if (can(need)) {
     refresh().then(g => { if (g && !g.some(x => x.areas.includes(need))) { alert('你的密码已经换了或拿掉了这一页，请重新输入。'); kick(); } });
+  } else if (!loggedIn()) {
+    // 还没用电话登录：先去「我的资料」登录，再回来输密码
+    document.documentElement.style.visibility = 'hidden';
+    setTimeout(() => {
+      if (me() && !me().ph) logout();
+      alert('🔒 要先用电话号码登录，才可以输后台密码。\n（这样谁改了什么都记得到）');
+      location.replace('me.html');
+    }, 0);
   } else {
     document.documentElement.style.visibility = 'hidden';
     setTimeout(async () => {

@@ -17,7 +17,7 @@ let ALL = [];
 $('gate-form').addEventListener('submit', async e => {
   e.preventDefault();
   let areas = null;
-  try { areas = await window.sicStaff?.tryPassword($('gate-pwd').value); } catch (err) { console.error(err); }
+  try { areas = await window.sicStaff?.tryPassword($('gate-pwd').value); } catch (err) { console.error(err); if (err.code === 'login') return window.sicStaff.askLogin(); }
   if (!areas?.includes('quiz')) { $('gate-err').classList.remove('hidden'); return; }
   enter();
 });
