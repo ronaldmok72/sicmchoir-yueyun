@@ -179,11 +179,37 @@ function renderHead() {
   const lit = litDay(date);
   const [y, mo, dd] = date.split('-').map(Number);
   const notes = [masses[date]?.note, duties[date]?.note].filter(Boolean);
+  const noteBtn = canNote() ? `<button id="btn-note" class="${EDIT_BTN} mt-2">✏️ ${notes.length ? '改备注' : '加备注'}</button>` : '';
   $('head').innerHTML = `
     <div class="text-sm text-slate-500">${y} 年 ${mo} 月 ${dd} 日　星期${week(date)}${date === TODAY ? '　<span class="text-indigo-600 font-semibold">今天</span>' : ''}</div>
     <div class="text-lg font-semibold mt-0.5">${onlySpecial(date) ? `💒 婚礼弥撒${specials[date].length > 1 ? ` × ${specials[date].length} 台` : ''}` : esc(titleOf(date))}</div>
     ${onlySpecial(date) ? '' : `<div class="text-xs text-slate-400 mt-0.5">${lit.cycle}年</div>`}
-    ${notes.length ? `<div class="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">📌 ${notes.map(esc).join('<br>📌 ')}</div>` : ''}`;
+    ${notes.length ? `<div class="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">📌 ${notes.map(esc).join('<br>📌 ')}</div>` : ''}
+    ${noteBtn}`;
+  $('btn-note')?.addEventListener('click', editNote);
+}
+
+// 首页直接改这一台的备注（跟排歌页的「备注」同一格），不用进排歌页
+// 已经排了歌 → 存在那一台（masses）；还没排 → 先存在职务表那天（排歌页打开时会自动搬过去）
+const canNote = () => !onlySpecial(date) && (can('mass') || can('duties'));
+async function editNote() {
+  const m = masses[date], du = duties[date];
+  const toMass = !!m && can('mass');   // 只有职务表权限的：改职务表那一份（排歌那份他改不到）
+  const cur = toMass ? [m.note, du?.note].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join('；') : du?.note || '';
+  const v = prompt('这一台的备注（例如：不唱光荣颂；复制歌单文字时会带上）\n空白 = 拿掉备注', cur);
+  if (v === null) return;
+  const note = v.trim(), at = new Date().toISOString();
+  try {
+    if (toMass) {
+      await setDoc(doc(db, 'masses', date), { note, updatedAt: at }, { merge: true });
+      m.note = note;
+      if (du?.note) { await updateDoc(doc(db, 'duties', date), { note: deleteField() }); delete du.note; }
+    } else {
+      await setDoc(doc(db, 'duties', date), { note, updatedAt: at }, { merge: true });
+      (duties[date] ||= {}).note = note;
+    }
+    renderHead();
+  } catch (err) { console.error(err); alert('没存到：' + (err.code || err.message)); }
 }
 
 function renderTodo(isStaff) {
