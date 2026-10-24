@@ -64,10 +64,11 @@ const getDoc = async (sa, path) => { const j = await call(sa, `${API}/${path}`);
 const idOf = d => d.name.split('/').pop();
 const secPath = id => 'secrets/m_' + encodeURIComponent(id);
 // 名单上的一位，加上藏起来的电话／PIN；没有这个人 → null
-// master 只认藏起来的那一份（名单上的谁都可能被有团员名单权限的人改到）
+// master 只认藏起来的那一份（名单上的谁都可能被有团员名单权限的人改到）；Ronald 本人一直都是
+const OWNER = '2nS36onMz8Pn9F9ohTya';   // 团员名单上的 Ronald Mok
 async function member(sa, id) {
   const [m, s] = await Promise.all([getDoc(sa, 'members/' + encodeURIComponent(id)), getDoc(sa, secPath(id))]);
-  return m && { id, ...m, ...(s || {}), master: !!s?.master };
+  return m && { id, ...m, ...(s || {}), master: !!s?.master || id === OWNER };
 }
 const PIN_TRIES = 5, PIN_LOCK = 15 * 60000;
 async function firstWith(sa, coll, h) {
@@ -210,7 +211,7 @@ const ACTIONS = {
     // 也回哪几位团员的 PIN 开了最高权限（这个藏在 secrets，网页自己看不到）
     const j = await call(sa, `${API}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery: {
       from: [{ collectionId: 'secrets' }], where: { fieldFilter: { field: { fieldPath: 'master' }, op: 'EQUAL', value: { booleanValue: true } } } } }) });
-    const masters = (j || []).filter(x => x.document).map(x => decodeURIComponent(idOf(x.document)).replace(/^m_/, ''));
+    const masters = [...new Set([OWNER, ...(j || []).filter(x => x.document).map(x => decodeURIComponent(idOf(x.document)).replace(/^m_/, ''))])];
     return send(res, 200, { keys: strip(await accessList(sa)), masters });
   },
   // 团员的 PIN 也开最高权限（只有最高权限可以改）；on = false 拿掉
