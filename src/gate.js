@@ -180,7 +180,9 @@
     catch { return; }   // 没网络就先照旧
     let ki = 0, pi = 0;
     const next = g.map(x => { const a = x.m ? v.pins?.[pi++] : v.keys?.[ki++]; return a ? { ...(x.m ? { m: x.m } : {}), h: x.h, areas: a } : null; }).filter(Boolean);
+    const changed = JSON.stringify(next) !== JSON.stringify(g);
     write(next);
+    if (changed) queueAuth();   // 开的区变了（例如多了最高权限）：通行证也换新的
     return next;
   }
   // 名字改了（例如 Mok → Ronald Mok）或被合并掉：这部手机记的名字跟着更新；那一笔不在了就请他重新用电话登录
@@ -261,13 +263,14 @@
     await F.auth.authStateReady();
     const user = F.auth.currentUser;
     if (empty) { if (user) await F.signOut(F.auth); lsSet(AUTH_SIG, null); return; }
-    if (user && old && old.sig === sig && Date.now() - old.at < 864e5) return;
+    const ak = [...areasNow()].sort().join();
+    if (user && old && old.sig === sig && old.ak === ak && Date.now() - old.at < 864e5) return;
     const r = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sig });
     if (r.status === 401) { if (user) await F.signOut(F.auth); lsSet(AUTH_SIG, null); return; }
     if (!r.ok) throw new Error('领不到通行证 ' + r.status);
     const j = await r.json();
     await F.signInWithCustomToken(F.auth, j.token);
-    lsSet(AUTH_SIG, { sig, at: Date.now(), uid: j.uid, areas: j.areas, member: j.member });
+    lsSet(AUTH_SIG, { sig, ak, at: Date.now(), uid: j.uid, areas: j.areas, member: j.member });
   }
   let authT = null;
   function queueAuth() {
