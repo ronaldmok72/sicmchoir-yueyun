@@ -6,6 +6,11 @@ import { getDocs, getDoc } from "./firebase.js";
 const KEY = 'sicSongCache';
 export const VERSION_ID = '_v';
 
+// 手机上记着的那一份（不连网，马上有）；没记过 → []
+export function cachedSongs() {
+  try { return JSON.parse(localStorage.getItem(KEY) || 'null')?.songs || []; } catch { return []; }
+}
+
 export async function customSongs(db) {
   let c = null;
   try { c = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { /* 没关系 */ }

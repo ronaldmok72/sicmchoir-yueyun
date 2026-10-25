@@ -1,7 +1,7 @@
 // 公告：存在 Firestore announcements/{自动id}
 // { title, body, event: 'YYYY-MM-DD' | '', until: 'YYYY-MM-DD', songs: [{ id, title }], createdAt, updatedAt }
 // until 那天过了就算「以前的公告」；公告页、这台弥撒、歌单目录都用这里
-import { collection } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { getDocs } from "./firebase.js";
 import { waTitle } from "./mass-common.js";
 
@@ -15,8 +15,9 @@ const week = date => '日一二三四五六'[new Date(date + 'T12:00').getDay()]
 export const isActive = n => (n.until || '9999-12-31') >= TODAY;
 
 // 还在显示的排前面：有活动日期的照日期，没有的照发出时间（新的先）
-export async function loadNotices(db) {
-  const snap = await getDocs(collection(db, 'announcements'));
+// fromCache：只拿手机记着的（先让首页马上出来，最新的随后再读）
+export async function loadNotices(db, fromCache) {
+  const snap = await (fromCache ? getDocsFromCache : getDocs)(collection(db, 'announcements'));
   const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const byEvent = (a, b) => (a.event || '9999').localeCompare(b.event || '9999') || (b.createdAt || 0) - (a.createdAt || 0);
   return {

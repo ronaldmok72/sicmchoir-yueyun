@@ -2,9 +2,9 @@
 // 团员打开就看得到；指挥（输过密码）还会看到「还要处理的」，点一下跳去那一页改
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
 // 这里会写的只有两样：团员投票会不会来（rsvp/{日期_practice|mass}）、合照（photos/{日期 或 婚礼id}，相片本身放 Cloudinary）
-import { collection, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc, query, where, documentId, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs } from "./firebase.js";
-import { customSongs } from "./song-cache.js";
+import { customSongs, cachedSongs } from "./song-cache.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
 import { loadNotices, noticeHtml } from "./notices-common.js";
@@ -43,33 +43,38 @@ try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 // 团员名单（七十几人）：一般团员的手机记 30 分钟，来回开这一页不用每次整份重读；
 // 管理的人（输过后台密码）每次都读最新的，改了披肩／名字马上看得到
 const MEMBERS_KEY = 'sicMembersCache';
-async function loadMembers() {
-  if (!window.sicStaff?.isStaff()) {
+async function loadMembers(fromCache) {
+  if (fromCache || !window.sicStaff?.isStaff()) {
     try {
       const c = JSON.parse(localStorage.getItem(MEMBERS_KEY) || 'null');
-      if (c && Date.now() - c.at < 30 * 60000) return c.list;
+      if (c && (fromCache || Date.now() - c.at < 30 * 60000)) return c.list;
     } catch { /* 没关系 */ }
+    if (fromCache) return [];
   }
   const list = (await getDocs(collection(db, 'members')).catch(() => ({ docs: [] }))).docs.map(d => d.data());
   try { if (list.length) localStorage.setItem(MEMBERS_KEY, JSON.stringify({ at: Date.now(), list })); } catch { /* 手机存满了：下次再读 */ }
   return list;
 }
 
-async function load() {
+// 打开时：先用手机上次记着的马上画出来（不用等网络），再读最新的重画一次
+// fromCache = true：只拿手机记着的；手机还没记过 → 回 false，等网络那一次
+async function load(fromCache) {
   // 排歌、职务、座位、会来／请假、合照一直累积：只读最近 45 天以后的（每一份的 id 都是日期开头），省读取次数
   // 首页是大家每次打开 App 第一个看到的页，以前整个读，免费额度一天就用完
   const cut = new Date(TODAY + 'T12:00'); cut.setDate(cut.getDate() - 45);
   const want = new URLSearchParams(location.search).get('d');
   const from = want && want < iso(cut) ? want : iso(cut);   // 特地看以前的某一天：从那天读起
-  const get = c => getDocs(query(collection(db, c), where(documentId(), '>=', from))).catch(() => ({ docs: [] }));
-  const [[ma, du, se, rv, ph], cs, mb] = await Promise.all([
+  const get = c => (fromCache ? getDocsFromCache : getDocs)(query(collection(db, c), where(documentId(), '>=', from))).catch(() => ({ docs: [] }));
+  const [[ma, du, se, rv, ph], cs, mb, nt] = await Promise.all([
     Promise.all(['masses', 'duties', 'seatings', 'rsvp', 'photos'].map(get)),
-    customSongs(db).catch(() => []),
-    loadMembers(),
+    fromCache ? cachedSongs() : customSongs(db).catch(() => []),
+    loadMembers(fromCache),
+    loadNotices(db, fromCache).catch(() => ({ active: [] })),
   ]);
+  if (fromCache && !ma.docs.length) return false;
   rsvps = Object.fromEntries(rv.docs.map(d => [d.id, d.data()]));
   photos = Object.fromEntries(ph.docs.map(d => [d.id, d.data()]));
-  notices = (await loadNotices(db).catch(() => ({ active: [] }))).active;
+  notices = nt.active;
   const all = ma.docs.map(d => ({ id: d.id, ...d.data() }));
   masses = Object.fromEntries(all.filter(m => !m.kind).map(m => [m.date || m.id, m]));
   specials = {};
@@ -84,7 +89,8 @@ async function load() {
   memberList = Object.values(members);
   Object.values(specials).flat().forEach(w => (w.slots || []).forEach(sl => (sl.songs || []).forEach(x => { if (title[x.id]) x.title = title[x.id]; })));
   const list = dates();
-  date = list.includes(want) ? want : (list.find(d => d >= TODAY) || list.at(-1));
+  // 已经画过（先用手机记着的）而且他点了别天 → 留在那天
+  date = date && list.includes(date) ? date : list.includes(want) ? want : (list.find(d => d >= TODAY) || list.at(-1));
   $('loading').classList.add('hidden');
   $('day').classList.remove('hidden');
   render();
@@ -675,4 +681,4 @@ document.addEventListener('sic-login', () => {
 
 $('btn-staff').addEventListener('click', async () => { if (await window.sicStaff?.unlock()) render(); });
 
-load().catch(err => { console.error(err); $('loading').textContent = '读取失败：' + (err.code || err.message); });
+load(true).catch(() => false).then(() => load()).catch(err => { console.error(err); if (!date) $('loading').textContent = '读取失败：' + (err.code || err.message); });

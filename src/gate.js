@@ -41,9 +41,13 @@
     return { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) };
   }
   // 回 Response，或者 null（= 要改走 SDK）
+  // REST 回过 429（额度挡住）→ 6 小时内直接走 SDK，不要每次先白跑一趟（打开 App 会慢）
+  const REST_OFF = 'sicRestOff';
   async function rest(url, opts) {
+    try { if (Date.now() - Number(localStorage.getItem(REST_OFF) || 0) < 6 * 3600e3) return null; } catch { /* 没关系 */ }
     try {
       const r = await fetch(url, opts);
+      if (r.status === 429) try { localStorage.setItem(REST_OFF, String(Date.now())); } catch { /* 没关系 */ }
       return r.status === 429 || r.status >= 500 ? null : r;
     } catch { return null; }
   }

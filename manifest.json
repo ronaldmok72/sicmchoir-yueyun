@@ -1,7 +1,7 @@
 {
   "name": "乐韵歌咏团",
   "short_name": "SIC乐韵",
-  "start_url": "/",
+  "start_url": "/day.html",
   "display": "standalone",
   "background_color": "#09090b",
   "theme_color": "#09090b",

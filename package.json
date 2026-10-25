@@ -4,5 +4,8 @@
   "description": "乐韵 App：网页是静态的；这里只给 api/ 的服务器用（登录服务要 firebase SDK）",
   "dependencies": {
     "firebase": "12.12.1"
+  },
+  "scripts": {
+    "css": "npx tailwindcss@3.4.17 -i tailwind.in.css -o tailwind.css --minify"
   }
 }
