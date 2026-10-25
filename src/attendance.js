@@ -107,7 +107,7 @@ function renderRoll() {
         ${p.gone ? '<span class="text-xs text-slate-400 ml-1">不在名单了</span>' : ''}
         ${rsvp[p.id] === 'Y' ? '<span class="text-xs text-emerald-700 ml-1">🙋 说会来</span>' : rsvp[p.id] === 'N' ? `<span class="text-xs text-sky-700 ml-1">🙅 说不来${marks[p.id] ? '' : '（算请假）'}</span>` : ''}
         ${k(p) ? `<span class="text-xs text-slate-400 ml-1">${fmtPts(scoreOf(e, p.id, rsvp[p.id]))} 分</span>` : ''}
-        ${e?.times?.[p.id] ? `<div class="text-[11px] text-slate-400">📱 到 ${hm(e.times[p.id].in)}${e.times[p.id].out ? ` · 走 ${hm(e.times[p.id].out)}` : ' · <span class="text-amber-600">还没签退</span>'}</div>` : ''}
+        ${e?.times?.[p.id] ? `<div class="text-[11px] text-slate-400">📱 ${e.times[p.id].in ? `到 ${hm(e.times[p.id].in)}` : '<span class="text-amber-600">没签到</span>'}${e.times[p.id].out ? ` · 走 ${hm(e.times[p.id].out)}` : ' · <span class="text-amber-600">还没签退</span>'}</div>` : ''}
       </div>
       <div class="flex gap-1">
         ${MARKS.map(m => `<button data-id="${esc(p.id)}" data-mark="${m.k}" class="px-2 py-1 text-xs rounded-lg border ${marks[p.id] === m.k ? m.on : 'border-slate-200 text-slate-500 hover:bg-slate-50'}">${m.label}</button>`).join('')}

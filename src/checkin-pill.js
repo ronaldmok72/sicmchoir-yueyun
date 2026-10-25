@@ -19,8 +19,8 @@ async function check() {
   let step = null, ev = null;
   for (const e of evs) {
     const t = e.times?.[me.id] || {};
-    if (!t.in) { step = 'in'; ev = e; break; }
-    if (!t.out && now - new Date(t.in) > 10 * 60000) { step = 'out'; ev = e; }
+    if (!t.in && !t.out) { step = 'in'; ev = e; break; }
+    if (t.in && !t.out && now - new Date(t.in) > 10 * 60000) { step = 'out'; ev = e; }
   }
   let hidden = '';
   try { hidden = sessionStorage.getItem(HIDE) || ''; } catch { /* 没关系 */ }
