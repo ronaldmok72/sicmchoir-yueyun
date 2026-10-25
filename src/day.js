@@ -40,14 +40,14 @@ window.sicNavDate = () => date;   // 菜单去排歌／职务表／座位表时�
 let me = '';
 try { me = localStorage.getItem('sicMyName') || ''; } catch { /* 没关系 */ }
 
-// 团员名单（七十几人）：一般团员的手机记 30 分钟，来回开这一页不用每次整份重读；
+// 团员名单（七十几人，读一次 = 75 次读取）：一般团员的手机记 6 小时，来回开这一页不用每次整份重读；
 // 管理的人（输过后台密码）每次都读最新的，改了披肩／名字马上看得到
 const MEMBERS_KEY = 'sicMembersCache';
 async function loadMembers(fromCache) {
   if (fromCache || !window.sicStaff?.isStaff()) {
     try {
       const c = JSON.parse(localStorage.getItem(MEMBERS_KEY) || 'null');
-      if (c && (fromCache || Date.now() - c.at < 30 * 60000)) return c.list;
+      if (c && (fromCache || Date.now() - c.at < 6 * 3600e3)) return c.list;
     } catch { /* 没关系 */ }
     if (fromCache) return [];
   }
