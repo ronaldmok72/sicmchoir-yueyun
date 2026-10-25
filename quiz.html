@@ -3,11 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- 加到手机主画面：一律叫「SIC乐韵」、用乐韵的 logo（不管从哪一页加） -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="SIC乐韵">
+  <meta name="application-name" content="SIC乐韵">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#09090b">
   <title>乐韵歌咏团 - 团员小测验</title>
   <script src="src/gate.js"></script>
   <script src="src/nav.js" defer></script>
   <link rel="stylesheet" href="tailwind.css">
-  <link rel="manifest" href="manifest.json">
   <style>
     body { -webkit-tap-highlight-color: transparent; }
     .tap-pad { touch-action: manipulation; -webkit-user-select: none; user-select: none; }

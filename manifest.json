@@ -1,20 +1,24 @@
 {
-  "name": "乐韵歌咏团",
+  "id": "/",
+  "name": "SIC乐韵",
   "short_name": "SIC乐韵",
   "start_url": "/day.html",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#09090b",
   "theme_color": "#09090b",
   "icons": [
     {
-      "src": "https://res.cloudinary.com/dsfhilcgz/image/upload/v1778688168/sicmchoir_yueyun_logo.jpg",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/jpeg"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "https://res.cloudinary.com/dsfhilcgz/image/upload/v1778688168/sicmchoir_yueyun_logo.jpg",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/jpeg"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

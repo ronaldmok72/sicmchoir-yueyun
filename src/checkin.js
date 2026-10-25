@@ -1,6 +1,6 @@
 // 团员扫了现场的 QR 来到这里：自己按「刚到」（签到）还是「要走了」（签退）
 // （以前第一次扫 = 签到、再扫 = 签退；忘了签到的人走的时候一扫就变成签到，早退看不出来）
-// 积分：签到 + 签退 = 1 分（迟到、早退各扣 0.2）；只签到没签退 = 0.5 分；只签退没签到 = 0.5 分（早退再扣 0.2）
+// 积分：签到 + 签退 = 1 分（迟到、早退各扣 0.2）；只签到没签退、只签退没签到 = 0.5 分（只要有出席，最少 0.5 分）
 // 要先用电话登录（才知道是谁）；签到 / 签退会直接改点名页那一次的记录
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDoc } from "./firebase.js";
@@ -113,12 +113,12 @@ async function pick(kind, e, ref, who, t, sure) {
       `${timeLine(next)}<br>今天也一起好好唱 🎶${lateLine}${OUT_HINT}`, late ? 'amber' : 'emerald');
   } else if (!next.in) {
     show('👋', `${esc(who.name)}，辛苦了！`,
-      `${timeLine(next)}<br>今天好像忘了签到哦，所以这次算 <b>${fmtPts(pts)}</b> 分。${earlyLine}
+      `${timeLine(next)}<br>今天好像忘了签到哦，所以这次算 <b>${fmtPts(pts)}</b> 分。
       <span class="block mt-2 rounded-xl bg-indigo-50 text-indigo-800 px-3 py-2">💡 下次到了先扫一次，按「<b>刚到</b>」签到，就可以拿满分啦～</span>
       <br>路上小心，平安到家 🙏`, 'amber');
   } else {
     show(late || early ? '⏰' : '👋', `${esc(who.name)}，辛苦了！`,
-      `${timeLine(next)}<br>这次 <b>${fmtPts(pts)}</b> 分${late ? '（迟到扣 0.2）' : ''}${earlyLine}<br>谢谢你今天的付出，路上小心，平安到家 🙏`, late || early ? 'amber' : 'emerald');
+      `${timeLine(next)}<br>这次 <b>${fmtPts(pts)}</b> 分${late ? '（迟到扣 0.2）' : ''}${earlyLine}<br>谢谢你今天一起努力，路上小心，平安到家 🙏`, late || early ? 'amber' : 'emerald');
   }
 }
 
