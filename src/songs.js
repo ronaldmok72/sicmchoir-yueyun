@@ -5,7 +5,7 @@
 // 录音：song_audio/{歌id} = { items: [{ url, label, at }] }，只放 Google Drive／YouTube 连结（另外放，排单后台换谱时不会被盖掉）
 //   后台（排单后台／弥撒排歌／指挥）的人在看谱页按「🎧＋」贴连结
 import { collection, doc, setDoc, arrayUnion, arrayRemove, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, getDocs, history } from "./firebase.js";
+import { db, getDocs, history as recent } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { clean, waTitle } from "./mass-common.js";
 import { loadNotices } from "./notices-common.js";
@@ -26,7 +26,7 @@ let audio = {};          // 歌 id → 录音连结 [{url, label, at}]
 const canAudio = () => ['admin', 'mass', 'conduct'].some(a => window.sicStaff?.can(a));
 
 async function load() {
-  const [, ma, no, au] = await Promise.all([loadLibrary(db), history('masses'), loadNotices(db).catch(() => ({ active: [] })), getDocs(collection(db, 'song_audio')).catch(() => ({ docs: [] }))]);
+  const [, ma, no, au] = await Promise.all([loadLibrary(db), recent('masses'), loadNotices(db).catch(() => ({ active: [] })), getDocs(collection(db, 'song_audio')).catch(() => ({ docs: [] }))]);
   audio = Object.fromEntries(au.docs.map(d => [d.id, d.data().items || []]));
   const practice = {};   // 歌 id → 哪几个公告要练
   no.active.forEach(n => (n.songs || []).forEach(x => (practice[x.id] ||= []).push(n.title)));
@@ -121,19 +121,27 @@ $('list').addEventListener('click', e => {
 
 // ───────── 录音 ─────────
 // 只放连结（Google Drive、YouTube…），按了跳过去听；录音档本身不上传，不占 Cloudinary 的位置
+// 看谱时在右下角：有录音才出现「🎧 听录音」，按了弹出连结；后台的人没录音时看到「🎧 加录音」
 function renderAudio() {
   const list = open ? audio[open.id] || [] : [];
   const staff = canAudio();
-  $('v-audio-add').classList.toggle('hidden', !staff);
-  const box = $('v-audio');
-  box.classList.toggle('hidden', !list.length);
-  box.innerHTML = `<div class="flex flex-wrap gap-2">${list.map((x, i) => `
-    <span class="inline-flex items-center rounded-lg bg-white/10">
-      <a href="${esc(x.url)}" target="_blank" rel="noopener" class="px-3 py-2 text-sm hover:bg-white/10 rounded-lg">🎧 ${esc(x.label || '听录音')}</a>
-      ${staff ? `<button data-audio-del="${i}" class="px-2 py-2 text-slate-400 hover:text-red-400" title="拿掉">✕</button>` : ''}
-    </span>`).join('')}</div>`;
+  const btn = $('v-audio-btn');
+  btn.textContent = list.length ? `🎧 听录音${list.length > 1 ? ` (${list.length})` : ''}` : '🎧 加录音';
+  btn.classList.toggle('hidden', !list.length && !staff);
+  btn.classList.toggle('flex', !!(list.length || staff));
+  $('v-audio').innerHTML = list.map((x, i) => `
+    <div class="flex items-center rounded-xl hover:bg-white/10">
+      <a href="${esc(x.url)}" target="_blank" rel="noopener" class="flex-1 min-w-0 px-3 py-2.5 text-sm truncate">🎧 ${esc(x.label || '听录音')} <span class="text-zinc-500">↗</span></a>
+      ${staff ? `<button data-audio-del="${i}" class="px-3 py-2.5 text-zinc-500 hover:text-red-400" title="拿掉">✕</button>` : ''}
+    </div>`).join('') + (staff ? `<button data-audio-add class="w-full px-3 py-2.5 rounded-xl text-sm text-indigo-300 hover:bg-white/10 text-left">＋ 加录音连结</button>` : '');
 }
+const audioPanel = on => $('v-audio').classList.toggle('hidden', !on);
+$('v-audio-btn').addEventListener('click', () => {
+  if (!(audio[open?.id] || []).length) return addAudio();   // 还没有录音：直接加
+  audioPanel($('v-audio').classList.contains('hidden'));
+});
 $('v-audio').addEventListener('click', async e => {
+  if (e.target.closest('[data-audio-add]')) return addAudio();
   const d = e.target.closest('[data-audio-del]');
   if (!d || !open) return;
   const x = (audio[open.id] || [])[+d.dataset.audioDel];
@@ -142,10 +150,11 @@ $('v-audio').addEventListener('click', async e => {
     await updateDoc(doc(db, 'song_audio', open.id), { items: arrayRemove(x) });
     audio[open.id] = audio[open.id].filter(y => y !== x);
     renderAudio(); render();
+    if (!audio[open.id].length) audioPanel(false);
   } catch (err) { console.error(err); alert('没拿掉：' + (err.code || err.message)); }
 });
-$('v-audio-add').addEventListener('click', async () => {
-  if (!open) return;
+async function addAudio() {
+  if (!open || !canAudio()) return;
   const url = (prompt('贴录音的连结（Google Drive 记得开「知道连结的人都可以看」）') || '').trim();
   if (!url) return;
   if (!/^https:\/\/\S+$/.test(url)) return alert('连结要 https:// 开头');
@@ -158,13 +167,15 @@ $('v-audio-add').addEventListener('click', async () => {
     renderAudio(); render();
     toast('录音连结加好了 🎧');
   } catch (err) { console.error(err); alert('没加到：' + (err.code || err.message)); }
-});
+}
 
 // ───────── 看谱 ─────────
-// 放大缩小跟乐谱一样：两指放大缩小、双击放大、电脑用 Ctrl＋滚轮；⛶ 全屏只留谱
-let zoom = 1;        // 1 = 刚好跟屏幕一样宽
-let full = false;
-// 从别页点进来的（例如公告「要练的歌」）：✕ 变成「‹ 返回」，按了回去原来那一页
+// 操作跟「乐谱」一样：整页放进画面；两指放大缩小（0.6～5 倍）、放大了一指拖着看；
+// 没放大时左右滑换歌；点一下谱：顶栏、右下按钮收起，左右箭头和「第几首」出现，再点一下换回来
+// 电脑：滚轮放大缩小、放大了用滑鼠拖、← → 换歌；⛶ 全屏只留谱
+let zoom = 1, tx = 0, ty = 0;
+let full = false, hud = false;
+// 从别页点进来的（例如公告「要练的歌」、主页）：✕ 变成「‹ 返回」，按了回去原来那一页
 let cameIn = false;
 const fromPage = (() => { try { const u = new URL(document.referrer); return u.origin === location.origin && u.pathname !== location.pathname ? u : null; } catch { return null; } })();
 function show(id, push = true) {
@@ -172,24 +183,25 @@ function show(id, push = true) {
   if (!s) return;
   open = s;
   $('v-title').textContent = s.name;
-  $('v-sub').textContent = clean(s.title);
+  $('v-sub').textContent = clean(s.title) !== s.name ? clean(s.title) : '';
   $('v-img').src = s.imageUrl;
   $('v-img').alt = s.name;
-  setZoom(1);
-  $('v-body').scrollTo(0, 0);
-  const info = [
-    s.practice.length ? `📢 要练：${s.practice.join('、')}` : '',
-    s.next.length ? `接下来：${s.next.slice(0, 3).map(x => `${md(x.date)} ${x.label}`).join('、')}${s.next.length > 3 ? ` 等 ${s.next.length} 台` : ''}` : '',
-    s.past.length ? `唱过 ${s.past.length} 次，上次 ${md(s.past.at(-1))}` : '',
-  ].filter(Boolean).join('　·　');
-  $('v-info').textContent = info || '还没有在弥撒排过';
+  zoom = 1; tx = 0; ty = 0; paint();
   const i = shown.findIndex(x => x.id === id);
-  $('v-prev').disabled = i <= 0;
-  $('v-next').disabled = i < 0 || i >= shown.length - 1;
-  ['v-prev', 'v-next'].forEach(b => $(b).classList.toggle('opacity-30', $(b).disabled));
+  $('v-num').textContent = i >= 0 ? `${i + 1} / ${shown.length}` : '';
+  $('v-info').textContent = [
+    s.practice.length ? `📢 要练：${s.practice.join('、')}` : '',
+    s.next.length ? `📅 接下来：${s.next.slice(0, 3).map(x => `${md(x.date)} ${x.label}`).join('、')}${s.next.length > 3 ? ` 等 ${s.next.length} 台` : ''}` : '',
+    s.past.length ? `唱过 ${s.past.length} 次，上次 ${md(s.past.at(-1))}` : '',
+  ].filter(Boolean).join('\n') || '还没有在弥撒排过';
+  $('v-info').style.whiteSpace = 'pre-line';
+  ['v-prev', 'v-next'].forEach((b, k) => $(b).disabled = k ? i < 0 || i >= shown.length - 1 : i <= 0);
+  setHud(hud);
+  audioPanel(false);
   renderAudio();
   $('viewer').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+  flashToast();
   if (push) history.replaceState(null, '', '#' + id);
 }
 function close() {
@@ -199,69 +211,124 @@ function close() {
   $('viewer').classList.add('hidden');
   document.body.style.overflow = '';
   history.replaceState(null, '', location.pathname + location.search);
+  if (onlyIds.length) render();   // 回到全部的歌（上一首／下一首照目录的顺序）
 }
 function step(d) {
   const i = shown.findIndex(x => x.id === open?.id);
   if (i >= 0 && shown[i + d]) show(shown[i + d].id);
 }
-// z = 几倍；(cx, cy) = 手指／滑鼠在哪里，放大后那一点留在原地（不给就是画面中间）
-function setZoom(z, cx, cy) {
-  const body = $('v-body'), img = $('v-img');
-  z = Math.min(5, Math.max(1, z));
-  const r = body.getBoundingClientRect();
-  const px = (cx ?? r.left + r.width / 2) - r.left, py = (cy ?? r.top + r.height / 2) - r.top;
-  const fx = (body.scrollLeft + px) / (body.scrollWidth || 1), fy = (body.scrollTop + py) / (body.scrollHeight || 1);
-  zoom = z;
-  const base = full ? body.clientWidth : Math.min(body.clientWidth, 768);   // 768 = max-w-3xl
-  img.style.width = z === 1 ? '' : Math.round(base * z) + 'px';
-  img.style.maxWidth = z === 1 ? '' : 'none';
-  body.scrollLeft = fx * body.scrollWidth - px;
-  body.scrollTop = fy * body.scrollHeight - py;
-  $('v-zoom').lastChild.textContent = z > 1 ? ' 缩小' : ' 放大';
+
+// 顶栏、右下按钮 ↔ 左右箭头、第几首（点一下谱就换）
+const vis = (id, on, hideCls) => $(id).classList.toggle(hideCls, !on);
+function setHud(on) {
+  hud = on;
+  ['v-prev', 'v-next'].forEach(b => { vis(b, on && !$(b).disabled, 'opacity-0'); vis(b, on && !$(b).disabled, 'pointer-events-none'); });
+  vis('v-toast', on, 'opacity-0'); vis('v-toast', on, 'translate-y-4');
+  const bars = !on && !full;
+  ['v-head', 'v-dock'].forEach(b => { vis(b, bars, 'opacity-0'); vis(b, bars, 'pointer-events-none'); });
+  if (!bars) audioPanel(false);
 }
-// 全屏：手机／电脑支持的话真的全屏；iPhone 不支持就把上下的按钮收起来，只留谱
+// 刚打开／换歌：「第几首、接下来要唱」闪一下
+function flashToast() {
+  if (hud) return;
+  vis('v-toast', true, 'opacity-0'); vis('v-toast', true, 'translate-y-4');
+  clearTimeout(flashToast.t);
+  flashToast.t = setTimeout(() => { if (!hud) { vis('v-toast', false, 'opacity-0'); vis('v-toast', false, 'translate-y-4'); } }, 2500);
+}
+
+// 全屏：手机／电脑支持的话真的全屏；iPhone 不支持就把按钮都收起来，只留谱
 function setFull(on) {
   full = on;
   const v = $('viewer');
-  ['v-head', 'v-foot', 'v-audio'].forEach(id => $(id).classList.toggle('!hidden', on));
-  $('v-float').classList.toggle('hidden', !on);
-  $('v-img').classList.toggle('max-w-3xl', !on);
+  $('v-unlock').classList.toggle('hidden', !on);
   try {
     if (on && !document.fullscreenElement) (v.requestFullscreen || v.webkitRequestFullscreen)?.call(v)?.catch?.(() => {});
     if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
   } catch { /* 不支持全屏就算了 */ }
-  setZoom(1);
+  setHud(false);
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && full) setFull(false); });
 
-// 两指放大缩小
+// 放大缩小、拖着看（跟乐谱同一套算法）
+function paint() {
+  $('v-wrap').style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
+  $('v-body').style.cursor = zoom > 1 ? 'grab' : '';
+}
+function bounds() {
+  const r = $('v-body').getBoundingClientRect();
+  const bx = zoom > 1 ? r.width * (zoom - 1) / 2 : 0, by = zoom > 1 ? r.height * (zoom - 1) / 2 : 0;   // 没放大就吸回正中间
+  tx = Math.max(-bx, Math.min(bx, tx)); ty = Math.max(-by, Math.min(by, ty));
+}
+// z = 几倍；(cx, cy) = 手指／滑鼠在哪里，放大后那一点留在原地
+function setZoom(z, cx, cy) {
+  z = Math.min(5, Math.max(0.6, z));
+  if (z === zoom) return;
+  const r = $('v-body').getBoundingClientRect();
+  const k = z / zoom;
+  tx -= (cx - (r.left + r.width / 2)) * (k - 1);
+  ty -= (cy - (r.top + r.height / 2)) * (k - 1);
+  zoom = z; bounds(); paint();
+}
+const body = $('v-body');
 const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-const mid = t => [(t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2];
-let pinch = null, lastTap = 0;
-$('v-body').addEventListener('touchstart', e => { if (e.touches.length === 2) pinch = { d: dist(e.touches), z: zoom }; }, { passive: true });
-$('v-body').addEventListener('touchmove', e => {
-  if (e.touches.length !== 2 || !pinch) return;
+let pinch = null, drag = null, swipe = null, moved = false, start = null;
+body.addEventListener('touchstart', e => {
+  moved = false;
+  start = [e.touches[0].clientX, e.touches[0].clientY];
+  if (e.touches.length === 2) { pinch = dist(e.touches); drag = swipe = null; return; }
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  if (zoom > 1) drag = { x: t.clientX - tx, y: t.clientY - ty };
+  else swipe = { x: t.clientX, y: t.clientY };
+}, { passive: true });
+body.addEventListener('touchmove', e => {
   e.preventDefault();
-  setZoom(pinch.z * dist(e.touches) / pinch.d, ...mid(e.touches));
+  if (e.touches.length > 1 || Math.hypot(e.touches[0].clientX - start[0], e.touches[0].clientY - start[1]) > 8) moved = true;   // 手指抖一下不算滑
+  if (e.touches.length === 2 && pinch) {
+    const d = dist(e.touches);
+    setZoom(zoom * d / pinch, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+    pinch = d; swipe = null;
+  } else if (e.touches.length === 1 && drag) {
+    tx = e.touches[0].clientX - drag.x; ty = e.touches[0].clientY - drag.y; bounds(); paint();
+  }
 }, { passive: false });
-$('v-body').addEventListener('touchend', e => {
-  if (pinch) { if (e.touches.length < 2) pinch = null; lastTap = 0; return; }
-  // 双击：放大到 2.5 倍／回到刚好一样宽
-  const t = e.changedTouches[0], now = Date.now();
-  if (now - lastTap < 300) { e.preventDefault(); setZoom(zoom > 1 ? 1 : 2.5, t.clientX, t.clientY); lastTap = 0; }
-  else lastTap = now;
+body.addEventListener('touchend', e => {
+  if (e.touches.length) return;
+  const t = e.changedTouches[0];
+  // 左右滑换歌：要明确滑过 80px，而且横的比直的多（跟乐谱一样）
+  if (swipe && zoom <= 1) {
+    const dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+    if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy)) step(dx < 0 ? 1 : -1);
+  }
+  pinch = drag = swipe = null;
 });
-$('v-body').addEventListener('dblclick', e => setZoom(zoom > 1 ? 1 : 2.5, e.clientX, e.clientY));
-// 电脑：Ctrl＋滚轮（触控板两指捏也是这个）
-$('v-body').addEventListener('wheel', e => {
-  if (!e.ctrlKey) return;
-  e.preventDefault();
-  setZoom(zoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
-}, { passive: false });
+// 点一下（没有滑、没有捏）：按钮收起／出现
+body.addEventListener('click', () => {
+  if (moved) { moved = false; return; }
+  if (!$('v-audio').classList.contains('hidden')) return audioPanel(false);
+  setHud(!hud);
+});
+// 电脑：滚轮放大缩小、滑鼠拖
+body.addEventListener('wheel', e => { e.preventDefault(); setZoom(zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY); }, { passive: false });
+body.addEventListener('mousedown', e => {
+  if (zoom <= 1) return;
+  drag = { x: e.clientX - tx, y: e.clientY - ty, m: false };
+  body.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', e => {
+  if (!drag || drag.m === undefined) return;
+  drag.m = moved = true;
+  tx = e.clientX - drag.x; ty = e.clientY - drag.y; bounds(); paint();
+});
+window.addEventListener('mouseup', () => { if (drag?.m !== undefined) { drag = null; paint(); } });
+window.addEventListener('resize', () => { if (open) { bounds(); paint(); } });
 
+// songs.html?ids=a,b,c#a：从主页／公告点进来，左右滑只在这几首里换
+const onlyIds = (new URLSearchParams(location.search).get('ids') || '').split(',').filter(Boolean);
 function openFromHash(first) {
   const id = decodeURIComponent(location.hash.slice(1));
   if (!id || !songs.some(s => s.id === id)) return;
+  if (first === true && onlyIds.includes(id)) shown = onlyIds.map(x => songs.find(s => s.id === x)).filter(Boolean);
   if (first === true && fromPage) {
     cameIn = true;
     $('v-close').textContent = '‹ 返回';
@@ -273,11 +340,8 @@ function openFromHash(first) {
 $('v-close').addEventListener('click', close);
 $('v-prev').addEventListener('click', () => step(-1));
 $('v-next').addEventListener('click', () => step(1));
-$('v-zoom').addEventListener('click', () => setZoom(zoom > 1 ? 1 : 2));
 $('v-full').addEventListener('click', () => setFull(true));
-$('vf-exit').addEventListener('click', () => setFull(false));
-$('vf-prev').addEventListener('click', () => step(-1));
-$('vf-next').addEventListener('click', () => step(1));
+$('v-unlock').addEventListener('click', () => setFull(false));
 $('v-share').addEventListener('click', async () => {
   if (!open) return;
   const text = `🎼 ${open.name}\n${location.origin}${location.pathname}#${open.id}`;

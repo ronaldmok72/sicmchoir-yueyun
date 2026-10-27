@@ -43,7 +43,7 @@ export function noticeHtml(n, { titles = {}, compact = false, edit = '' } = {}) 
     ${songs.length ? `
       <div class="mt-2.5 text-xs text-slate-500">🎵 要练的歌（点一下看谱）</div>
       <div class="mt-1 flex flex-wrap gap-1.5">
-        ${songs.map((s, i) => `<a href="songs.html#${encodeURIComponent(s.id)}" class="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm">${i + 1}. ${esc(waTitle(s.title))}</a>`).join('')}
+        ${songs.map((s, i) => `<a href="songs.html?ids=${songs.map(x => encodeURIComponent(x.id)).join(',')}#${encodeURIComponent(s.id)}" class="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm">${i + 1}. ${esc(waTitle(s.title))}</a>`).join('')}
       </div>` : ''}
     ${!compact && n.until && n.until < '9999' ? `<div class="mt-2 text-[11px] text-slate-400">显示到 ${md(n.until)}</div>` : ''}`;
 }

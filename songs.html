@@ -44,36 +44,51 @@
     <div id="empty" class="hidden text-sm text-slate-400 text-center py-10">找不到这首歌</div>
   </main>
 
-  <!-- 看谱 -->
-  <div id="viewer" class="hidden fixed inset-0 z-50 bg-slate-900 flex flex-col">
-    <div id="v-head" class="flex items-center gap-2 px-3 py-2 text-white shrink-0">
-      <button id="v-close" class="min-w-9 h-9 px-2 rounded-lg hover:bg-white/10 text-lg" aria-label="关掉">✕</button>
-      <div class="flex-1 min-w-0">
-        <div id="v-title" class="font-semibold truncate"></div>
-        <div id="v-sub" class="text-[11px] text-slate-400 truncate"></div>
+  <!-- 看谱：跟「乐谱」一样——整页放进画面；两指放大缩小（可以缩到比画面小），放大了一指拖着看；左右滑换歌；点一下谱，按钮收起／出现 -->
+  <div id="viewer" class="hidden fixed inset-0 z-50 bg-zinc-950 text-zinc-200 overflow-hidden select-none">
+    <div id="v-body" class="absolute inset-0 overflow-hidden" style="touch-action: none">
+      <div id="v-wrap" class="w-full h-full flex justify-center items-center origin-center">
+        <img id="v-img" alt="" class="max-w-full max-h-full object-contain bg-white shadow-2xl shadow-black/60 rounded-xl select-none pointer-events-none" draggable="false">
       </div>
-      <button id="v-audio-add" class="hidden px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="加录音">🎧＋</button>
-      <button id="v-zoom" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="放大">🔍<span class="hidden sm:inline"> 放大</span></button>
-      <button id="v-full" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="全屏">⛶ 全屏</button>
-      <button id="v-share" class="px-2.5 h-9 rounded-lg hover:bg-white/10 text-sm" aria-label="复制连结">🔗</button>
     </div>
-    <!-- 录音：Google Drive／YouTube 连结，按了另外打开来听（不放进 Cloudinary，省位置）；后台的人可以加 -->
-    <div id="v-audio" class="hidden shrink-0 bg-slate-800 text-white px-3 py-2 space-y-2 max-h-[40dvh] overflow-y-auto"></div>
-    <!-- 两指放大缩小、双击放大；一指拖着看 -->
-    <div id="v-body" class="flex-1 overflow-auto bg-white" style="touch-action: pan-x pan-y">
-      <img id="v-img" alt="" class="block mx-auto w-full max-w-3xl select-none" draggable="false">
+
+    <!-- 顶栏只占一排：关掉｜歌名｜全屏 -->
+    <div id="v-head" class="absolute top-2 left-2 right-2 md:top-4 md:left-4 md:right-4 z-10 flex items-center gap-1.5 px-2 py-1.5 md:px-4 md:py-2.5 bg-zinc-900/80 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl transition-all duration-300">
+      <button id="v-close" class="shrink-0 min-w-9 h-9 px-2 rounded-xl bg-white text-zinc-900 hover:bg-zinc-200 font-bold" aria-label="关掉">✕</button>
+      <div class="flex-1 min-w-0 text-center px-1">
+        <div id="v-title" class="text-sm md:text-lg font-bold text-white truncate"></div>
+        <div id="v-sub" class="text-[11px] text-zinc-400 truncate"></div>
+      </div>
+      <button id="v-full" class="shrink-0 p-2 md:p-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5" title="全屏">
+        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+      </button>
     </div>
-    <!-- 全屏时：只留这几个小按钮 -->
-    <div id="v-float" class="hidden fixed top-3 right-3 z-[55] flex gap-1.5 text-sm">
-      <button id="vf-prev" class="w-10 h-10 rounded-full bg-slate-900/60 text-white backdrop-blur" aria-label="上一首">‹</button>
-      <button id="vf-next" class="w-10 h-10 rounded-full bg-slate-900/60 text-white backdrop-blur" aria-label="下一首">›</button>
-      <button id="vf-exit" class="px-3 h-10 rounded-full bg-slate-900/60 text-white backdrop-blur">✕ 退出全屏</button>
+
+    <!-- 上一首／下一首：点一下谱才出现（跟乐谱一样），平时用手指左右滑 -->
+    <button id="v-prev" class="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-10 bg-zinc-800/60 hover:bg-zinc-700/80 text-white p-3 md:p-4 rounded-full backdrop-blur-md border border-white/10 transition-all duration-300 opacity-0 pointer-events-none shadow-xl" aria-label="上一首">
+      <svg class="w-6 h-6 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+    </button>
+    <button id="v-next" class="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-10 bg-zinc-800/60 hover:bg-zinc-700/80 text-white p-3 md:p-4 rounded-full backdrop-blur-md border border-white/10 transition-all duration-300 opacity-0 pointer-events-none shadow-xl" aria-label="下一首">
+      <svg class="w-6 h-6 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg>
+    </button>
+
+    <!-- 左下：第几首、接下来哪一台要唱 -->
+    <div id="v-toast" class="absolute bottom-4 left-3 md:bottom-8 md:left-6 z-10 bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white px-4 py-3 rounded-xl shadow-2xl translate-y-4 opacity-0 pointer-events-none transition-all duration-300 flex flex-col max-w-[calc(100vw-9rem)] md:max-w-md">
+      <span id="v-num" class="text-indigo-400 font-black text-[10px] tracking-wider mb-1"></span>
+      <span id="v-info" class="text-xs leading-snug break-words"></span>
     </div>
-    <div id="v-foot" class="flex items-center gap-2 px-3 py-2 text-white text-sm shrink-0">
-      <button id="v-prev" class="px-3 h-9 rounded-lg bg-white/10 hover:bg-white/20">‹ 上一首</button>
-      <div id="v-info" class="flex-1 min-w-0 text-center text-[11px] text-slate-300 truncate"></div>
-      <button id="v-next" class="px-3 h-9 rounded-lg bg-white/10 hover:bg-white/20">下一首 ›</button>
+
+    <!-- 右下：🎧 录音（Google Drive／YouTube 连结，按了另外打开来听；后台的人可以加）、🔗 分享 -->
+    <div id="v-dock" class="absolute right-3 bottom-4 md:right-6 md:bottom-8 z-10 flex flex-col items-end gap-2 transition-all duration-300" style="margin-bottom: env(safe-area-inset-bottom, 0px)">
+      <div id="v-audio" class="hidden w-72 max-w-[calc(100vw-1.5rem)] max-h-[50dvh] overflow-y-auto p-2 rounded-2xl bg-zinc-900/95 backdrop-blur-2xl border border-white/10 shadow-2xl space-y-1"></div>
+      <button id="v-share" class="flex items-center gap-1.5 h-11 px-4 rounded-full bg-zinc-800/90 backdrop-blur-xl text-zinc-200 hover:bg-zinc-700 border border-white/10 shadow-xl text-sm font-semibold">🔗 分享</button>
+      <button id="v-audio-btn" class="hidden items-center gap-1.5 h-11 px-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/30 shadow-xl shadow-indigo-500/25 text-sm font-bold"></button>
     </div>
+
+    <!-- 全屏时只留这个：退出全屏 -->
+    <button id="v-unlock" class="hidden absolute top-4 right-4 z-20 p-3 bg-zinc-900/50 backdrop-blur-md text-white/40 hover:text-white rounded-full border border-white/10 shadow-xl" title="退出全屏">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"></path></svg>
+    </button>
   </div>
 
   <div id="status" class="fixed bottom-3 left-1/2 -translate-x-1/2 z-[60] text-xs bg-slate-800 text-white rounded-full px-3 py-1.5 opacity-0 transition-opacity pointer-events-none"></div>

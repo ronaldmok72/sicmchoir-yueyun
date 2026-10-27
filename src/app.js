@@ -240,9 +240,8 @@ async function syncSelectedSetlist() {
     return;
   }
 
-  const icon = btnSync.querySelector('svg');
-  if (icon) icon.style.opacity = '0.5';
-  btnSync.textContent = 'Syncing...';
+  const label = btnSync.innerHTML;
+  btnSync.textContent = '载入中…';
   btnSync.disabled = true;
 
   try {
@@ -295,9 +294,9 @@ async function syncSelectedSetlist() {
     console.error('Sync failed', error);
     alert('❌ 同步失败，请检查网络连接。');
   } finally {
-    if (icon) icon.style.opacity = '1';
-    btnSync.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg> Sync`;
+    btnSync.innerHTML = label;
     btnSync.disabled = false;
+    document.getElementById('tool-panel')?.classList.add('hidden');
   }
 }
 
@@ -328,7 +327,7 @@ function loadLocalPlaylist( ) {
       startLiveSyncListener(savedName);
     }
   } else {
-    titleEl.textContent = "请选择排单并点击 Sync";
+    titleEl.textContent = "按右下角「排单」选一份";
   }
 }
 
@@ -462,8 +461,8 @@ function toggleDrawMode() {
   if (isDrawingMode) {
     resizeCanvas(); // 每次开启时重新获取尺寸
 
-    btnDraw.classList.add('ring-2', 'ring-red-500', 'bg-slate-50');
-    if (drawStatus) drawStatus.textContent = 'On';
+    btnDraw.classList.replace('bg-zinc-800/90', 'bg-red-600');
+    if (drawStatus) drawStatus.textContent = '画好了';
 
     canvas.classList.remove('pointer-events-none');
     canvas.classList.add('pointer-events-auto');
@@ -474,8 +473,8 @@ function toggleDrawMode() {
     const toast = document.getElementById('toast-notification');
     if (toast) toast.classList.add('translate-y-4', 'opacity-0');
   } else {
-    btnDraw.classList.remove('ring-2', 'ring-red-500', 'bg-slate-50');
-    if (drawStatus) drawStatus.textContent = 'Off';
+    btnDraw.classList.replace('bg-red-600', 'bg-zinc-800/90');
+    if (drawStatus) drawStatus.textContent = '标注';
     
     canvas.classList.remove('pointer-events-auto');
     canvas.classList.add('pointer-events-none');

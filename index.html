@@ -29,8 +29,6 @@
   <style>
     ::-webkit-scrollbar { display: none; }
     body { -ms-overflow-style: none; scrollbar-width: none; }
-    /* 手机上顶栏按钮多，缩一点内距才放得下 */
-    @media (max-width: 767px) { #header-actions > button { padding: 6px; } #header-actions { gap: 4px; } }
   </style>
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-[100dvh] flex flex-col font-sans select-none overflow-hidden">
@@ -42,30 +40,19 @@
   </button>
 
 
-  <!-- 顶部悬浮导航栏 (响应式优化版) -->
-  <header class="absolute top-2 left-2 right-2 md:top-4 md:left-4 md:right-4 z-50 flex justify-between items-center px-3 py-2 md:px-5 md:py-3 bg-zinc-900/80 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl transition-all duration-300">
-    
-    <!-- 左侧：☰ 菜单（最左上角、白色，一眼看到：这台弥撒、测验、签到…都从这里去）+ 排单选择 -->
-    <div class="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+  <!-- 顶部悬浮导航栏：手机上只占一排（菜单｜曲名｜全屏），其他工具都在右下角 -->
+  <header class="absolute top-2 left-2 right-2 md:top-4 md:left-4 md:right-4 z-50 flex justify-between items-center gap-1.5 px-2 py-1.5 md:px-4 md:py-2.5 bg-zinc-900/80 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl transition-all duration-300">
       <button id="btn-menu" data-nav-open class="flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1.5 px-2 py-1 md:px-3 md:py-2 rounded-xl bg-white text-zinc-900 hover:bg-zinc-200 font-bold shadow-sm transition-all shrink-0" title="菜单：所有功能都在这里">
         <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 6h16M4 12h16M4 18h16"></path></svg>
         <span class="text-[10px] md:text-sm leading-none">菜单</span>
       </button>
-      <div class="relative w-24 md:w-48">
-        <select id="setlist-select" class="w-full appearance-none bg-zinc-800/60 text-zinc-200 border border-white/10 text-xs md:text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block px-2 md:px-4 py-2 pr-6 md:pr-8 outline-none transition-all cursor-pointer hover:bg-zinc-800 shadow-inner truncate">
-          <option value="">加载中...</option>
-        </select>
-        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-zinc-400">
-          <svg class="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-        </div>
-      </div>
-    </div>
 
     <!-- 中间：当前曲名 (点击呼出列表) -->
     <div id="btn-song-list" class="flex-1 min-w-0 px-2 flex justify-center items-center text-center pointer-events-auto cursor-pointer hover:opacity-80 transition-opacity" title="点击查看排单列表">
-      <h1 id="song-title" class="text-xs md:text-lg font-bold text-white truncate tracking-wide drop-shadow-md">加载中...</h1>
+      <h1 id="song-title" class="text-sm md:text-lg font-bold text-white truncate tracking-wide drop-shadow-md">加载中...</h1>
       <svg class="w-4 h-4 ml-1 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
     </div>
+
 
     <!-- 🌟 新增：改名/备注按钮 (风格·拍子·Key 用文字记，取代画笔标注，不占储存空间) -->
     <!-- 默认隐藏：只有开启「指挥模式」(输入密码) 之后才会出现，避免团员按错误改歌名 -->
@@ -74,54 +61,66 @@
       <span class="hidden md:inline text-sm font-semibold">改名</span>
     </button>
 
-    <!-- 右侧：操作按钮 (手机端只显示图标，隐藏文字) -->
-    <div id="header-actions" class="flex items-center justify-end gap-1.5 md:gap-3 flex-shrink-0">
-
-
-      <!-- 指挥模式开关 -->
-      <button id="btn-conductor" class="flex items-center gap-1.5 p-2 md:px-4 md:py-2.5 rounded-xl bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm" title="开启指挥模式">
-        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
-        <span class="hidden md:inline text-sm font-semibold">指挥</span>
-      </button>
 
       <!-- 演出模式按钮 (全屏) -->
       <button id="btn-lock" class="p-2 md:p-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm" title="全屏演出模式">
         <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
       </button>
 
-      <!-- 智能反色按钮 (月亮) -->
-      <button id="btn-invert" class="p-2 md:p-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm" title="夜间反色模式">
-        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-      </button>
-
-      <!-- 标注开关 -->
-      <button id="btn-draw" class="flex items-center gap-1.5 p-2 md:px-4 md:py-2.5 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-white/5 transition-all shadow-sm">
-        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-        <span class="hidden md:inline text-sm font-semibold">标注</span>
-        <!-- 就是下面这行刚才被我不小心删了，导致 JS 报错 -->
-        <span id="draw-status" class="hidden md:inline-block text-[10px] bg-zinc-950 text-zinc-400 px-1.5 py-0.5 rounded-full uppercase tracking-wider border border-white/10">OFF</span>
-      </button>
-
-      
-      <!-- Sync 按钮 -->
-      <button id="btn-sync" class="flex items-center gap-1.5 p-2 md:px-4 md:py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-xl shadow-lg shadow-indigo-500/25 transition-all border border-indigo-400/30">
-        <svg class="w-4 h-4 md:w-5 md:h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
-        <span class="hidden md:inline text-sm font-bold">Sync</span>
-      </button>
-    </div>
   </header>
+
+  <!-- 右下角工具：✏️ 标注、🎼 排单（换排单、夜间、指挥都在「排单」里面） -->
+  <div id="tool-dock" class="fixed right-3 bottom-4 md:right-6 md:bottom-8 z-50 flex flex-col items-end gap-2 transition-all duration-300" style="margin-bottom: env(safe-area-inset-bottom, 0px)">
+    <div id="tool-panel" class="hidden w-72 max-w-[calc(100vw-1.5rem)] p-3 rounded-2xl bg-zinc-900/95 backdrop-blur-2xl border border-white/10 shadow-2xl space-y-3">
+      <div>
+        <div class="text-[11px] text-zinc-400 mb-1.5">换排单：选好按「载入」</div>
+        <div class="flex gap-2">
+          <div class="relative flex-1 min-w-0">
+        <select id="setlist-select" class="w-full appearance-none bg-zinc-800/60 text-zinc-200 border border-white/10 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block px-2 md:px-4 py-2 pr-6 md:pr-8 outline-none transition-all cursor-pointer hover:bg-zinc-800 shadow-inner truncate">
+          <option value="">加载中...</option>
+        </select>
+        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-zinc-400">
+          <svg class="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+        </div>
+      </div>
+          <button id="btn-sync" class="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/25 transition-all border border-indigo-400/30">
+            <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+            载入
+          </button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btn-invert" class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 border border-white/5 text-sm font-semibold transition-all" title="夜间反色模式">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+          夜间
+        </button>
+        <button id="btn-conductor" class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700 border border-white/5 text-sm font-semibold transition-all" title="开启指挥模式">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
+          指挥
+        </button>
+      </div>
+    </div>
+    <button id="btn-draw" class="flex items-center gap-1.5 h-11 px-4 rounded-full bg-zinc-800/90 backdrop-blur-xl text-zinc-200 hover:bg-zinc-700 border border-white/10 shadow-xl transition-all text-sm font-semibold" title="标注（在谱上画）">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+      <span id="draw-status">标注</span>
+    </button>
+    <button id="btn-tools" class="flex items-center gap-1.5 h-11 px-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/30 shadow-xl shadow-indigo-500/25 transition-all text-sm font-bold" title="换排单／夜间／指挥">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+      排单
+    </button>
+  </div>
 
 
   <!-- 底部悬浮画笔工具栏 -->
-  <div id="draw-tools" class="hidden fixed bottom-8 left-1/2 -translate-x-1/2 z-50 items-center gap-2 p-2 bg-zinc-800/95 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl">
-    <button class="color-btn w-10 h-10 rounded-full bg-red-500 ring-2 ring-offset-2 ring-offset-zinc-800 ring-white transition-all shadow-sm hover:scale-110" data-color="rgba(239, 68, 68, 0.8)" data-width="4" title="红笔"></button>
-    <button class="color-btn w-10 h-10 rounded-full bg-blue-500 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm hover:scale-110" data-color="rgba(59, 130, 246, 0.8)" data-width="4" title="蓝笔"></button>
-    <button class="color-btn w-10 h-10 rounded-full bg-zinc-900 border border-zinc-600 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm hover:scale-110" data-color="rgba(30, 41, 59, 0.8)" data-width="4" title="黑笔"></button>
-    <button class="color-btn w-10 h-10 rounded-full bg-yellow-400 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm flex items-center justify-center hover:scale-110" data-color="rgba(253, 224, 71, 0.8)" data-width="20" title="高亮笔">
+  <div id="draw-tools" class="hidden fixed bottom-4 left-2 max-w-[calc(100vw-8rem)] flex-wrap justify-center md:flex-nowrap md:max-w-none md:bottom-8 md:left-1/2 md:-translate-x-1/2 z-50 items-center gap-2 p-2 bg-zinc-800/95 backdrop-blur-2xl border border-white/10 rounded-3xl md:rounded-full shadow-2xl">
+    <button class="color-btn w-9 h-9 md:w-10 md:h-10 rounded-full bg-red-500 ring-2 ring-offset-2 ring-offset-zinc-800 ring-white transition-all shadow-sm hover:scale-110" data-color="rgba(239, 68, 68, 0.8)" data-width="4" title="红笔"></button>
+    <button class="color-btn w-9 h-9 md:w-10 md:h-10 rounded-full bg-blue-500 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm hover:scale-110" data-color="rgba(59, 130, 246, 0.8)" data-width="4" title="蓝笔"></button>
+    <button class="color-btn w-9 h-9 md:w-10 md:h-10 rounded-full bg-zinc-900 border border-zinc-600 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm hover:scale-110" data-color="rgba(30, 41, 59, 0.8)" data-width="4" title="黑笔"></button>
+    <button class="color-btn w-9 h-9 md:w-10 md:h-10 rounded-full bg-yellow-400 ring-2 ring-offset-2 ring-offset-zinc-800 ring-transparent transition-all shadow-sm flex items-center justify-center hover:scale-110" data-color="rgba(253, 224, 71, 0.8)" data-width="20" title="高亮笔">
      <span class="text-[11px] font-black text-yellow-900">粗</span>
     </button>
     
-    <div class="w-px h-8 bg-white/10 mx-1"></div>
+    <div class="hidden md:block w-px h-8 bg-white/10 mx-1"></div>
     
     <!-- 🌟 新增：画笔尺寸选择 -->
     <div class="flex items-center gap-1 bg-zinc-900/50 rounded-full p-1 border border-white/5">
@@ -136,7 +135,7 @@
       </button>
     </div>
 
-    <div class="w-px h-8 bg-white/10 mx-1"></div>
+    <div class="hidden md:block w-px h-8 bg-white/10 mx-1"></div>
 
     <button id="btn-eraser" class="p-2.5 rounded-full text-zinc-400 hover:bg-zinc-700 hover:text-white ring-2 ring-transparent transition-all" title="橡皮擦">
       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -184,12 +183,16 @@
     const header = document.querySelector('header');
     const slideContainer = document.getElementById('slide-container');
     const drawTools = document.getElementById('draw-tools');
+    const toolDock = document.getElementById('tool-dock');
+    const toolPanel = document.getElementById('tool-panel');
+    document.getElementById('btn-tools').addEventListener('click', () => toolPanel.classList.toggle('hidden'));
     
     let isHudVisible = false;
 
     slideContainer.addEventListener('click', (e) => {
       // 如果点击的是按钮本身，不触发隐藏逻辑
       if (e.target.closest('button')) return;
+      if (!toolPanel.classList.contains('hidden')) { toolPanel.classList.add('hidden'); return; }
 
       // 🌟 核心修复：把获取元素的动作放到点击事件内部，保证绝对能找到！
       const btnPrev = document.getElementById('btn-prev');
@@ -213,6 +216,9 @@
         header.classList.toggle('opacity-0');
         header.classList.toggle('pointer-events-none');
         header.classList.toggle('-translate-y-8');
+        toolDock.classList.toggle('opacity-0');
+        toolDock.classList.toggle('pointer-events-none');
+        toolDock.classList.toggle('translate-y-8');
         if (!drawTools.classList.contains('hidden')) {
           drawTools.classList.toggle('opacity-0');
           drawTools.classList.toggle('pointer-events-none');
@@ -269,6 +275,8 @@
 
     btnLock.addEventListener('click', () => {
       header.classList.add('opacity-0', 'pointer-events-none', '-translate-y-8');
+      toolDock.classList.add('opacity-0', 'pointer-events-none', 'translate-y-8');
+      toolPanel.classList.add('hidden');
       if (!drawTools.classList.contains('hidden')) {
         drawTools.classList.add('opacity-0', 'pointer-events-none', 'translate-y-12');
       }
@@ -291,6 +299,7 @@
 
     btnUnlock.addEventListener('click', () => {
       header.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-8');
+      toolDock.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-8');
       slideContainer.dataset.locked = "false";
       btnUnlock.classList.add('hidden');
 
@@ -327,7 +336,7 @@
   </div>
 
   <!-- 翻页提示 (Toast) 悬浮在左下角 -->
-  <div id="toast-notification" class="fixed bottom-8 left-6 z-[70] bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white px-4 py-3 rounded-xl shadow-2xl transform translate-y-4 opacity-0 pointer-events-none transition-all duration-300 flex flex-col max-w-[80vw] md:max-w-md">
+  <div id="toast-notification" class="fixed bottom-4 left-3 md:bottom-8 md:left-6 z-[70] bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white px-4 py-3 rounded-xl shadow-2xl transform translate-y-4 opacity-0 pointer-events-none transition-all duration-300 flex flex-col max-w-[calc(100vw-9rem)] md:max-w-md">
     <span id="toast-number" class="text-indigo-400 font-black text-[10px] tracking-wider mb-1"></span>
     <span id="toast-title" class="font-bold text-sm md:text-base leading-snug break-words whitespace-normal"></span>
   </div>

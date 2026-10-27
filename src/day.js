@@ -13,6 +13,8 @@ import { CECILIA, bookName, loadPrayer } from "./prayer-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// 点歌名 → 歌单目录的看谱（跟乐谱一样的操作），左右滑只在这一台的歌里换；没有歌 id 的才直接开图
+const scoreLink = (x, ids) => esc(x.id ? `songs.html?ids=${[...new Set(ids)].map(encodeURIComponent).join(',')}#${encodeURIComponent(x.id)}` : x.imageUrl);
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const TODAY = iso(new Date());
@@ -272,9 +274,10 @@ function renderSongs(isStaff) {
   const sets = [...new Set(slots.filter(s => ORDINARY.includes(s.key)).flatMap(s => s.songs.map(x => massSetOf(x.title))).filter(Boolean))];
   const odd = s => ORDINARY.includes(s.key) && s.songs.some(x => !massSetOf(x.title));
   const show = slots.filter(s => (PROPER_KEYS.includes(s.key) || !LABEL[s.key] && !ORDINARY.includes(s.key) && !['pre', 'post', 'pater', 'doxology', 'welcome'].includes(s.key) || odd(s)) && s.songs.length);
+  const ids = show.flatMap(s => s.songs).filter(x => x.id && !x.missing).map(x => x.id);
   const song = x => x.missing
     ? `<span class="text-amber-600">⚠ ${esc(waTitle(x.title))}<span class="text-xs">（还没有谱）</span></span>`
-    : `<a href="${esc(x.imageUrl)}" target="_blank" rel="noopener" class="text-slate-800 hover:text-indigo-600 underline decoration-slate-200 underline-offset-4" title="${esc(x.title)}">${esc(waTitle(x.title))}</a>`;
+    : `<a href="${scoreLink(x, ids)}" class="text-slate-800 hover:text-indigo-600 underline decoration-slate-200 underline-offset-4" title="${esc(x.title)}">${esc(waTitle(x.title))}</a>`;
   $('songs').innerHTML = card('🎵 唱的歌', editLink(isStaff, 'mass.html')) + `
     ${m.setlistName ? '' : '<div class="text-xs text-amber-700 mb-2">还在排，可能会改</div>'}
     ${sets.length ? `<div class="text-sm mb-2"><span class="text-slate-500">弥撒曲：</span>${esc(sets.join('、'))}</div>` : ''}
@@ -367,7 +370,8 @@ function renderSpecials(isStaff) {
   const meM = me ? findMember(me, memberList) || { name: me } : null;
   const isMe0 = n => meM && findMember(n, [meM]) === meM;
   const sameName = n => meM && findMember(n, [meM], true) === meM;
-  const song = x => `<a href="${esc(x.imageUrl)}" target="_blank" rel="noopener" class="text-slate-800 hover:text-indigo-600 underline decoration-slate-200 underline-offset-4" title="${esc(x.title)}">${esc(waTitle(x.title))}</a>`;
+  const ids = list.flatMap(w => (w.slots || []).flatMap(s => s.songs || [])).filter(x => x.id && !x.missing).map(x => x.id);
+  const song = x => `<a href="${scoreLink(x, ids)}" class="text-slate-800 hover:text-indigo-600 underline decoration-slate-200 underline-offset-4" title="${esc(x.title)}">${esc(waTitle(x.title))}</a>`;
   box.innerHTML = list.map(w => {
     // 座位表加的 guest（Theresa Ng）不要因为第一个字一样就当成团员 Theresa 玉娥
     const guests = new Set((wseats[w.id]?.guests || []).map(g => String(g.name).toLowerCase()));
