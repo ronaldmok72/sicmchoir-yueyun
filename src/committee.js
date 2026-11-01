@@ -20,6 +20,8 @@ let todoShow = 'open', todoWho = '';
 let reportYear = null;
 let YEARS = {};             // '2026' → 那一年的活动表
 let yearEditing = null;     // 正在改哪一年的活动表
+let aiMode = null;          // 贴会议记录让 AI 整理：{ target: 要盖过去的那一场 id 或 null }
+let aiReady = null;         // 服务器的 AI 钥匙放好了没有（问过一次就记住）
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
 
 const TABS = [
@@ -101,6 +103,7 @@ function render() {
   $('tabs').innerHTML = TABS.map(t => `<button data-tab="${t.key}" class="shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium border ${t.key === tab && !editing ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}">${t.label}${t.key === 'todo' && open ? ` <span class="ml-0.5 text-xs opacity-80">${open}</span>` : ''}</button>`).join('');
   if (editing) return renderEdit();
   if (yearEditing) return renderYearEdit();
+  if (aiMode) return renderAi();
   if (tab === 'list' && openId) {
     const m = byId(openId);
     if (m) return renderDetail(m);
@@ -109,7 +112,7 @@ function render() {
   TABS.find(t => t.key === tab).render();
 }
 function go(t, id = null) {
-  tab = t; openId = id; editing = null; yearEditing = null;
+  tab = t; openId = id; editing = null; yearEditing = null; aiMode = null;
   const u = new URL(location.href);
   u.searchParams.delete('m'); u.searchParams.delete('tab');
   if (id) u.searchParams.set('m', id); else if (t !== 'list') u.searchParams.set('tab', t);
@@ -131,7 +134,8 @@ function renderList() {
   view.innerHTML = `
     <div class="flex gap-2 mb-2">
       <input id="q" type="search" value="${esc(q)}" placeholder="找会议：例如 报佳音、披肩、改选" class="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
-      <button data-act="new" class="shrink-0 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">＋ 新会议</button>
+      <button data-act="ai" class="shrink-0 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">📎 贴会议记录</button>
+      <button data-act="new" class="shrink-0 px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm" title="自己一格一格写">＋ 手写</button>
     </div>
     <div class="flex gap-1.5 overflow-x-auto no-scrollbar mb-3">${chip('all', '全部')}${years.map(y => chip(y, y + ' 年')).join('')}</div>
     <div id="mlist" class="space-y-2.5"></div>
@@ -163,7 +167,7 @@ function renderCards() {
         ${open || m.driveUrl ? `<div class="mt-2 flex gap-3 text-xs">${open ? `<span class="text-indigo-700">✅ 还有 ${open} 件待办没做完</span>` : ''}${m.driveUrl ? '<span class="text-slate-400">📎 有原件</span>' : ''}</div>` : ''}
         ${hit}
       </button>`;
-  }).join('') || `<div class="text-sm text-slate-400 text-center py-10">${MEETINGS.length ? '找不到' : '还没有会议记录。按「＋ 新会议」开始，或在下面导入以前的记录。'}</div>`;
+  }).join('') || `<div class="text-sm text-slate-400 text-center py-10">${MEETINGS.length ? '找不到' : '还没有会议记录。按「📎 贴会议记录」：贴 Google Drive 链接或上传 PDF，AI 会整理好完整记录、重点、待办、要报告的进展。'}</div>`;
 }
 
 // 一场会议：重点在上，完整记录在下
@@ -185,7 +189,10 @@ function renderDetail(m) {
         <h2 class="text-lg font-semibold flex-1 min-w-0">${esc(titleOf(m))}</h2>${pill(m)}
       </div>
       <div class="text-sm text-slate-500 mt-0.5">${fmtDate(m.date)}${m.time ? ' · ' + esc(m.time) : ''}</div>
-      ${m.driveUrl ? `<a href="${esc(m.driveUrl)}" target="_blank" rel="noopener" class="mt-2 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium">📎 打开原件</a>` : ''}
+      <div class="mt-2 flex flex-wrap gap-2">
+        ${m.driveUrl ? `<a href="${esc(m.driveUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium">📎 打开原件</a>` : ''}
+        <button data-act="ai-this" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">🤖 ${m.status === 'agenda' ? '开完会：贴会议记录整理' : '用会议记录重新整理'}</button>
+      </div>
       <div class="mt-3 space-y-1.5 text-sm">
         ${row('地点', esc(m.place))}
         ${row('出席', esc(m.attend))}
@@ -393,6 +400,7 @@ function renderEdit() {
         <button type="button" data-act="cancel" class="text-sm text-slate-500 hover:text-indigo-600">← 取消</button>
         <h2 class="font-semibold flex-1 text-right">${m.id ? '修改会议' : '新会议'}</h2>
       </div>
+      ${m._ai ? `<div class="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">🤖 AI 整理好了，请看一遍，有错就改，再按最下面「保存」。${m.id ? `<br>保存后会盖过原本的「${esc(titleOf(byId(m.id) || m))}」。` : ''}</div>` : ''}
 
       <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
         <div class="grid grid-cols-2 gap-3">
@@ -456,8 +464,9 @@ async function submit() {
   const v = id => $(id).value.trim();
   const date = v('f-date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('请选日期');
+  const { _ai, ...was } = editing;
   const m = {
-    ...editing, date, no: v('f-no') ? Number(v('f-no')) : '', title: v('f-title'), status: v('f-status'),
+    ...was, date, no: v('f-no') ? Number(v('f-no')) : '', title: v('f-title'), status: v('f-status'),
     time: v('f-time'), place: v('f-place'), attend: v('f-attend'), absent: v('f-absent'),
     prayOpen: v('f-prayOpen'), prayClose: v('f-prayClose'), recorder: v('f-recorder'), driveUrl: v('f-drive'),
     approve: { by: v('f-approveBy'), second: v('f-approveSecond') },
@@ -485,6 +494,70 @@ async function submit() {
   } catch (err) { btn.disabled = false; btn.textContent = '保存'; return fail(err); }
   MEETINGS = MEETINGS.filter(x => x.id !== old && x.id !== id).concat(norm({ ...m, id })).sort((a, b) => b.date.localeCompare(a.date));
   go('list', id);
+}
+
+// ───────── 贴会议记录 → AI 整理 ─────────
+function renderAi() {
+  const t = aiMode.target && byId(aiMode.target);
+  view.innerHTML = `
+    <div class="flex items-center gap-2 mb-3">
+      <button data-act="cancel" class="text-sm text-slate-500 hover:text-indigo-600">← 取消</button>
+      <h2 class="font-semibold flex-1 text-right">${t ? esc(titleOf(t)) + '：' : ''}贴会议记录</h2>
+    </div>
+    <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+      <div class="text-sm text-slate-600">AI 会读会议记录，整理出完整记录、重点、待办、要报告的进展。整理好你看一遍再保存。</div>
+      <div id="ai-off" class="hidden rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">AI 还没接上（Vercel 里还没放 GEMINI_API_KEY），现在按了会失败。</div>
+      <label class="block"><div class="text-xs text-slate-500 mb-0.5">Google Drive 链接（Google 文件或 PDF）</div>
+        <input id="ai-url" type="url" value="${esc(t?.driveUrl)}" placeholder="https://drive.google.com/…" class="${inp}"></label>
+      <div class="text-xs text-slate-400">链接要在 Drive 按「分享」→「知道链接的人」都能看。不想开分享，就在下面直接上传 PDF。</div>
+      <label class="block"><div class="text-xs text-slate-500 mb-0.5">或者上传 PDF</div>
+        <input id="ai-file" type="file" accept="application/pdf,.pdf,.txt" class="block w-full text-sm text-slate-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-indigo-50 file:text-indigo-700"></label>
+      <button data-act="ai-run" id="ai-go" class="w-full sm:w-auto px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">🤖 开始整理</button>
+      <div id="ai-msg" class="text-sm"></div>
+    </section>`;
+  if (aiReady === null) fetch('/api/summarize').then(r => r.json()).then(j => { aiReady = !!j.configured; showAiOff(); }).catch(() => {});
+  else showAiOff();
+}
+const showAiOff = () => $('ai-off')?.classList.toggle('hidden', aiReady !== false);
+const fileB64 = f => new Promise((ok, no) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result).split(',')[1]);
+  r.onerror = () => no(r.error);
+  r.readAsDataURL(f);
+});
+
+async function aiRun() {
+  const url = $('ai-url').value.trim(), f = $('ai-file').files[0];
+  const msg = t => { $('ai-msg').innerHTML = t; };
+  if (!url && !f) return msg('<span class="text-rose-600">请贴 Drive 链接或选一个 PDF</span>');
+  if (f && f.size > 4 * 1024 * 1024) return msg('<span class="text-rose-600">文件太大（超过 4MB）</span>');
+  const btn = $('ai-go');
+  btn.disabled = true; btn.textContent = '🤖 整理中…';
+  msg('<span class="text-slate-500">AI 在读会议记录，大概 20 秒到 1 分钟，请别关这页。</span>');
+  const topics = [...new Set(MEETINGS.flatMap(x => x.summary.reports.map(r => r.topic)).filter(Boolean))];
+  const body = JSON.stringify(f ? { file: { data: await fileB64(f), mime: f.type || (/\.txt$/i.test(f.name) ? 'text/plain' : 'application/pdf'), name: f.name }, topics } : { url, topics });
+  const call = async () => {
+    await window.sicStaff.ensureAuth();
+    return fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await window.sicStaff.idToken()) }, body });
+  };
+  let j;
+  try {
+    let r = await call();
+    if (r.status === 401) { await window.sicStaff.ensureAuth(true); r = await call(); }
+    j = await r.json().catch(() => ({ error: '服务器没有回答（' + r.status + '）' }));
+    if (!r.ok) throw new Error(j.error || r.status);
+  } catch (err) {
+    btn.disabled = false; btn.textContent = '🤖 开始整理';
+    return msg(`<span class="text-rose-600">${esc(err.message || err)}</span>`);
+  }
+  const g = j.meeting;
+  // 盖过哪一场：从那一场按进来的就是那一场；不然同一天已经有的（例如会前议程）
+  const base = aiMode.target ? byId(aiMode.target) : MEETINGS.find(x => g.date && x.date === g.date);
+  editing = norm({ ...(base || blank()), ...g, date: g.date || base?.date || '', no: g.no || base?.no || '',
+    id: base?.id || '', driveUrl: url || base?.driveUrl || '', _ai: true });
+  aiMode = null;
+  render();
+  window.scrollTo(0, 0);
 }
 
 // ───────── 按钮 ─────────
@@ -516,8 +589,11 @@ view.addEventListener('click', async e => {
   switch (b.dataset.act) {
     case 'back': return go('list');
     case 'new': editing = blank(); render(); return window.scrollTo(0, 0);
+    case 'ai': aiMode = { target: null }; render(); return window.scrollTo(0, 0);
+    case 'ai-this': aiMode = { target: m.id }; render(); return window.scrollTo(0, 0);
+    case 'ai-run': return aiRun();
     case 'edit': editing = norm(JSON.parse(JSON.stringify(m))); render(); return window.scrollTo(0, 0);
-    case 'cancel': editing = null; yearEditing = null; render(); return window.scrollTo(0, 0);
+    case 'cancel': editing = null; yearEditing = null; aiMode = null; render(); return window.scrollTo(0, 0);
     case 'add-todo': $('f-todos').insertAdjacentHTML('beforeend', todoRow()); return $('f-todos').lastElementChild.querySelector('.r-t').focus();
     case 'add-report': $('f-reports').insertAdjacentHTML('beforeend', reportRow()); return $('f-reports').lastElementChild.querySelector('.r-topic').focus();
     case 'delete': {
