@@ -22,6 +22,7 @@
     { href: 'members.html', icon: '👥', title: '团员名单', sub: '声部、披肩号码、会做的职务', staff: 'members' },
     { href: 'attendance.html', icon: '📋', title: '点名／出席率', sub: '每次谁有来、出席了几次', staff: 'attendance' },
     { href: 'admin.html', icon: '🗂️', title: '排单后台', sub: '曲库、改图、排单历史', staff: 'admin' },
+    { href: 'committee.html', icon: '🏛️', title: '执委专区', sub: '会议记录、重点、待办、年度进展', staff: 'committee' },
     { href: 'quiz-admin.html', icon: '📊', title: '测验结果', sub: '全团水平、谁想当领唱／指挥', staff: 'quiz' },
     { href: 'access.html', icon: '🔑', title: '密码管理', sub: '谁的密码可以进哪几页', staff: 'access', masterOnly: true },
     { href: 'renames.html', icon: '📝', title: '改名记录', sub: '谁改了哪首歌的名字，可以改回去', staff: 'access', masterOnly: true },

@@ -14,6 +14,7 @@
     { key: 'admin', label: '排单后台', sub: '曲库、改图、排单历史' },
     { key: 'quiz', label: '测验结果', sub: '全团测验成绩' },
     { key: 'photos', label: '合照', sub: '在「这台弥撒」加、拿掉每一台的合照' },
+    { key: 'committee', label: '执委专区', sub: '执委会议记录、重点、待办、年度进展（只有执委看得到）' },
   ];
   const ALL = AREAS.map(a => a.key).concat('access');   // access = 密码管理，只有最高权限
   const KEY = 'sicAccess';                               // 这部手机输过哪些密码：[{ h: 打乱后的密码, areas }]

@@ -1,7 +1,7 @@
 rules_version = '2';
 // 乐韵 App 的资料库锁（第 4 步：收紧版＋打乱过的电话、密码藏起来）
 // 贴到 Firebase → Firestore → 规则（Rules）→ 发布。这个文件只是留底，改了要再贴一次。
-// 大家都看得到。改资料要通行证（App 登录／输过后台密码），而且：
+// 大家都看得到（执委会议记录除外）。改资料要通行证（App 登录／输过后台密码），而且：
 //   后台的资料 → 要有那一区（密码管理开的区）；最高权限（access）什么都能改
 //   团员 → 只能改自己的「会来／请假」、自己扫码签到、自己的资料
 //   打乱过的电话、PIN、密码表藏在 secrets：谁都不能看、不能改（只有登录服务 /api/login 用服务器钥匙碰得到）
@@ -16,9 +16,9 @@ service cloud.firestore {
     // 这一格（例如 votes）里只动到自己那一个
     function ownOnly(f) { return request.resource.data.get(f, {}).diff(resource.data.get(f, {})).affectedKeys().hasOnly([me()]); }
 
-    // 其他没列出来的：只有最高权限能改；secrets 谁都不能看
+    // 其他没列出来的：只有最高权限能改；secrets 谁都不能看；meetings（执委会议记录）在下面另外管
     match /{coll}/{document=**} {
-      allow read: if coll != 'secrets';
+      allow read: if coll != 'secrets' && coll != 'meetings';
       allow write: if coll != 'secrets' && can([]);
     }
 
@@ -37,6 +37,8 @@ service cloud.firestore {
     match /prayers/{id}       { allow write: if signedIn(); }
     match /config/quiz        { allow write: if can(['quiz']); }
     match /config/attendance  { allow write: if can(['attendance']); }
+    // 执委会议记录：只有执委（密码管理开了「执委专区」）看得到、改得到
+    match /meetings/{id}      { allow read, write: if can(['committee']); }
 
     match /members/{id} {
       allow write: if can(['members', 'seating']);

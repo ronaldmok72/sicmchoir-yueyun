@@ -19,7 +19,7 @@
 const crypto = require('crypto');
 
 const PROJECT = 'sicmchoir-yueyun';
-const ALL = ['conduct', 'mass', 'duties', 'seating', 'members', 'attendance', 'notice', 'admin', 'quiz', 'photos', 'access'];
+const ALL = ['conduct', 'mass', 'duties', 'seating', 'members', 'attendance', 'notice', 'admin', 'quiz', 'photos', 'committee', 'access'];
 const sha = s => crypto.createHash('sha256').update(s).digest('hex');
 // 还没在「密码管理」设过任何密码之前，旧密码 sic 暂时当最高权限（跟 App 一样）
 const BOOT = sha('sicmchoir|sic');
