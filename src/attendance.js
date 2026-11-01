@@ -3,7 +3,7 @@
 // 每点一个人就存那一个人（两个人一起点也不会互相盖掉）
 // 章程：3 个月出席 7 次（config/attendance.need 可以改）；有到 + 迟到早退 = 出席，请假不算出席也不算缺席
 import { collection, doc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, getDocs, getDoc, history } from "./firebase.js";
+import { db, getDocs, getDoc, history as recentDocs } from "./firebase.js";
 import { litDay } from "./liturgy.js";
 import { DEFAULT_TIME, slotNow, tokenOf, randomSecret, hm, PTS, markOf, scoreOf, fmtPts } from "./checkin-common.js";
 
@@ -48,9 +48,9 @@ function toast(msg, bad) {
 async function load() {
   const [ms, ev, cfg] = await Promise.all([
     getDocs(collection(db, 'members')),
-    history('attendance'),
+    recentDocs('attendance'),
     getDoc(doc(db, 'config', 'attendance')).catch(() => null),
-    history('rsvp').then(q => {
+    recentDocs('rsvp').then(q => {
       votes = Object.fromEntries(q.docs.map(d => [d.id, d.data().votes || {}]));
       extras = Object.fromEntries(q.docs.filter(d => d.data().extra).map(d => [d.id, d.data()]));
     }).catch(() => {}),

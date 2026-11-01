@@ -529,6 +529,7 @@
         });
 
         historyItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        window._setlists = Object.fromEntries(historyItems.map(i => [i.id, i]));   // 点开／删除／发布都用这份，不再整个重读
 
         historyItems.forEach(item => {
           const div = document.createElement('div');
@@ -553,6 +554,7 @@
             <div class="flex justify-between items-center mt-auto">
               <div class="flex items-center gap-2.5">
                 <span class="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">${item.items.length} 首</span>
+                ${item.date ? '<span class="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md" title="这份是「弥撒排歌」做的，改歌要去那边改">⛪ 弥撒排歌</span>' : ''}
                 <span class="text-xs font-medium text-slate-400 flex items-center gap-1">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                   ${dateStr}
@@ -579,25 +581,28 @@
 
 
 
+    // 弥撒的排单（「弥撒排歌」按保存生成的，有 date）只在弥撒排歌改——那边有环节、会补缺的歌，保存时乐谱一起更新；
+    // 在这里改的话，弥撒排歌下次一保存就会把这里的改动盖掉，两边对不上。歌颂赞美这类不是弥撒的，照常在这里排。
+    const massLinked = id => window._setlists?.[id]?.date;
+    const goMass = (id, why) => {
+      if (confirm(`【${id}】是「弥撒排歌」做的排单。\n${why}\n\n现在去弥撒排歌打开这一台？`)) location.href = `mass.html?setlist=${encodeURIComponent(id)}`;
+    };
     window.loadSetlist = function(id) {
+      if (massLinked(id)) return goMass(id, '加歌、删歌、换歌请在那边改，按「保存并更新乐谱」，这里和乐谱会一起更新。');
       if(confirm(`确定要加载排单【${id}】吗？当前未发布的排单将被覆盖。`)) {
-        getDocs(collection(db, "setlists")).then(snapshot => {
-          snapshot.forEach(doc => {
-            if(doc.id === id) {
-              const data = doc.data();
-              document.getElementById('setlist-name').value = data.name;
-              // 歌名以曲库为准（改过名的会跟上）
-              currentSetlist = data.items.map(song => ({ ...song, title: LIBRARY_DATA.find(s => s.id === song.id)?.title || song.title, uuid: Date.now().toString() + Math.random() }));
-              window.renderSetlist();
-              window.switchTab?.('setlist');
-            }
-          });
-        });
+        const data = window._setlists?.[id];
+        if (!data) return;
+        document.getElementById('setlist-name').value = data.name;
+        // 歌名以曲库为准（改过名的会跟上）
+        currentSetlist = data.items.map(song => ({ ...song, title: LIBRARY_DATA.find(s => s.id === song.id)?.title || song.title, uuid: Date.now().toString() + Math.random() }));
+        window.renderSetlist();
+        window.switchTab?.('setlist');
       }
     };
 
     window.deleteSetlist = async function(id) {
-      if(confirm(`🚨 警告：确定要永久删除排单【${id}】吗？此操作不可恢复！`)) {
+      const extra = massLinked(id) ? '\n\n⚠ 这份是「弥撒排歌」做的：删了只是乐谱里没有这份，弥撒排歌那边的歌还在，那边再按保存又会出现。' : '';
+      if(confirm(`🚨 警告：确定要永久删除排单【${id}】吗？此操作不可恢复！${extra}`)) {
         try {
           // 注意：这里需要确保顶部 import 了 deleteDoc
           // import { ..., deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
@@ -621,6 +626,8 @@
         alert("请先输入排单名称！（例如：5月10日 常年期）");
         return;
       }
+
+      if (massLinked(setNameInput)) return goMass(setNameInput, '同名的排单是弥撒排歌做的，在这里发布会跟弥撒排歌对不上。要改这一台的歌请去那边；要另外排一份，换个名字再发布。');
 
       const payload = currentSetlist.map((item, index) => ({
         id: item.id, order: index + 1, title: item.title, imageUrl: item.imageUrl
