@@ -253,7 +253,7 @@ function draftBox(m) {
   const tag = m.status === 'agenda' ? 'section' : 'details', head = m.status === 'agenda' ? 'div' : 'summary';
   return `
     <${tag} class="mt-3 bg-white rounded-2xl border border-slate-200 p-4">
-      <${head} class="font-semibold text-sm ${head === 'summary' ? 'cursor-pointer text-slate-500' : ''}">📝 开会笔记（草稿）</${head}>
+      <${head} class="font-semibold text-sm ${head === 'summary' ? 'cursor-pointer text-slate-500' : ''}">📝 会议记录草稿</${head}>
       ${m.draft ? `<div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">${esc(m.draft)}</div>`
         : '<div class="mt-2 text-sm text-slate-500">这几个月有什么事就随手记在这里，乱写没关系。开完会补上讨论的内容，按「用笔记整理」，AI 会照以前的格式写成正式会议记录。</div>'}
       <div class="mt-3 flex flex-wrap gap-2">
@@ -318,7 +318,7 @@ function renderReport() {
     <section class="bg-white rounded-2xl border border-slate-200 p-4">
       <div class="flex items-center gap-3">
         <div class="font-semibold text-sm flex-1">${reportYear} 年活动表 <span class="font-normal text-xs text-slate-400">每个月办了什么（年尾交堂区）</span></div>
-        ${Y ? '<button data-act="copy-months" class="shrink-0 text-xs text-indigo-700 hover:underline">📋 复制</button>' : ''}
+        ${Y ? '<button data-act="print-year" class="shrink-0 text-xs text-indigo-700 hover:underline">🖨️ PDF</button><button data-act="copy-months" class="shrink-0 text-xs text-indigo-700 hover:underline">📋 复制</button>' : ''}
         <button data-act="year-edit" class="shrink-0 text-xs text-indigo-700 hover:underline">${Y ? '✎ 修改' : '＋ 开始写'}</button>
       </div>
       ${months.length ? `<div class="mt-3 grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">${months.map(([n, a]) => `
@@ -360,6 +360,7 @@ function renderYearEdit() {
         <textarea id="y-notes" rows="4" class="${inp}">${esc(Y?.notes)}</textarea></label>
       <div class="grid grid-cols-2 gap-3">
         <label class="block"><div class="text-xs text-slate-500 mb-0.5">填表人</div><input id="y-by" value="${esc(Y?.by)}" class="${inp}"></label>
+        <label class="block"><div class="text-xs text-slate-500 mb-0.5">填表人英文名（堂区表格用）</div><input id="y-byEn" value="${esc(Y?.byEn)}" placeholder="例如 Agnes Yap" class="${inp}"></label>
         <label class="block"><div class="text-xs text-slate-500 mb-0.5">日期</div><input id="y-date" value="${esc(Y?.date)}" placeholder="例如 9/10/2026" class="${inp}"></label>
       </div>
       <div class="flex gap-2">
@@ -370,7 +371,7 @@ function renderYearEdit() {
   $('yform').addEventListener('submit', async e => {
     e.preventDefault();
     const d = {
-      kind: 'year', year: y, by: $('y-by').value.trim(), date: $('y-date').value.trim(), notes: $('y-notes').value.trim(),
+      kind: 'year', year: y, by: $('y-by').value.trim(), byEn: $('y-byEn').value.trim(), date: $('y-date').value.trim(), notes: $('y-notes').value.trim(),
       months: Object.fromEntries([...view.querySelectorAll('[data-month]')].map(t => [t.dataset.month, lines(t.value)])),
     };
     try { await save('year_' + y, d); } catch (err) { return fail(err); }
@@ -387,6 +388,45 @@ const monthsText = y => {
     ...MONTHS.map((n, i) => [n, Y.months?.[i + 1] || []]).filter(([, a]) => a.length).map(([n, a]) => `${n}\n` + a.map((x, k) => `${k + 1}. ${x}`).join('\n')),
     Y.notes && '备注：\n' + Y.notes, Y.by && `填表人：${Y.by}${Y.date ? '　日期：' + Y.date : ''}`].filter(Boolean).join('\n\n');
 };
+
+// 活动表照堂区表格（EVENTS & ACTIVITIES HELD IN …）排好，开打印 → 存成 PDF
+const MONTHS_EN = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+function printYear(y) {
+  const Y = YEARS[y], w = window.open('', '_blank');
+  if (!w) return alert('浏览器挡住了新窗口，请允许这个网站开新窗口再按一次。');
+  const rows = MONTHS.map((n, i) => {
+    const a = Y.months?.[i + 1] || [];
+    return `<tr><td class="m"><b>${MONTHS_EN[i]}</b><br>${n}</td><td>${a.length ? `<ol>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}</td></tr>`;
+  }).join('');
+  const notes = lines(Y.notes).map(x => esc(x.replace(/^[-•]\s*/, '')));
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Mandarin Choir Ministry ${y}</title>
+<style>
+  @page { size: A4; margin: 18mm 18mm 16mm; }
+  body { font-family: Calibri, "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 10.5pt; color: #000; margin: 0; }
+  .top { font-weight: bold; font-size: 11pt; margin-bottom: 14px; }
+  .hd { display: flex; gap: 40px; margin: 4px 0; } .hd.en { font-weight: bold; font-size: 9pt; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  tr { break-inside: avoid; }
+  td { border: 1px solid #000; vertical-align: top; padding: 3px 6px; }
+  td.m { width: 26%; font-size: 9.5pt; line-height: 1.5; }
+  ol { margin: 0; padding-left: 26px; } li { line-height: 1.5; }
+  .notes { margin: 18px 0 0 50px; line-height: 1.6; } .notes u { display: inline-block; margin-bottom: 2px; }
+  .foot { margin-top: 18px; font-size: 9pt; } .sign { display: flex; justify-content: space-between; margin-top: 14px; font-size: 9.5pt; }
+  .tip { font: 13px sans-serif; background: #fef3c7; padding: 8px 12px; margin-bottom: 12px; border-radius: 6px; }
+  @media print { .tip { display: none; } }
+</style></head><body>
+<div class="tip">在打印的窗口选「存成 PDF / Save as PDF」就能下载。</div>
+<div class="top">ST. IGNATIUS CHURCH 圣依纳爵堂</div>
+<div class="hd en"><span>EVENTS &amp; ACTIVITIES HELD IN ${y}.</span><span>NAME OF MINISTRY: SIC Mandarin Choir</span></div>
+<div class="hd"><span><b>${y}</b> 年举办之活动与项目</span><span>善会/事工名称：中文“乐韵”歌咏团</span></div>
+<table>${rows}</table>
+${notes.length ? `<div class="notes"><u>备注：</u><br>${notes.join('<br>')}</div>` : ''}
+<div class="foot"><b>Note:</b>&nbsp;&nbsp; List ministry’s activities including Church Events which your ministry was involved in organizing<br>备注：请列出本善会的所有活动，包括本善会有份协助筹办的堂区活动</div>
+<div class="sign"><div><b>PREPARED BY:</b> ${esc(Y.byEn || Y.by)}<br>填表人/报告人： <b>${esc(Y.by)}</b></div><div><b>DATE:</b> ${esc(Y.date)}<br>日期：<b>${esc(Y.date)}</b></div></div>
+<script>window.onload = () => setTimeout(() => print(), 300);<\/script>
+</body></html>`);
+  w.document.close();
+}
 
 // ───────── 修改／新会议 ─────────
 const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white';
@@ -437,6 +477,9 @@ function draftSeed(m) {
 function renderEdit() {
   const m = editing;
   const draft = m.draft || draftSeed(m);
+  // 会前还没整理的：下面那块收起来，免得以为要在那里写
+  const S0 = m.summary;
+  const sumTag = m.status === 'agenda' && !m._ai && !S0.points.length && !S0.todos.length && !S0.reports.length && !S0.events.length ? 'details' : 'section';
   const topics = [...new Set(MEETINGS.flatMap(x => x.summary.reports.map(r => r.topic)).filter(Boolean))];
   const f = (id, label, val, ph = '', type = 'text') => `<label class="block"><div class="text-xs text-slate-500 mb-0.5">${label}</div><input id="${id}" type="${type}" value="${esc(val)}" placeholder="${esc(ph)}" class="${inp}"></label>`;
   view.innerHTML = `
@@ -468,7 +511,8 @@ function renderEdit() {
       </section>
 
       <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
-        <div class="font-semibold text-sm">📝 开会笔记（草稿） <span class="font-normal text-xs text-slate-400">乱写没关系，开完会 AI 会整理成正式记录</span></div>
+        <div class="font-semibold text-sm">📝 会议记录草稿 <span class="font-normal text-xs text-slate-400">会前、开会时都写在这里</span></div>
+        <div class="text-xs text-slate-500">这几个月发生的事、开会讨论到的、决定了什么，全部随手记在这一格，乱写没关系。开完会按「用笔记整理成会议记录」，AI 会帮你填好下面的重点、待办、进展。</div>
         <textarea id="f-draft" rows="${Math.max(8, draft.split('\n').length + 2)}" class="${inp} leading-relaxed">${esc(draft)}</textarea>
       </section>
 
@@ -477,9 +521,10 @@ function renderEdit() {
         <textarea id="f-agenda" rows="${Math.max(6, m.agenda.length + 1)}" class="${inp}">${esc(m.agenda.join('\n'))}</textarea>
       </section>
 
-      <section class="bg-indigo-50/60 rounded-2xl border border-indigo-200 p-4 space-y-3">
-        <div class="font-semibold text-sm text-indigo-900">重点（简单版）</div>
-        <label class="block"><div class="text-xs text-slate-500 mb-0.5">这场会议的重点，一行一点</div>
+      <${sumTag} class="bg-indigo-50/60 rounded-2xl border border-indigo-200 p-4 space-y-3" ${sumTag === 'details' ? '' : 'open'}>
+        <${sumTag === 'details' ? 'summary' : 'div'} class="font-semibold text-sm text-indigo-900 ${sumTag === 'details' ? 'cursor-pointer' : ''}">开完会的整理：重点、待办、进展、活动表</${sumTag === 'details' ? 'summary' : 'div'}>
+        <div class="text-xs text-slate-500">开完会 AI 整理好会帮你填，你看一遍、要改就改。${sumTag === 'details' ? '会前不用填，写在上面的「会议记录草稿」就好。' : ''}</div>
+        <label class="block"><div class="text-xs text-slate-500 mb-0.5">重点：这场会议最要紧的几件事，一行一点</div>
           <textarea id="f-points" rows="5" class="${inp}" placeholder="例如：改选定 10/4（日）">${esc(m.summary.points.join('\n'))}</textarea></label>
         <div>
           <div class="text-xs text-slate-500 mb-1">接下来要做（谁负责、几时之前）</div>
@@ -487,15 +532,15 @@ function renderEdit() {
           <button type="button" data-act="add-todo" class="mt-1.5 text-sm text-indigo-700 hover:underline">＋ 加一件待办</button>
         </div>
         <div>
-          <div class="text-xs text-slate-500 mb-1">要报告的进展（同一项活动用同一个名字，年尾才排得在一起）</div>
+          <div class="text-xs text-slate-500 mb-1">要报告的进展：左格写是哪一项（可以从清单选，没有的就自己打新名字），右格写进展到哪里。同一项每次用同一个名字，年尾才排得在一起。</div>
           <div id="f-reports" class="space-y-1.5">${m.summary.reports.map(reportRow).join('')}</div>
           <button type="button" data-act="add-report" class="mt-1.5 text-sm text-indigo-700 hover:underline">＋ 加一项进展</button>
           <datalist id="topic-list">${topics.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
         </div>
-        <label class="block"><div class="text-xs text-slate-500 mb-0.5">加进年度活动表（办完的、定好日子的活动；一行一项，开头写月份，例如「5月 天使团参与侍奉母亲节弥撒」，明年的写「2027年1月 …」）</div>
-          <textarea id="f-events" rows="${Math.max(3, m.summary.events.length + 1)}" class="${inp}">${esc(m.summary.events.join('\n'))}</textarea>
-          <div class="text-xs text-slate-400 mt-0.5">保存时会自动加进那一年的活动表，开会那个月也会自动加「歌咏团执委会议」；表里已经有的不会重复加。</div></label>
-      </section>
+        <label class="block"><div class="text-xs text-slate-500 mb-0.5">年度活动表：哪个月办了（或定好要办）什么活动。一行一项，开头写月份</div>
+          <textarea id="f-events" rows="${Math.max(3, m.summary.events.length + 1)}" class="${inp}" placeholder="5月 天使团参与侍奉母亲节弥撒&#10;12月 圣诞报佳音 Cantata&#10;2027年1月 台马交流会（明年的就写年份）">${esc(m.summary.events.join('\n'))}</textarea>
+          <div class="text-xs text-slate-400 mt-0.5">保存时会自动加进「📈 年度进展」里那一年的活动表，开会那个月也会自动加「歌咏团执委会议」；表里已经有的不会重复加。</div></label>
+      </${sumTag}>
 
       <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
         <div class="font-semibold text-sm">完整会议记录 <span class="font-normal text-xs text-slate-400">细节全部贴进来</span></div>
@@ -763,6 +808,7 @@ view.addEventListener('click', async e => {
     }
     case 'year-edit': yearEditing = reportYear; render(); return window.scrollTo(0, 0);
     case 'copy-months': return copy(monthsText(reportYear));
+    case 'print-year': return printYear(reportYear);
     case 'copy-year':
       return copy([`乐韵歌咏团 ${reportYear} 年度进展（按执委会议记录整理）`,
         ...[...view._groups].map(([k, es]) => `【${k}】\n` + es.map(x => `- ${md(x.m.date)}：${x.text}`).join('\n'))].join('\n\n'));
