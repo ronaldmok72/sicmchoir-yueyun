@@ -18,6 +18,9 @@ let tab = 'list', openId = null, editing = null;
 let year = 'all', q = '';
 let todoShow = 'open', todoWho = '';
 let reportYear = null;
+let YEARS = {};             // '2026' → 那一年的活动表
+let yearEditing = null;     // 正在改哪一年的活动表
+const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
 
 const TABS = [
   { key: 'list', label: '📄 会议记录', render: renderList },
@@ -83,10 +86,13 @@ const fail = err => alert('保存失败：' + (err.code === 'permission-denied'
   ? '没有权限。请 Ronald 在「密码管理」帮你开「执委专区」，或 Firebase 规则还没贴新的。' : err.message));
 
 // ───────── 读资料 ─────────
+// 同一个 meetings 里还放每一年的「活动表」（id = year_2026，kind: 'year'），年尾交堂区报告用
 async function load() {
   await window.sicStaff?.ensureAuth?.();
   const s = await getDocs(collection(db, COLL));
-  MEETINGS = s.docs.map(d => norm({ id: d.id, ...d.data() })).sort((a, b) => b.date.localeCompare(a.date));
+  const docs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+  YEARS = Object.fromEntries(docs.filter(d => d.kind === 'year').map(d => [String(d.year), d]));
+  MEETINGS = docs.filter(d => d.kind !== 'year').map(norm).sort((a, b) => b.date.localeCompare(a.date));
 }
 
 // ───────── 画面 ─────────
@@ -94,6 +100,7 @@ function render() {
   const open = MEETINGS.reduce((n, m) => n + m.summary.todos.filter(t => !t.done).length, 0);
   $('tabs').innerHTML = TABS.map(t => `<button data-tab="${t.key}" class="shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium border ${t.key === tab && !editing ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}">${t.label}${t.key === 'todo' && open ? ` <span class="ml-0.5 text-xs opacity-80">${open}</span>` : ''}</button>`).join('');
   if (editing) return renderEdit();
+  if (yearEditing) return renderYearEdit();
   if (tab === 'list' && openId) {
     const m = byId(openId);
     if (m) return renderDetail(m);
@@ -102,7 +109,7 @@ function render() {
   TABS.find(t => t.key === tab).render();
 }
 function go(t, id = null) {
-  tab = t; openId = id; editing = null;
+  tab = t; openId = id; editing = null; yearEditing = null;
   const u = new URL(location.href);
   u.searchParams.delete('m'); u.searchParams.delete('tab');
   if (id) u.searchParams.set('m', id); else if (t !== 'list') u.searchParams.set('tab', t);
@@ -262,33 +269,94 @@ function renderTodos() {
       || `<div class="text-sm text-slate-400 text-center py-10">${all.length ? '没有' : '还没有待办。在每场会议的「重点」里加，这里就会全部列出来。'}</div>`}</div>`;
 }
 
-// 📈 年度进展：每一年各项活动走到哪里（年尾报告用）
+// 📈 年度进展：每一年 ① 每个月办了什么（年尾交堂区的活动表） ② 各项活动走到哪里（从会议的「要报告的进展」排出来）
 function renderReport() {
-  const years = [...new Set(MEETINGS.filter(m => m.summary.reports.length).map(m => m.date.slice(0, 4)))];
-  if (!years.length) {
-    view.innerHTML = '<div class="text-sm text-slate-400 text-center py-10">还没有进展记录。在每场会议的「重点 → 要报告的进展」里写，例如「指挥培训：已完成 3 课」，这里就会按活动排好整年。</div>';
-    return;
-  }
+  const years = [...new Set([String(new Date().getFullYear()), ...Object.keys(YEARS),
+    ...MEETINGS.filter(m => m.summary.reports.length).map(m => m.date.slice(0, 4))])].sort().reverse();
   if (!years.includes(reportYear)) reportYear = years[0];
+  const Y = YEARS[reportYear];
   const groups = new Map();
   asc().filter(m => m.date.startsWith(reportYear)).forEach(m => m.summary.reports.forEach(r => {
     const k = (r.topic || '其他').trim();
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push({ m, text: r.text });
   }));
+  const months = Y ? MONTHS.map((n, i) => [n, Y.months?.[i + 1] || []]).filter(([, a]) => a.length) : [];
   view.innerHTML = `
-    <div class="flex items-center gap-2 mb-3">
-      <div class="flex gap-1.5 overflow-x-auto no-scrollbar flex-1">${years.map(y => `<button data-ryear="${y}" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium border ${y === reportYear ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}">${y} 年</button>`).join('')}</div>
-      <button data-act="copy-year" class="shrink-0 text-xs text-indigo-700 hover:underline">📋 复制整年报告</button>
+    <div class="flex gap-1.5 overflow-x-auto no-scrollbar mb-3">${years.map(y => `<button data-ryear="${y}" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium border ${y === reportYear ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}">${y} 年</button>`).join('')}</div>
+
+    <section class="bg-white rounded-2xl border border-slate-200 p-4">
+      <div class="flex items-center gap-3">
+        <div class="font-semibold text-sm flex-1">${reportYear} 年活动表 <span class="font-normal text-xs text-slate-400">每个月办了什么（年尾交堂区）</span></div>
+        ${Y ? '<button data-act="copy-months" class="shrink-0 text-xs text-indigo-700 hover:underline">📋 复制</button>' : ''}
+        <button data-act="year-edit" class="shrink-0 text-xs text-indigo-700 hover:underline">${Y ? '✎ 修改' : '＋ 开始写'}</button>
+      </div>
+      ${months.length ? `<div class="mt-3 grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">${months.map(([n, a]) => `
+        <div><div class="text-xs font-semibold text-indigo-800">${n}</div>
+          <ol class="mt-0.5 list-decimal pl-5 text-slate-700 space-y-0.5">${a.map(x => `<li>${inline(x)}</li>`).join('')}</ol></div>`).join('')}</div>`
+        : '<div class="mt-2 text-sm text-slate-400">还没写。按「开始写」，每个月一行一项；有开执委会议的月份会先帮你填好。</div>'}
+      ${Y?.notes ? `<div class="mt-4 pt-3 border-t border-slate-100 text-sm text-slate-600"><div class="text-xs font-semibold text-slate-500 mb-0.5">备注</div>${rich(Y.notes)}</div>` : ''}
+      ${Y?.by ? `<div class="mt-2 text-xs text-slate-400">填表人：${esc(Y.by)}${Y.date ? '　日期：' + esc(Y.date) : ''}</div>` : ''}
+    </section>
+
+    <div class="mt-5 mb-2 flex items-center gap-3">
+      <div class="font-semibold text-sm flex-1">各项进展 <span class="font-normal text-xs text-slate-400">从每场会议的「要报告的进展」排出来</span></div>
+      ${groups.size ? '<button data-act="copy-year" class="shrink-0 text-xs text-indigo-700 hover:underline">📋 复制</button>' : ''}
     </div>
-    <div class="text-xs text-slate-500 mb-2">${reportYear} 年共 ${groups.size} 项活动，从每场会议的「要报告的进展」排出来。</div>
     <div class="space-y-2.5">${[...groups].map(([k, es]) => `
       <section class="bg-white rounded-2xl border border-slate-200 p-3.5">
         <div class="font-semibold text-sm text-indigo-900">${esc(k)}</div>
         <div class="mt-1.5 space-y-1 text-sm">${es.map(e => `<div class="flex gap-2"><button data-open="${esc(e.m.id)}" class="w-14 shrink-0 text-left text-xs text-slate-400 pt-0.5 hover:text-indigo-600">${md(e.m.date)}</button><div class="min-w-0">${inline(e.text)}</div></div>`).join('')}</div>
-      </section>`).join('')}</div>`;
+      </section>`).join('') || '<div class="text-sm text-slate-400 text-center py-6">这一年的会议还没写「要报告的进展」。</div>'}</div>`;
   view._groups = groups;
 }
+
+// 改一年的活动表：每个月一格，一行一项
+function renderYearEdit() {
+  const y = yearEditing, Y = YEARS[y];
+  // 新的一年：有开执委会议的月份先填「歌咏团执委会议」
+  const pre = i => Y ? (Y.months?.[i + 1] || []) : (MEETINGS.some(m => m.date.startsWith(`${y}-${pad(i + 1)}`)) ? ['歌咏团执委会议'] : []);
+  view.innerHTML = `
+    <form id="yform" class="space-y-3">
+      <div class="flex items-center gap-2">
+        <button type="button" data-act="cancel" class="text-sm text-slate-500 hover:text-indigo-600">← 取消</button>
+        <h2 class="font-semibold flex-1 text-right">${y} 年活动表</h2>
+      </div>
+      <div class="text-xs text-slate-500">每个月一行一项，例如「周日中文弥撒 – 4 台」「婚礼礼仪 – 1 场」。</div>
+      <div class="grid sm:grid-cols-2 gap-3">${MONTHS.map((n, i) => `
+        <label class="block bg-white rounded-xl border border-slate-200 p-2.5"><div class="text-xs font-semibold text-indigo-800 mb-1">${n}</div>
+          <textarea data-month="${i + 1}" rows="${Math.max(3, pre(i).length + 1)}" class="${inp}">${esc(pre(i).join('\n'))}</textarea></label>`).join('')}</div>
+      <label class="block bg-white rounded-xl border border-slate-200 p-2.5"><div class="text-xs font-semibold text-slate-600 mb-1">备注（整年统计，例如几场婚礼、练习几次）</div>
+        <textarea id="y-notes" rows="4" class="${inp}">${esc(Y?.notes)}</textarea></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block"><div class="text-xs text-slate-500 mb-0.5">填表人</div><input id="y-by" value="${esc(Y?.by)}" class="${inp}"></label>
+        <label class="block"><div class="text-xs text-slate-500 mb-0.5">日期</div><input id="y-date" value="${esc(Y?.date)}" placeholder="例如 9/10/2026" class="${inp}"></label>
+      </div>
+      <div class="flex gap-2">
+        <button class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">保存</button>
+        <button type="button" data-act="cancel" class="px-4 py-2 rounded-xl text-sm text-slate-500 hover:bg-slate-100">取消</button>
+      </div>
+    </form>`;
+  $('yform').addEventListener('submit', async e => {
+    e.preventDefault();
+    const d = {
+      kind: 'year', year: y, by: $('y-by').value.trim(), date: $('y-date').value.trim(), notes: $('y-notes').value.trim(),
+      months: Object.fromEntries([...view.querySelectorAll('[data-month]')].map(t => [t.dataset.month, lines(t.value)])),
+    };
+    try { await save('year_' + y, d); } catch (err) { return fail(err); }
+    YEARS[y] = { id: 'year_' + y, ...d };
+    yearEditing = null;
+    render();
+  });
+}
+
+// 活动表照堂区表格的样子复制
+const monthsText = y => {
+  const Y = YEARS[y];
+  return [`圣依纳爵堂 中文“乐韵”歌咏团 ${y} 年举办之活动与项目`,
+    ...MONTHS.map((n, i) => [n, Y.months?.[i + 1] || []]).filter(([, a]) => a.length).map(([n, a]) => `${n}\n` + a.map((x, k) => `${k + 1}. ${x}`).join('\n')),
+    Y.notes && '备注：\n' + Y.notes, Y.by && `填表人：${Y.by}${Y.date ? '　日期：' + Y.date : ''}`].filter(Boolean).join('\n\n');
+};
 
 // ───────── 修改／新会议 ─────────
 const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white';
@@ -449,7 +517,7 @@ view.addEventListener('click', async e => {
     case 'back': return go('list');
     case 'new': editing = blank(); render(); return window.scrollTo(0, 0);
     case 'edit': editing = norm(JSON.parse(JSON.stringify(m))); render(); return window.scrollTo(0, 0);
-    case 'cancel': editing = null; render(); return window.scrollTo(0, 0);
+    case 'cancel': editing = null; yearEditing = null; render(); return window.scrollTo(0, 0);
     case 'add-todo': $('f-todos').insertAdjacentHTML('beforeend', todoRow()); return $('f-todos').lastElementChild.querySelector('.r-t').focus();
     case 'add-report': $('f-reports').insertAdjacentHTML('beforeend', reportRow()); return $('f-reports').lastElementChild.querySelector('.r-topic').focus();
     case 'delete': {
@@ -465,12 +533,14 @@ view.addEventListener('click', async e => {
         S.todos.length && '接下来要做：\n' + S.todos.map(t => `${t.done ? '✅' : '☐'} ${t.t}${t.who ? ' — ' + t.who : ''}${t.due ? `（${md(t.due)}前）` : ''}`).join('\n'),
       ].filter(Boolean).join('\n\n'));
     }
+    case 'year-edit': yearEditing = reportYear; render(); return window.scrollTo(0, 0);
+    case 'copy-months': return copy(monthsText(reportYear));
     case 'copy-year':
       return copy([`乐韵歌咏团 ${reportYear} 年度进展（按执委会议记录整理）`,
         ...[...view._groups].map(([k, es]) => `【${k}】\n` + es.map(x => `- ${md(x.m.date)}：${x.text}`).join('\n'))].join('\n\n'));
     case 'import': return $('import-file').click();
     case 'backup': {
-      const data = JSON.stringify({ meetings: asc().map(x => ({ ...x })) }, null, 2);
+      const data = JSON.stringify({ meetings: [...asc(), ...Object.values(YEARS)].map(x => ({ ...x })) }, null, 2);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
       a.download = `执委会议记录备份_${todayIso()}.json`;
@@ -480,26 +550,27 @@ view.addEventListener('click', async e => {
   }
 });
 
-// 导入：以前的会议记录（JSON：[{ date, ... }] 或 { meetings: [...] }），同一天的会盖过去（会先问）
+// 导入：以前的会议记录（JSON：[{ date, ... }] 或 { meetings: [...] }），同一天的会盖过去（会先问）；kind:'year' 的是那一年的活动表
 $('import-file').addEventListener('change', async e => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
   let list;
-  try { const j = JSON.parse(await file.text()); list = (Array.isArray(j) ? j : j.meetings || []).filter(x => /^\d{4}-\d{2}-\d{2}/.test(x.id || x.date || '')); }
+  try { const j = JSON.parse(await file.text()); list = (Array.isArray(j) ? j : j.meetings || []).filter(x => x.kind === 'year' ? /^\d{4}$/.test(x.year) : /^\d{4}-\d{2}-\d{2}/.test(x.id || x.date || '')); }
   catch { return alert('这个文件读不懂（要是 .json 文件）'); }
   if (!list.length) return alert('文件里没有会议记录');
-  const same = list.filter(x => byId(x.id || x.date)).length;
-  if (!confirm(`导入 ${list.length} 场会议${same ? `（其中 ${same} 场已经有了，会被文件里的盖过去）` : ''}？`)) return;
+  const key = x => x.kind === 'year' ? 'year_' + x.year : x.id || x.date;
+  const same = list.filter(x => x.kind === 'year' ? YEARS[x.year] : byId(key(x))).length;
+  if (!confirm(`导入 ${list.length} 份${same ? `（其中 ${same} 份已经有了，会被文件里的盖过去）` : ''}？`)) return;
   try {
     await window.sicStaff.withAuth(() => {
       const b = writeBatch(db);
-      list.forEach(x => b.set(doc(db, COLL, x.id || x.date), clean(norm(x))));
+      list.forEach(x => b.set(doc(db, COLL, key(x)), clean(x.kind === 'year' ? x : norm(x))));
       return b.commit();
     });
   } catch (err) { return fail(err); }
   await load();
-  alert(`导入好了：${list.length} 场`);
+  alert(`导入好了：${list.length} 份`);
   go('list');
 });
 
