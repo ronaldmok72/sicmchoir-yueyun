@@ -1,5 +1,5 @@
 {
   "functions": {
-    "api/summarize.js": { "maxDuration": 60 }
+    "api/summarize.js": { "maxDuration": 300 }
   }
 }
