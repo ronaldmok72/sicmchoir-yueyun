@@ -8,7 +8,7 @@
 const crypto = require('crypto');
 
 const PROJECT = 'sicmchoir-yueyun';
-const MODELS = [process.env.GEMINI_MODEL, 'gemini-flash-latest', 'gemini-2.5-flash'].filter(Boolean);
+const MODELS = [process.env.GEMINI_MODEL, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'].filter(Boolean);
 const MAX = 4 * 1024 * 1024;   // Vercel 一次最多收 4.5MB
 
 // ───────── 验通行证（Firebase ID token，Google 签的） ─────────
@@ -110,6 +110,8 @@ async function gemini(key, content, topics) {
     });
     const j = await r.json().catch(() => ({}));
     if (r.status === 404) { last = `找不到 AI 型号 ${model}`; continue; }   // 型号退休了 → 试下一个
+    // 太多人用（503）／一时出错（500）→ 换下一个型号
+    if (r.status === 503 || r.status === 500) { last = 'Google 的 AI 现在太多人用，请过一两分钟再按一次'; continue; }
     if (r.status === 429) throw new Error('AI 今天的免费额度用完了，明天再试');
     if (!r.ok) throw new Error('AI 出错：' + (j.error?.message || r.status));
     const text = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
