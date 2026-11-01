@@ -24,10 +24,13 @@ export function splitSongs(text) {
   return parts.length ? parts : [String(text).trim()];
 }
 
+let libCache = null;
 export function matchSong(text, library) {
   const raw = String(text).trim();
   if (!raw) return null;
-  const lib = library.map(s => ({ s, t: clean(s.title), n: norm(clean(s.title)) }));
+  // 曲库整理一次就记住（历年排歌一次对几百行，每行都重新整理会很慢）
+  if (libCache?.src !== library || libCache.len !== library.length) libCache = { src: library, len: library.length, lib: library.map(s => ({ s, t: clean(s.title), n: norm(clean(s.title)) })) };
+  const lib = libCache.lib;
   const name = raw.replace(/[（(][^）)]*[）)]/g, ' ').replace(/\bpg\.?\s*\d+.*$/i, '').replace(/page\s*\d+.*$/i, '');
   // 好几首都对得上：看哪一首的歌名跟表上的字最像（圣咏连答句一起比，才分得出同一篇的不同答句）
   const best = (cands, text = name) => {

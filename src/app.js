@@ -131,6 +131,8 @@ resizeCanvas();
   // 从「这台弥撒」总览点「打开乐谱」：?setlist=1018 常年29主日 → 直接下载那份排单
   const want = new URLSearchParams(location.search).get('setlist');
   if (want && !allSetlists.some(o => o.id === want)) await addSetlist(want);   // 以前的那一份：单独读
+  // 排单被删掉了，但弥撒排歌还记着那一台：照样列出来，载入时照弥撒的歌排
+  if (want && !allSetlists.some(o => o.id === want)) { allSetlists.push({ id: want, name: want, date: setlistDate({ name: want }) }); renderSetlistOptions(); }
   if (want && allSetlists.some(o => o.id === want)) {
     if (!setlistSelect.querySelector(`option[value="${CSS.escape(want)}"]`)) { showPastSetlists = true; renderSetlistOptions(); }
     setlistSelect.value = want;
@@ -233,6 +235,17 @@ async function addSetlist(id) {
   if (d?.exists()) { allSetlists.push(listItem(id, d.data())); renderSetlistOptions(); }
 }
 
+// 弥撒的排单被排单后台删掉了：照「弥撒排歌」记着的那一台排出来（排单名称 = 那一台的 setlistName）
+async function itemsFromMass(name) {
+  const s = await getDocs(query(collection(db, 'masses'), where('setlistName', '==', name))).catch(() => null);
+  const m = s?.docs[0]?.data();
+  const items = [];
+  (m?.slots || []).forEach(sl => (sl.songs || []).forEach(x => {
+    if (x.id && !x.missing && !items.some(i => i.id === x.id)) items.push({ id: x.id, order: items.length + 1, title: x.title, imageUrl: x.imageUrl });
+  }));
+  return items.length ? items : null;
+}
+
 async function syncSelectedSetlist() {
   const selectedId = setlistSelect.value;
   if (!selectedId) {
@@ -248,9 +261,10 @@ async function syncSelectedSetlist() {
     await flushRenames(db);
     const docRef = doc(db, "setlists", selectedId);
     const docSnap = await getDoc(docRef);
+    const items = docSnap.exists() ? docSnap.data().items || [] : await itemsFromMass(selectedId);
 
-    if (docSnap.exists()) {
-      PLAYLIST = applyPending(await freshTitles(db, docSnap.data().items || []));
+    if (items) {
+      PLAYLIST = applyPending(await freshTitles(db, items));
       
       localStorage.setItem('offline_playlist', JSON.stringify(PLAYLIST));
       localStorage.setItem('offline_playlist_name', selectedId);
@@ -278,8 +292,8 @@ async function syncSelectedSetlist() {
       currentIndex = 0;
       loadSong(currentIndex);
       
-      // --- 新增：同步完成后，开启监听 ---
-      startLiveSyncListener(selectedId);
+      // --- 新增：同步完成后，开启监听（照弥撒排出来的没有排单，不能跟指挥翻页）---
+      if (docSnap.exists()) startLiveSyncListener(selectedId);
       
       if (failCount > 0) {
         alert(`✅ 同步完成！\n成功: ${successCount} 首\n失败: ${failCount} 首 (云端无图片)\n现在可以离线查看了。`);

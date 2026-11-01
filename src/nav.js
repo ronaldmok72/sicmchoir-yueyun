@@ -12,6 +12,7 @@
     { href: 'scan.html', icon: '📷', title: '扫描签到', sub: '练歌到了扫一次，回家前再扫一次' },
     { href: 'prayer.html', icon: '🙏', title: '练习前祈祷文', sub: '进堂咏、集祷经、圣女则济利亚祷文' },
     { href: 'songs.html', icon: '📚', title: '歌单目录', sub: '全部的歌都在这里，随时看谱学歌' },
+    { href: 'years.html', icon: '📖', title: '历年排歌', sub: '每一年哪一天唱什么，找回以前的歌' },
     { href: 'notices.html', icon: '📢', title: '公告', sub: '最近的活动、要练哪几首歌' },
     { href: 'quiz.html', icon: '📝', title: '团员小测验', sub: '自我了解用，不影响职位', quiz: true },
     { group: '后台区 🔒' },

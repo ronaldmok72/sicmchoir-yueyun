@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 加到手机主画面：一律叫「SIC乐韵」、用乐韵的 logo（不管从哪一页加） -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="SIC乐韵">
+  <meta name="application-name" content="SIC乐韵">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#09090b">
+  <title>历年排歌 - 乐韵歌咏团</title>
+  <script src="src/gate.js"></script>
+  <script src="src/nav.js" defer></script>
+  <link rel="stylesheet" href="tailwind.css">
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
+  <main class="max-w-3xl mx-auto px-4 py-5 pb-16">
+
+    <header class="flex flex-wrap items-end justify-between gap-3 mb-4">
+      <div>
+        <div class="text-xs text-slate-400 tracking-widest">SIC 乐韵歌咏团</div>
+        <h1 class="text-xl font-semibold">历年排歌</h1>
+      </div>
+      <button type="button" data-nav-open class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 shadow-sm">☰ 菜单</button>
+    </header>
+
+    <!-- 找歌／找主日 + 年份 -->
+    <div class="sticky top-0 z-10 -mx-4 px-4 pt-1 pb-2 bg-slate-50/95 backdrop-blur space-y-2">
+      <input id="q" type="search" placeholder="找歌名或主日：例如 日升之处、圣诞、常年期第32" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+      <div id="years" class="flex gap-1.5 overflow-x-auto no-scrollbar"></div>
+    </div>
+
+    <div id="head" class="mt-2 text-xs text-slate-500"></div>
+    <div id="list" class="mt-2 space-y-2.5">
+      <div class="text-sm text-slate-400 text-center py-10">读取中…</div>
+    </div>
+  </main>
+  <script type="module" src="src/years.js"></script>
+</body>
+</html>

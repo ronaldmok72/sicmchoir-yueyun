@@ -199,7 +199,6 @@ function renderSlots() {
   box.innerHTML = '';
   M.slots.forEach((slot, si) => {
     const el = document.createElement('div');
-    el.className = 'bg-white rounded-xl border border-slate-200 px-3 py-2.5';
     const songs = slot.songs.map((s, k) => `
       <div class="flex items-center gap-1.5 py-1 group">
         ${s.missing
@@ -209,12 +208,22 @@ function renderSlots() {
         ${slot.songs.length > 1 ? `<button data-act="up" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-slate-600 ${k === 0 ? 'invisible' : ''}" title="上移">↑</button>` : ''}
         <button data-act="rm" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-red-500" title="拿掉">✕</button>
       </div>`).join('');
+    const own = !TPL[slot.key];   // 自己加的位置：可以移、改名、写备注
+    const label = own
+      ? `<div class="w-28 shrink-0"><div class="text-xs font-semibold text-indigo-700">${esc(slot.label)}</div>${slot.note ? `<div class="text-[11px] leading-snug text-slate-400">${esc(slot.note)}</div>` : ''}
+          <div class="flex gap-0.5 mt-0.5 text-xs">
+            <button data-act="slot-up" data-si="${si}" class="px-1 text-slate-300 hover:text-slate-600 ${si === 0 ? 'invisible' : ''}" title="往上移">↑</button>
+            <button data-act="slot-down" data-si="${si}" class="px-1 text-slate-300 hover:text-slate-600 ${si === M.slots.length - 1 ? 'invisible' : ''}" title="往下移">↓</button>
+            <button data-act="slot-edit" data-si="${si}" class="px-1 text-slate-300 hover:text-indigo-600" title="改名字／备注">✎</button>
+          </div></div>`
+      : `<div class="text-xs font-semibold text-slate-500 w-28 shrink-0">${esc(slot.label)}</div>`;
+    el.className = `bg-white rounded-xl border ${own ? 'border-indigo-200' : 'border-slate-200'} px-3 py-2.5`;
     el.innerHTML = `
-      <div class="flex items-center gap-2">
-        <div class="text-xs font-semibold text-slate-500 w-28 shrink-0">${esc(slot.label)}</div>
+      <div class="flex items-${own ? 'start' : 'center'} gap-2">
+        ${label}
         <div class="flex-1 min-w-0">${songs || (sharedWith(si) ? `<span class="text-sm text-slate-400">✓ 跟上面「${esc(sharedWith(si))}」同一张谱</span>` : '<span class="text-sm text-slate-300">—</span>')}</div>
         <button data-act="add" data-si="${si}" class="shrink-0 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-xs">＋ 选歌</button>
-        ${TPL[slot.key] ? '' : `<button data-act="del-slot" data-si="${si}" class="shrink-0 px-1 text-xs text-slate-300 hover:text-red-500" title="删掉这个位置">删</button>`}
+        ${own ? `<button data-act="del-slot" data-si="${si}" class="shrink-0 px-1 text-xs text-slate-300 hover:text-red-500" title="删掉这个位置">删</button>` : ''}
       </div>`;
     box.appendChild(el);
   });
@@ -234,6 +243,15 @@ $('slots').addEventListener('click', e => {
     if (v.trim()) x.note = v.trim(); else delete x.note;
   }
   if (b.dataset.act === 'up' && k > 0) [slot.songs[k - 1], slot.songs[k]] = [slot.songs[k], slot.songs[k - 1]];
+  if (b.dataset.act === 'slot-up' && si > 0) [M.slots[si - 1], M.slots[si]] = [M.slots[si], M.slots[si - 1]];
+  if (b.dataset.act === 'slot-down' && si < M.slots.length - 1) [M.slots[si + 1], M.slots[si]] = [M.slots[si], M.slots[si + 1]];
+  if (b.dataset.act === 'slot-edit') {
+    const name = prompt('这个位置叫什么？', slot.label);
+    if (name === null) return;
+    if (name.trim()) slot.label = name.trim();
+    const note = prompt('备注（这是什么环节；空白 = 不用）', slot.note || '');
+    if (note !== null) { if (note.trim()) slot.note = note.trim(); else delete slot.note; }
+  }
   if (b.dataset.act === 'del-slot') {
     if (slot.songs.length && !confirm(`删掉「${slot.label}」这个位置和里面的歌？`)) return;
     M.slots.splice(si, 1);
@@ -245,15 +263,28 @@ $('slots').addEventListener('click', e => {
 });
 
 $('btn-add-slot').addEventListener('click', () => {
-  const name = prompt('新位置叫什么？（例如：圣母歌、洗脚礼、特别献唱）');
-  if (!name || !name.trim()) return;
-  const after = prompt('放在哪一个位置后面？输入那个位置的名称（不填就放在礼成咏前面）', '领主咏') || '';
-  let idx = M.slots.findIndex(s => s.label === after.trim());
-  if (idx === -1) idx = M.slots.findIndex(s => s.key === 'recessional') - 1;
-  M.slots.splice(idx + 1, 0, { key: `custom_${Date.now()}`, label: name.trim(), songs: [] });
+  // 默认放在礼成咏前面
+  const rec = M.slots.findIndex(s => s.key === 'recessional');
+  $('slot-after').innerHTML = `<option value="-1">最上面</option>` + M.slots.map((s, i) => `<option value="${i}">「${esc(s.label)}」后面</option>`).join('');
+  $('slot-after').value = String(rec > 0 ? rec - 1 : M.slots.length - 1);
+  $('slot-name').value = $('slot-note').value = '';
+  $('slot-form').classList.remove('hidden');
+  $('btn-add-slot').classList.add('hidden');
+  $('slot-name').focus();
+});
+const closeSlotForm = () => { $('slot-form').classList.add('hidden'); $('btn-add-slot').classList.remove('hidden'); };
+$('slot-cancel').addEventListener('click', closeSlotForm);
+$('slot-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('slot-name').value.trim(), note = $('slot-note').value.trim();
+  if (!name) return;
+  const at = Number($('slot-after').value) + 1;
+  M.slots.splice(at, 0, { key: `custom_${Date.now()}`, label: name, ...(note ? { note } : {}), songs: [] });
   M.manual = true;
+  closeSlotForm();
   setDirty();
   renderSlots();
+  $('slots').children[at]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 });
 
 ['mass-date', 'mass-title', 'mass-note'].forEach(id => $(id).addEventListener('input', () => {
@@ -401,7 +432,7 @@ $('picker-upload').addEventListener('change', async e => {
 // ───────── 起手：复制上一场／从排单导入 ─────────
 function copyFrom(prev) {
   const keep = { date: M.date, title: M.title };
-  M.slots = prev.slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => ({ ...x })) }));
+  M.slots = prev.slots.map(s => ({ ...s, songs: s.songs.map(x => ({ ...x })) }));
   Object.assign(M, keep, { manual: true, autoFrom: undefined });
   setDirty();
   renderSlots();
@@ -485,7 +516,7 @@ async function save() {
     const now = new Date().toISOString();
     const data = {
       date: M.date, title: M.title, note: M.note || '', setlistName: name,
-      slots: M.slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => x.missing
+      slots: M.slots.map(s => ({ key: s.key, label: s.label, ...(s.note ? { note: s.note } : {}), songs: s.songs.map(x => x.missing
         ? { id: null, title: x.title, imageUrl: '', missing: true }
         : { id: x.id, title: (songById(x.id) || x).title, imageUrl: (songById(x.id) || x).imageUrl, ...(x.note ? { note: x.note } : {}) }) })),
       ...(isWed(M) ? {
@@ -580,6 +611,7 @@ async function loadMasses() {
   })));
 }
 function openMass(m) {
+  closeSlotForm();
   M = { ...m, slots: m.slots.map(s => ({ ...s, songs: s.songs.map(x => ({ ...x })) })), isNew: false,
     ...(m.kind ? { roles: (m.roles || []).map(r => ({ ...r })), singers: [...(m.singers || [])] } : {}) };
   setDirty(false);
@@ -595,7 +627,7 @@ function newMass() {
 }
 
 // ───────── 一次排好后面几周（存成草稿，不会出现在乐谱 App）─────────
-const serialize = slots => slots.map(s => ({ key: s.key, label: s.label, songs: s.songs.map(x => x.missing || !x.id
+const serialize = slots => slots.map(s => ({ key: s.key, label: s.label, ...(s.note ? { note: s.note } : {}), songs: s.songs.map(x => x.missing || !x.id
   ? { id: null, title: x.title, imageUrl: '', missing: true }
   : { id: x.id, title: x.title, imageUrl: x.imageUrl || '', ...(x.note ? { note: x.note } : {}) }) }));
 $('btn-bulk').addEventListener('click', async () => {

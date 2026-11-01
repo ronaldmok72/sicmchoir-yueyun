@@ -284,7 +284,7 @@ function renderSongs(isStaff) {
     <div class="divide-y divide-slate-100">
       ${show.map(s => `
         <div class="flex gap-3 py-2 text-sm">
-          <div class="w-20 shrink-0 text-slate-500">${esc(s.label)}</div>
+          <div class="w-20 shrink-0 text-slate-500">${esc(s.label)}${s.note ? `<div class="text-[11px] leading-snug text-slate-400">${esc(s.note)}</div>` : ''}</div>
           <div class="flex-1 min-w-0 space-y-0.5">${s.songs.map(x => `<div class="truncate">${song(x)}</div>${x.note ? `<div class="text-xs text-indigo-600">✎ ${esc(x.note)}</div>` : ''}`).join('')}</div>
         </div>`).join('')}
     </div>

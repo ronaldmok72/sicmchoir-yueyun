@@ -531,6 +531,15 @@
         historyItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         window._setlists = Object.fromEntries(historyItems.map(i => [i.id, i]));   // 点开／删除／发布都用这份，不再整个重读
 
+        // 弥撒的排单（弥撒排歌做的，有 date）这里不显示：全部在弥撒排歌改，两边才不会撞；以前的歌也记在那边
+        const massCount = historyItems.filter(i => i.date).length;
+        historyItems = historyItems.filter(i => !i.date);
+        if (massCount) historyListEl.insertAdjacentHTML('beforeend', `
+          <a href="mass.html" class="block p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 hover:border-amber-400">
+            ⛪ 弥撒的排单（${massCount} 份）在「弥撒排歌」排和改，这里不显示。<span class="font-semibold underline">去弥撒排歌 →</span>
+          </a>`);
+        if (!historyItems.length) historyListEl.insertAdjacentHTML('beforeend', '<div class="text-center text-xs text-slate-400 py-6">还没有其他排单（例如歌颂赞美）</div>');
+
         historyItems.forEach(item => {
           const div = document.createElement('div');
           // Notion 风格卡片：大圆角、微阴影、Hover 边框变色
@@ -554,7 +563,6 @@
             <div class="flex justify-between items-center mt-auto">
               <div class="flex items-center gap-2.5">
                 <span class="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">${item.items.length} 首</span>
-                ${item.date ? '<span class="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md" title="这份是「弥撒排歌」做的，改歌要去那边改">⛪ 弥撒排歌</span>' : ''}
                 <span class="text-xs font-medium text-slate-400 flex items-center gap-1">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                   ${dateStr}

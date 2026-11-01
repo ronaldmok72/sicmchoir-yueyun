@@ -65,6 +65,20 @@
     <!-- 每个位置 -->
     <section id="slots" class="space-y-2.5"></section>
     <button id="btn-add-slot" class="mt-3 text-sm text-slate-500 hover:text-indigo-600">＋ 加一个位置（例如圣母歌、特别仪式）</button>
+    <!-- 加位置：叫什么、备注（这是什么环节）、放在哪里 -->
+    <form id="slot-form" class="hidden mt-3 bg-white rounded-xl border border-indigo-200 p-3 space-y-2 text-sm">
+      <div class="font-semibold text-slate-700">加一个位置</div>
+      <input id="slot-name" required placeholder="叫什么？例如：圣母歌、洗脚礼、点烛光" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+      <input id="slot-note" placeholder="备注（可以不填）：例如：复活前夕，点烛光进堂时唱" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+      <label class="flex items-center gap-2 text-slate-500">放在
+        <select id="slot-after" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-2 py-2 bg-white text-slate-700"></select>
+      </label>
+      <div class="flex gap-2 justify-end">
+        <button type="button" id="slot-cancel" class="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100">取消</button>
+        <button class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">加进去</button>
+      </div>
+      <div class="text-xs text-slate-400">加了之后，按位置旁边的 ↑ ↓ 还可以再移，✎ 可以改名字和备注。</div>
+    </form>
 
     <!-- 💒 婚礼才有：谁做什么、来唱的人、座位 -->
     <section id="wed-box" class="hidden mt-4 space-y-3 text-sm">
