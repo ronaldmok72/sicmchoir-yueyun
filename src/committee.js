@@ -160,7 +160,7 @@ function renderCards() {
         <div class="flex items-center gap-2"><div class="font-semibold min-w-0 truncate">${esc(titleOf(m))}</div>${pill(m)}</div>
         <div class="text-xs text-slate-500 mt-0.5">${fmtDate(m.date)}${m.time ? ' · ' + esc(m.time) : ''}${m.place ? ' · ' + esc(m.place) : ''}</div>
         ${m.summary.points.length ? `<ul class="mt-2 space-y-0.5 text-sm text-slate-600">${m.summary.points.slice(0, 3).map(p => `<li class="truncate">• ${esc(p)}</li>`).join('')}</ul>` : ''}
-        ${open ? `<div class="mt-2 text-xs text-indigo-700">✅ 还有 ${open} 件待办没做完</div>` : ''}
+        ${open || m.driveUrl ? `<div class="mt-2 flex gap-3 text-xs">${open ? `<span class="text-indigo-700">✅ 还有 ${open} 件待办没做完</span>` : ''}${m.driveUrl ? '<span class="text-slate-400">📎 有原件</span>' : ''}</div>` : ''}
         ${hit}
       </button>`;
   }).join('') || `<div class="text-sm text-slate-400 text-center py-10">${MEETINGS.length ? '找不到' : '还没有会议记录。按「＋ 新会议」开始，或在下面导入以前的记录。'}</div>`;
@@ -185,6 +185,7 @@ function renderDetail(m) {
         <h2 class="text-lg font-semibold flex-1 min-w-0">${esc(titleOf(m))}</h2>${pill(m)}
       </div>
       <div class="text-sm text-slate-500 mt-0.5">${fmtDate(m.date)}${m.time ? ' · ' + esc(m.time) : ''}</div>
+      ${m.driveUrl ? `<a href="${esc(m.driveUrl)}" target="_blank" rel="noopener" class="mt-2 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium">📎 打开原件</a>` : ''}
       <div class="mt-3 space-y-1.5 text-sm">
         ${row('地点', esc(m.place))}
         ${row('出席', esc(m.attend))}
@@ -193,7 +194,6 @@ function renderDetail(m) {
         ${row('闭会祷', esc(m.prayClose))}
         ${row('核准上次记录', [approve, prevLink && `<div class="text-xs mt-0.5">上次：${prevLink}</div>`].filter(Boolean).join(''))}
         ${row('记录员', esc(m.recorder))}
-        ${row('原本的文件', m.driveUrl ? `<a href="${esc(m.driveUrl)}" target="_blank" rel="noopener" class="text-indigo-600 underline">📎 打开</a>` : '')}
       </div>
     </section>
 
@@ -411,7 +411,7 @@ function renderEdit() {
         <div class="grid grid-cols-2 gap-3">${f('f-prayOpen', '开会祷', m.prayOpen)}${f('f-prayClose', '闭会祷', m.prayClose)}</div>
         <div class="text-xs font-semibold text-slate-600 pt-1">核准上次会议记录</div>
         <div class="grid grid-cols-2 gap-3">${f('f-approveBy', '提议', m.approve?.by)}${f('f-approveSecond', '附议', m.approve?.second)}</div>
-        <div class="grid grid-cols-2 gap-3">${f('f-recorder', '记录员', m.recorder)}${f('f-drive', '原本的文件（Drive 链接，可不填）', m.driveUrl, 'https://drive.google.com/…', 'url')}</div>
+        <div class="grid grid-cols-2 gap-3">${f('f-recorder', '记录员', m.recorder)}${f('f-drive', '原件（Drive 链接，贴上就能一按打开）', m.driveUrl, 'https://drive.google.com/…', 'url')}</div>
       </section>
 
       <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
