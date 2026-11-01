@@ -3,6 +3,7 @@
 // 板块：TABS 一个一个排；以后要加新的板块（例如财政、资产），在 TABS 加一个 { key, label, render } 就好
 import { collection, doc, setDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs } from "./firebase.js";
+import { docx } from "./docx.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -191,8 +192,10 @@ function renderDetail(m) {
       <div class="text-sm text-slate-500 mt-0.5">${fmtDate(m.date)}${m.time ? ' · ' + esc(m.time) : ''}</div>
       <div class="mt-2 flex flex-wrap gap-2">
         ${m.driveUrl ? `<a href="${esc(m.driveUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium">📎 打开原件</a>` : ''}
-        <button data-act="ai-this" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">🤖 ${m.status === 'agenda' ? '开完会：贴会议记录整理' : '用会议记录重新整理'}</button>
+        <button data-act="ai-this" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">🤖 ${m.status === 'agenda' ? '贴会议记录整理' : '用会议记录重新整理'}</button>
+        ${m.status === 'done' ? '<button data-act="word" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">⬇️ 下载 Word</button>' : ''}
       </div>
+      ${m.status === 'done' && !m.driveUrl ? '<div class="mt-2 text-xs text-amber-700">还没有原件：按「下载 Word」，放进 sicmchoir Drive 的「会议记录 Meeting Minutes」，再把链接贴回「修改 → 原件」。</div>' : ''}
       <div class="mt-3 space-y-1.5 text-sm">
         ${row('地点', esc(m.place))}
         ${row('出席', esc(m.attend))}
@@ -203,6 +206,8 @@ function renderDetail(m) {
         ${row('记录员', esc(m.recorder))}
       </div>
     </section>
+
+    ${m.status === 'agenda' || m.draft ? draftBox(m) : ''}
 
     ${carry.length ? `
     <section class="mt-3 bg-amber-50 rounded-2xl border border-amber-200 p-4">
@@ -241,6 +246,22 @@ function renderDetail(m) {
     <div class="mt-4 flex gap-2">
       <button data-act="edit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">✎ 修改</button>
     </div>`;
+}
+
+// 开会笔记：会前一直写，开完会叫 AI 整理成正式记录；整理好之后收起来
+function draftBox(m) {
+  const tag = m.status === 'agenda' ? 'section' : 'details', head = m.status === 'agenda' ? 'div' : 'summary';
+  return `
+    <${tag} class="mt-3 bg-white rounded-2xl border border-slate-200 p-4">
+      <${head} class="font-semibold text-sm ${head === 'summary' ? 'cursor-pointer text-slate-500' : ''}">📝 开会笔记（草稿）</${head}>
+      ${m.draft ? `<div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">${esc(m.draft)}</div>`
+        : '<div class="mt-2 text-sm text-slate-500">这几个月有什么事就随手记在这里，乱写没关系。开完会补上讨论的内容，按「用笔记整理」，AI 会照以前的格式写成正式会议记录。</div>'}
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button data-act="edit" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">✎ ${m.draft ? '继续写' : '开始写'}</button>
+        ${m.draft ? '<button data-act="ai-draft" id="ai-draft" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">🤖 用笔记整理成会议记录</button>' : ''}
+      </div>
+      <div id="ai-msg" class="mt-2 text-sm"></div>
+    </${tag}>`;
 }
 
 // 一件待办：打勾、谁做、几时之前、来自哪一场
@@ -392,8 +413,30 @@ function blank() {
     time: last?.time || '2:30 PM – 5:00 PM', place: last?.place || '' });
 }
 
+// 会前的笔记先帮忙放好：上次开会到现在办过的活动（从年度活动表）、还没做完的待办
+function draftSeed(m) {
+  if (m.status !== 'agenda' || m.minutes) return '';
+  const upto = m.date || todayIso();
+  const last = asc().filter(x => x.status === 'done' && x.date < upto).pop();
+  const ev = [];
+  if (last) {
+    let [y, mo] = ymd(last.date);
+    const [ey, em] = ymd(upto);
+    for (; y < ey || (y === ey && mo <= em); mo === 12 ? (y++, mo = 1) : mo++)
+      (YEARS[y]?.months?.[mo] || []).filter(x => !x.includes('执委会议')).forEach(x => ev.push(`- ${mo}月 ${x}`));
+  }
+  const todos = asc().filter(x => x.date < upto).flatMap(x => x.summary.todos.filter(t => !t.done)
+    .map(t => `- ${t.t}${t.who ? '（' + t.who + '）' : ''}`));
+  return [
+    ev.length && `【上次开会到现在办过的活动】（从年度活动表来，开会时检讨）\n${ev.join('\n')}`,
+    todos.length && `【还没做完的待办】（开会时逐项问）\n${todos.join('\n')}`,
+    '【这次的笔记】（想到什么就记；开完会把讨论和决议补上）\n',
+  ].filter(Boolean).join('\n\n');
+}
+
 function renderEdit() {
   const m = editing;
+  const draft = m.draft || draftSeed(m);
   const topics = [...new Set(MEETINGS.flatMap(x => x.summary.reports.map(r => r.topic)).filter(Boolean))];
   const f = (id, label, val, ph = '', type = 'text') => `<label class="block"><div class="text-xs text-slate-500 mb-0.5">${label}</div><input id="${id}" type="${type}" value="${esc(val)}" placeholder="${esc(ph)}" class="${inp}"></label>`;
   view.innerHTML = `
@@ -422,6 +465,11 @@ function renderEdit() {
         <div class="text-xs font-semibold text-slate-600 pt-1">核准上次会议记录</div>
         <div class="grid grid-cols-2 gap-3">${f('f-approveBy', '提议', m.approve?.by)}${f('f-approveSecond', '附议', m.approve?.second)}</div>
         <div class="grid grid-cols-2 gap-3">${f('f-recorder', '记录员', m.recorder)}${f('f-drive', '原件（Drive 链接，贴上就能一按打开）', m.driveUrl, 'https://drive.google.com/…', 'url')}</div>
+      </section>
+
+      <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
+        <div class="font-semibold text-sm">📝 开会笔记（草稿） <span class="font-normal text-xs text-slate-400">乱写没关系，开完会 AI 会整理成正式记录</span></div>
+        <textarea id="f-draft" rows="${Math.max(8, draft.split('\n').length + 2)}" class="${inp} leading-relaxed">${esc(draft)}</textarea>
       </section>
 
       <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
@@ -475,6 +523,7 @@ async function submit() {
     time: v('f-time'), place: v('f-place'), attend: v('f-attend'), absent: v('f-absent'),
     prayOpen: v('f-prayOpen'), prayClose: v('f-prayClose'), recorder: v('f-recorder'), driveUrl: v('f-drive'),
     approve: { by: v('f-approveBy'), second: v('f-approveSecond') },
+    draft: $('f-draft').value.replace(/\s+$/, ''),
     agenda: lines($('f-agenda').value), minutes: $('f-minutes').value.replace(/\s+$/, ''), next: v('f-next'),
     summary: {
       points: lines($('f-points').value),
@@ -566,30 +615,99 @@ async function aiRun() {
   const btn = $('ai-go');
   btn.disabled = true; btn.textContent = '🤖 整理中…';
   msg('<span class="text-slate-500">AI 在读会议记录，大概 20 秒到 1 分钟，请别关这页。</span>');
-  const topics = [...new Set(MEETINGS.flatMap(x => x.summary.reports.map(r => r.topic)).filter(Boolean))];
-  const body = JSON.stringify(f ? { file: { data: await fileB64(f), mime: f.type || (/\.txt$/i.test(f.name) ? 'text/plain' : 'application/pdf'), name: f.name }, topics } : { url, topics });
-  const call = async () => {
-    await window.sicStaff.ensureAuth();
-    return fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await window.sicStaff.idToken()) }, body });
-  };
-  let j;
+  let g;
   try {
-    let r = await call();
-    if (r.status === 401) { await window.sicStaff.ensureAuth(true); r = await call(); }
-    j = await r.json().catch(() => ({ error: '服务器没有回答（' + r.status + '）' }));
-    if (!r.ok) throw new Error(j.error || r.status);
+    g = await askAi(f ? { file: { data: await fileB64(f), mime: f.type || (/\.txt$/i.test(f.name) ? 'text/plain' : 'application/pdf'), name: f.name } } : { url });
   } catch (err) {
     btn.disabled = false; btn.textContent = '🤖 开始整理';
     return msg(`<span class="text-rose-600">${esc(err.message || err)}</span>`);
   }
-  const g = j.meeting;
   // 盖过哪一场：从那一场按进来的就是那一场；不然同一天已经有的（例如会前议程）
-  const base = aiMode.target ? byId(aiMode.target) : MEETINGS.find(x => g.date && x.date === g.date);
+  openAi(g, aiMode.target ? byId(aiMode.target) : MEETINGS.find(x => g.date && x.date === g.date), url);
+}
+
+async function askAi(src) {
+  const topics = [...new Set(MEETINGS.flatMap(x => x.summary.reports.map(r => r.topic)).filter(Boolean))];
+  const body = JSON.stringify({ ...src, topics });
+  const call = async () => {
+    await window.sicStaff.ensureAuth();
+    return fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await window.sicStaff.idToken()) }, body });
+  };
+  let r = await call();
+  if (r.status === 401) { await window.sicStaff.ensureAuth(true); r = await call(); }
+  const j = await r.json().catch(() => ({ error: '服务器没有回答（' + r.status + '）' }));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j.meeting;
+}
+
+// AI 整理好的 → 打开修改页给人看一遍再保存
+function openAi(g, base, url) {
   editing = norm({ ...(base || blank()), ...g, date: g.date || base?.date || '', no: g.no || base?.no || '',
-    id: base?.id || '', driveUrl: url || base?.driveUrl || '', _ai: true });
+    id: base?.id || '', driveUrl: url || base?.driveUrl || '', draft: base?.draft || '', _ai: true });
   aiMode = null;
   render();
   window.scrollTo(0, 0);
+}
+
+// 用 App 里写的开会笔记整理：笔记连同这场会议的资料一起给 AI
+async function aiDraft(m) {
+  const btn = $('ai-draft'), msg = t => { $('ai-msg').innerHTML = t; };
+  btn.disabled = true; btn.textContent = '🤖 整理中…';
+  msg('<span class="text-slate-500">AI 在读笔记，大概 20 秒到 1 分钟，请别关这页。</span>');
+  const text = [
+    '（以下是执委在乐韵 App 里写的开会笔记草稿，会已经开完，请整理成正式会议记录，status 用 done。笔记里没有的不要编。）',
+    `会议：${titleOf(m)}`, `日期：${m.date}`, m.time && `时间：${m.time}`, m.place && `地点：${m.place}`,
+    m.attend && `出席：${m.attend}`, m.absent && `缺席：${m.absent}`, m.prayOpen && `开会祷：${m.prayOpen}`, m.prayClose && `闭会祷：${m.prayClose}`,
+    m.approve?.by && `核准上次会议记录：提议 ${m.approve.by}、附议 ${m.approve.second || ''}`, m.recorder && `记录员：${m.recorder}`,
+    m.agenda.length && '议程：\n' + m.agenda.map((a, i) => `${i + 1}. ${a}`).join('\n'),
+    '开会笔记：\n' + m.draft,
+  ].filter(Boolean).join('\n');
+  let bin = '';
+  new TextEncoder().encode(text).forEach(b => { bin += String.fromCharCode(b); });
+  let g;
+  try { g = await askAi({ file: { data: btoa(bin), mime: 'text/plain', name: 'notes.txt' } }); } catch (err) {
+    btn.disabled = false; btn.textContent = '🤖 用笔记整理成会议记录';
+    return msg(`<span class="text-rose-600">${esc(err.message || err)}</span>`);
+  }
+  openAi({ ...g, date: m.date }, m, '');
+}
+
+// 下载成 Word，放进 Drive 当原件备份
+function wordOf(m) {
+  const P = [], add = (text, o = {}) => P.push({ text, ...o });
+  add('八打灵圣依纳爵堂 华文“乐韵”歌咏团', { bold: true, center: true, size: 14 });
+  add('St. Ignatius Church Mandarin Choir', { center: true, size: 10 });
+  add(titleOf(m) + ' 会议记录', { bold: true, center: true, size: 16, space: 6 });
+  const info = [['日期', fmtDate(m.date)], ['时间', m.time], ['地点', m.place], ['出席', m.attend], ['缺席', m.absent],
+    ['开会祷', m.prayOpen], ['闭会祷', m.prayClose],
+    ['核准上次会议记录', m.approve?.by || m.approve?.second ? `提议 ${m.approve.by || '—'}、附议 ${m.approve.second || '—'}` : ''], ['记录员', m.recorder]];
+  info.filter(([, v]) => v).forEach(([k, v], i) => add(`**${k}：**${v}`, { space: i ? 0 : 12 }));
+  const head = t => add(t, { bold: true, size: 13, space: 14 });
+  if (m.agenda.length) { head('议程'); m.agenda.forEach((a, i) => add(`${i + 1}. ${a}`, { indent: 1 })); }
+  if (m.minutes) {
+    head('会议记录');
+    m.minutes.split('\n').forEach(l => {
+      if (!l.trim()) return;
+      const h = l.match(/^\s*#{1,6}\s*(.+)/);
+      if (h) return add(h[1], { bold: true, size: 12, space: 8 });
+      const b = l.match(/^(\s*)[-*•]\s+(.+)/);
+      if (b) return add('• ' + b[2], { indent: 1 + Math.floor(b[1].replace(/\t/g, '  ').length / 2), bullet: true });
+      add(l.trim());
+    });
+  }
+  const S = m.summary;
+  if (S.points.length) { head('重点'); S.points.forEach((p, i) => add(`${i + 1}. ${p}`, { indent: 1 })); }
+  if (S.todos.length) {
+    head('接下来要做');
+    S.todos.forEach(t => add(`${t.done ? '☑' : '☐'} ${t.t}${t.who ? ' — ' + t.who : ''}${t.due ? `（${md(t.due)}前）` : ''}`, { indent: 1 }));
+  }
+  if (m.next) { head('下次会议'); add(m.next); }
+  add(`（由乐韵 App 执委专区导出，${todayIso()}）`, { size: 9, space: 18 });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(docx(P));
+  a.download = `${m.date} ${titleOf(m)} 会议记录.docx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // ───────── 按钮 ─────────
@@ -624,6 +742,8 @@ view.addEventListener('click', async e => {
     case 'ai': aiMode = { target: null }; render(); return window.scrollTo(0, 0);
     case 'ai-this': aiMode = { target: m.id }; render(); return window.scrollTo(0, 0);
     case 'ai-run': return aiRun();
+    case 'ai-draft': return aiDraft(m);
+    case 'word': return wordOf(m);
     case 'edit': editing = norm(JSON.parse(JSON.stringify(m))); render(); return window.scrollTo(0, 0);
     case 'cancel': editing = null; yearEditing = null; aiMode = null; render(); return window.scrollTo(0, 0);
     case 'add-todo': $('f-todos').insertAdjacentHTML('beforeend', todoRow()); return $('f-todos').lastElementChild.querySelector('.r-t').focus();
