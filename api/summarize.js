@@ -68,9 +68,10 @@ const SCHEMA = S('OBJECT', {
     points: S('ARRAY', { items: STR }),
     todos: S('ARRAY', { items: S('OBJECT', { properties: { t: STR, who: STR, due: STR }, required: ['t', 'who', 'due'] }) }),
     reports: S('ARRAY', { items: S('OBJECT', { properties: { topic: STR, text: STR }, required: ['topic', 'text'] }) }),
+    events: S('ARRAY', { items: STR }),
   },
   required: ['date', 'no', 'title', 'status', 'time', 'place', 'attend', 'absent', 'prayOpen', 'prayClose', 'recorder',
-    'approveBy', 'approveSecond', 'agenda', 'minutes', 'next', 'points', 'todos', 'reports'],
+    'approveBy', 'approveSecond', 'agenda', 'minutes', 'next', 'points', 'todos', 'reports', 'events'],
 });
 
 const prompt = topics => `你是八打灵圣依纳爵天主堂「乐韵歌咏团」执委会的秘书助手。上面是一场执委会议的会议记录（或会前议程）。
@@ -94,7 +95,12 @@ minutes（完整记录）：**细节全部保留**，不要删、不要缩成摘
 - points：4–8 句，每句一件最要紧的事（决议、日期、金额、新安排），白话，不要客套。
 - todos：会议交代下来、要人去做的事。t 写要做什么；who 写负责人（原文没写就空）；due 有日期就写 YYYY-MM-DD（年份按开会日期推），没有就空。
 - reports：年底要报告的进展，每项一个 topic（分类）＋ text（一两句写到哪了，带数字和日期）。
-  topic 尽量用这些现有的分类：${topics.length ? topics.join('、') : '指挥培训、声乐培训、天使团、报佳音 Cantata、披肩／制服、设备、礼仪、新歌、组织与行政、改选与章程、财务、出席率、交流活动、培训'}；真的不合才开新的。`;
+  topic 尽量用这些现有的分类：${topics.length ? topics.join('、') : '指挥培训、声乐培训、天使团、报佳音 Cantata、披肩／制服、设备、礼仪、新歌、组织与行政、改选与章程、财务、出席率、交流活动、培训'}；真的不合才开新的。
+
+年度活动表（每年年尾交堂区，这场会议的会一条条自动加进去）：
+- events：会议里提到「已经办完」（检讨到的）和「已经定好日子要办」的活动，一项一行，开头写月份：「5月 天使团参与侍奉母亲节弥撒」。跟开会不同年的写「2027年1月 …」。
+  活动名要短，像「圣诞报佳音 Cantata」「复活节礼仪中文弥撒」「婚礼礼仪 – 2 场」「声乐培训」；有确切日子可加在后面「（22/8）」。
+  只是提议、还没定的不要放；不要放「歌咏团执委会议」（会自动加）。`;
 
 async function gemini(key, content, topics) {
   const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } } : { text: content.text }, { text: prompt(topics) }];
@@ -136,6 +142,7 @@ function meetingOf(g) {
       points: (g.points || []).filter(Boolean),
       todos: (g.todos || []).filter(t => t?.t).map(t => ({ t: t.t, who: t.who || '', due: due(t.due), done: false })),
       reports: (g.reports || []).filter(r => r?.text).map(r => ({ topic: r.topic || '其他', text: r.text })),
+      events: (g.events || []).map(e => String(e || '').trim()).filter(e => /^(\d{4}\s*年\s*)?\d{1,2}\s*月/.test(e)),
     },
   };
 }

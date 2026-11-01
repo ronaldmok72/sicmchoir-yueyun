@@ -47,7 +47,7 @@ function norm(m) {
   const s = m.summary || {};
   return {
     ...m, date: m.date || m.id, agenda: m.agenda || [],
-    summary: { points: s.points || [], todos: (s.todos || []).map(t => ({ ...t })), reports: s.reports || [] },
+    summary: { points: s.points || [], todos: (s.todos || []).map(t => ({ ...t })), reports: s.reports || [], events: s.events || [] },
   };
 }
 // 存进资料库的样子（不带 id）
@@ -221,6 +221,8 @@ function renderDetail(m) {
         <div class="mt-1.5 space-y-1.5">${S.todos.map((t, i) => todoLine(t, m, i)).join('')}</div>` : ''}
       ${S.reports.length ? `<div class="mt-4 text-xs font-semibold text-slate-500">要报告的进展（年尾整年报告会用到）</div>
         <div class="mt-1.5 space-y-1.5 text-sm">${S.reports.map(r => `<div><span class="inline-block mr-1 px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-xs text-indigo-800">${esc(r.topic || '其他')}</span>${inline(r.text)}</div>`).join('')}</div>` : ''}
+      ${S.events.length ? `<div class="mt-4 text-xs font-semibold text-slate-500">加进年度活动表的</div>
+        <ul class="mt-1.5 space-y-0.5 text-sm list-disc pl-5">${S.events.map(e => `<li>${inline(e)}</li>`).join('')}</ul>` : ''}
     </section>
 
     ${m.agenda.length ? `
@@ -442,6 +444,9 @@ function renderEdit() {
           <button type="button" data-act="add-report" class="mt-1.5 text-sm text-indigo-700 hover:underline">＋ 加一项进展</button>
           <datalist id="topic-list">${topics.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
         </div>
+        <label class="block"><div class="text-xs text-slate-500 mb-0.5">加进年度活动表（办完的、定好日子的活动；一行一项，开头写月份，例如「5月 天使团参与侍奉母亲节弥撒」，明年的写「2027年1月 …」）</div>
+          <textarea id="f-events" rows="${Math.max(3, m.summary.events.length + 1)}" class="${inp}">${esc(m.summary.events.join('\n'))}</textarea>
+          <div class="text-xs text-slate-400 mt-0.5">保存时会自动加进那一年的活动表，开会那个月也会自动加「歌咏团执委会议」；表里已经有的不会重复加。</div></label>
       </section>
 
       <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
@@ -480,6 +485,7 @@ async function submit() {
       reports: [...view.querySelectorAll('.report-row')].map(r => ({
         topic: r.querySelector('.r-topic').value.trim(), text: r.querySelector('.r-text').value.trim(),
       })).filter(r => r.text),
+      events: lines($('f-events').value),
     },
   };
   // 一场一份，用日期当名字；同一天第二场就加 -2
@@ -491,9 +497,35 @@ async function submit() {
   try {
     await save(id, m);
     if (old && old !== id) await window.sicStaff.withAuth(() => deleteDoc(doc(db, COLL, old)));
+    await addToYears(m, old && byId(old));
   } catch (err) { btn.disabled = false; btn.textContent = '保存'; return fail(err); }
   MEETINGS = MEETINGS.filter(x => x.id !== old && x.id !== id).concat(norm({ ...m, id })).sort((a, b) => b.date.localeCompare(a.date));
   go('list', id);
+}
+
+// 存会议时顺手补年度活动表：只加这次新写的（上次存过的不再加，免得表里删掉的又跑回来），表里已经有的也不加
+const evKey = s => String(s).replace(/[\s，,。、（）()\-–—:：]/g, '').toLowerCase();
+const evLines = m => !m ? [] : [...(m.status === 'done' ? [`${+m.date.slice(5, 7)}月 歌咏团执委会议`] : []), ...(m.summary?.events || [])];
+async function addToYears(m, was) {
+  const before = new Set(evLines(was).map(evKey));
+  const changed = {};
+  for (const s of evLines(m)) {
+    if (before.has(evKey(s))) continue;
+    const e = s.match(/^(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(.+)$/);
+    if (!e || +e[2] < 1 || +e[2] > 12) continue;
+    const y = e[1] || m.date.slice(0, 4), mo = String(+e[2]), t = e[3].trim(), k = evKey(t);
+    const Y = changed[y] || structuredClone(YEARS[y] || { kind: 'year', year: y, by: '', date: '', notes: '', months: {} });
+    const a = (Y.months ||= {})[mo] ||= [];
+    // 「周日中文弥撒」跟「周日中文弥撒 – 4 台」算同一项
+    if (a.some(x => { const kx = evKey(x); return kx === k || (Math.min(kx.length, k.length) >= 4 && (kx.includes(k) || k.includes(kx))); })) continue;
+    a.push(t);
+    changed[y] = Y;
+  }
+  for (const [y, Y] of Object.entries(changed)) {
+    const { id, updatedAt, ...d } = Y;
+    await save('year_' + y, d);
+    YEARS[y] = { id: 'year_' + y, ...d };
+  }
 }
 
 // ───────── 贴会议记录 → AI 整理 ─────────
