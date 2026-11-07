@@ -22,6 +22,8 @@ let reportYear = null;
 let YEARS = {};             // '2026' → 那一年的活动表
 let PEOPLE = {};            // 团员id → { name, cname, noCname }（出席打卡、各人汇报显示中文名）
 let yearEditing = null;     // 正在改哪一年的活动表
+let ROSTER = {};            // 历届执委：roster_2016 → { term, start, text（一行一个岗位）, notes, by, updatedAt, history }
+let rosterView = 'term', rosterEdit = null, rosterHist = null, rosterQ = '';
 let aiMode = null;          // 贴会议记录让 AI 整理：{ target: 要盖过去的那一场 id 或 null }
 let aiReady = null;         // 服务器的 AI 钥匙放好了没有（问过一次就记住）
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
@@ -30,6 +32,7 @@ const TABS = [
   { key: 'list', label: '📄 会议记录', render: renderList },
   { key: 'todo', label: '✅ 待办', render: renderTodos },
   { key: 'report', label: '📈 年度进展', render: renderReport },
+  { key: 'roster', label: '🏛️ 历届执委', render: renderRoster },
 ];
 
 // ───────── 小工具 ─────────
@@ -98,7 +101,8 @@ async function load() {
   const docs = s.docs.map(d => ({ id: d.id, ...d.data() }));
   if (ms) PEOPLE = Object.fromEntries(ms.docs.map(d => { const x = d.data(); return [d.id, { name: x.name || '', cname: x.cname || '', noCname: !!x.noCname }]; }));
   YEARS = Object.fromEntries(docs.filter(d => d.kind === 'year').map(d => [String(d.year), d]));
-  MEETINGS = docs.filter(d => d.kind !== 'year').map(norm).sort((a, b) => b.date.localeCompare(a.date));
+  ROSTER = Object.fromEntries(docs.filter(d => d.kind === 'roster').map(d => [d.id, d]));
+  MEETINGS = docs.filter(d => d.kind !== 'year' && d.kind !== 'roster').map(norm).sort((a, b) => b.date.localeCompare(a.date));
 }
 
 // ───────── 画面 ─────────
@@ -116,7 +120,7 @@ function render() {
   TABS.find(t => t.key === tab).render();
 }
 function go(t, id = null) {
-  tab = t; openId = id; editing = null; yearEditing = null; aiMode = null;
+  tab = t; openId = id; editing = null; yearEditing = null; aiMode = null; rosterEdit = null; rosterHist = null;
   const u = new URL(location.href);
   u.searchParams.delete('m'); u.searchParams.delete('tab');
   if (id) u.searchParams.set('m', id); else if (t !== 'list') u.searchParams.set('tab', t);
@@ -929,22 +933,22 @@ view.addEventListener('click', async e => {
   }
 });
 
-// 导入：以前的会议记录（JSON：[{ date, ... }] 或 { meetings: [...] }），同一天的会盖过去（会先问）；kind:'year' 的是那一年的活动表
+// 导入：以前的会议记录（JSON：[{ date, ... }] 或 { meetings: [...] }），同一天的会盖过去（会先问）；kind:'year' 的是那一年的活动表，kind:'roster' 的是历届执委（一届一份）
 $('import-file').addEventListener('change', async e => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
   let list;
-  try { const j = JSON.parse(await file.text()); list = (Array.isArray(j) ? j : j.meetings || []).filter(x => x.kind === 'year' ? /^\d{4}$/.test(x.year) : /^\d{4}-\d{2}-\d{2}/.test(x.id || x.date || '')); }
+  try { const j = JSON.parse(await file.text()); list = (Array.isArray(j) ? j : j.meetings || []).filter(x => x.kind === 'year' ? /^\d{4}$/.test(x.year) : x.kind === 'roster' ? /^roster_\d{4}$/.test(x.id) : /^\d{4}-\d{2}-\d{2}/.test(x.id || x.date || '')); }
   catch { return alert('这个文件读不懂（要是 .json 文件）'); }
   if (!list.length) return alert('文件里没有会议记录');
   const key = x => x.kind === 'year' ? 'year_' + x.year : x.id || x.date;
-  const same = list.filter(x => x.kind === 'year' ? YEARS[x.year] : byId(key(x))).length;
+  const same = list.filter(x => x.kind === 'year' ? YEARS[x.year] : x.kind === 'roster' ? ROSTER[x.id] : byId(key(x))).length;
   if (!confirm(`导入 ${list.length} 份${same ? `（其中 ${same} 份已经有了，会被文件里的盖过去）` : ''}？`)) return;
   try {
     await window.sicStaff.withAuth(() => {
       const b = writeBatch(db);
-      list.forEach(x => b.set(doc(db, COLL, key(x)), clean(x.kind === 'year' ? x : norm(x))));
+      list.forEach(x => b.set(doc(db, COLL, key(x)), clean(x.kind ? x : norm(x))));
       return b.commit();
     });
   } catch (err) { return fail(err); }
@@ -953,8 +957,189 @@ $('import-file').addEventListener('change', async e => {
   go('list');
 });
 
+// ───────── 历届执委 ─────────
+// 一届一份：meetings/roster_2016（kind:'roster'）。内容是一行一个岗位：「主席：莫荣烽 Ronald Mok、…（括号里写备注）」
+// 执委都可以直接改；每次改都把改之前的样子存进 history（最多 30 次），谁改错了按「还原」就回去
+const rosterList = () => Object.values(ROSTER).sort((a, b) => (a.start || 0) - (b.start || 0));
+const termEnd = r => Number((String(r.term).match(/\d{4}/g) || []).pop() || r.start);
+const splitPeople = str => {
+  const out = []; let cur = '', depth = 0;
+  for (const ch of str) {
+    if ('（('.includes(ch)) depth++;
+    if ('）)'.includes(ch)) depth = Math.max(0, depth - 1);
+    if (!depth && '、,，;；'.includes(ch)) { if (cur.trim()) out.push(cur.trim()); cur = ''; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+};
+const parseRoles = text => lines(text).map(l => {
+  const m = l.match(/^([^：:]+)[：:](.*)$/);
+  return m ? { role: m[1].trim(), people: splitPeople(m[2]) } : { role: '', people: splitPeople(l) };
+});
+const splitNote = p => { const m = p.match(/^(.*?)[（(](.*)[）)]\s*$/); return m ? { name: m[1].trim(), note: m[2].trim() } : { name: p.trim(), note: '' }; };
+const cnPart = n => (n.match(/[\u4e00-\u9fff]+/) || [''])[0];
+const enPart = n => n.replace(/[\u4e00-\u9fff]/g, ' ').trim().toLowerCase().replace(/\s+/g, ' ');
+const stamp = iso => iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}` : '';
+const whoNow = () => { const me = meNow(); return me ? nameOf(me.id, me.name) : '执委'; };
+
+// 按人：同一个人中英文名写法不同也合在一起（有中文名的用中文名认人）
+function rosterPeople() {
+  const rows = [];
+  rosterList().forEach(r => parseRoles(r.text).forEach(({ role, people }) => people.forEach(p => {
+    const { name, note } = splitNote(p);
+    if (name) rows.push({ name, note, role, term: r.term, start: r.start || 0 });
+  })));
+  const en2cn = {};
+  rows.forEach(x => { const c = cnPart(x.name), e = enPart(x.name); if (c && e) en2cn[e] = c; });
+  const map = new Map();
+  rows.forEach(x => {
+    const k = cnPart(x.name) || en2cn[enPart(x.name)] || enPart(x.name);
+    if (!map.has(k)) map.set(k, { name: x.name, jobs: [] });
+    const P = map.get(k);
+    if (cnPart(x.name) && enPart(x.name)) P.name = x.name;           // 中英都有的写法当显示名（越后面的届越新）
+    else if (!(cnPart(P.name) && enPart(P.name)) && x.name.length > P.name.length) P.name = x.name;
+    P.jobs.push(x);
+  });
+  return [...map.values()].sort((a, b) => a.jobs[0].start - b.jobs[0].start || a.name.localeCompare(b.name, 'zh'));
+}
+
+function renderRoster() {
+  if (rosterEdit) return renderRosterEdit();
+  if (rosterHist) return renderRosterHist();
+  const list = rosterList(), thisY = new Date().getFullYear();
+  const pill = (v, t) => `<button data-ract="view" data-v="${v}" class="px-3 py-1 rounded-full text-xs font-medium border ${rosterView === v ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}">${t}</button>`;
+  const head = `
+    <div class="flex items-center gap-2 flex-wrap">
+      ${pill('term', '按届看')}${pill('person', '按人看')}
+      <div class="flex-1"></div>
+      <button data-ract="new" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">➕ 补一届</button>
+    </div>
+    <p class="mt-2 text-xs text-slate-500 leading-relaxed">每位执委都可以补充、改正。每次改动都会记下是谁改的，改错了在「改动记录」按还原就回去。不确定的写「待确认」。</p>`;
+  if (!list.length) {
+    view.innerHTML = head + `<div class="mt-6 text-center text-sm text-slate-500 py-10 bg-white rounded-2xl border border-slate-200">还没有名单。<br>按「➕ 补一届」开始，或<button data-act="import" class="text-indigo-600 underline">导入名单文件</button>。</div>`;
+    return;
+  }
+  if (rosterView === 'person') {
+    const ql = rosterQ.trim().toLowerCase();
+    const ppl = rosterPeople().filter(P => !ql || P.name.toLowerCase().includes(ql));
+    view.innerHTML = head + `
+      <input id="r-q" value="${esc(rosterQ)}" placeholder="找名字…" class="mt-3 ${inp}">
+      <div class="mt-3 text-xs text-slate-400">${ppl.length} 人</div>
+      <div class="mt-1 space-y-2">${ppl.map(P => `
+        <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+          <div class="font-semibold text-sm">${esc(P.name)}</div>
+          <div class="mt-1 space-y-0.5">${P.jobs.map(j => `<div class="text-sm text-slate-600"><span class="text-slate-400 tabular-nums">${esc(j.term)}</span>　${esc(j.role || '—')}${j.note ? `<span class="text-xs text-slate-400">（${esc(j.note)}）</span>` : ''}</div>`).join('')}</div>
+        </div>`).join('')}</div>`;
+    $('r-q').addEventListener('input', e => { rosterQ = e.target.value; const pos = e.target.selectionStart; renderRoster(); const i = $('r-q'); i.focus(); i.setSelectionRange(pos, pos); });
+    return;
+  }
+  view.innerHTML = head + `<div class="mt-3 space-y-3">${list.slice().reverse().map(r => {
+    const now = r.start <= thisY && thisY <= termEnd(r), next = r.start > thisY;
+    return `
+    <section class="bg-white rounded-2xl border ${now ? 'border-indigo-300 ring-1 ring-indigo-200' : 'border-slate-200'} p-4">
+      <div class="flex items-center gap-2">
+        <div class="font-bold">${esc(r.term)} 届</div>
+        ${now ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">现任</span>' : next ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">下一届</span>' : ''}
+      </div>
+      <div class="mt-2 divide-y divide-slate-100">${parseRoles(r.text).map(({ role, people }) => `
+        <div class="py-1.5 flex gap-3">
+          <div class="w-20 shrink-0 text-xs text-slate-400 pt-0.5">${esc(role || '其他')}</div>
+          <div class="flex-1 text-sm text-slate-800">${people.map(p => { const { name, note } = splitNote(p); return `<div>${esc(name)}${note ? `<span class="text-xs text-slate-400">（${esc(note)}）</span>` : ''}</div>`; }).join('') || '<span class="text-slate-300">待补</span>'}</div>
+        </div>`).join('') || '<div class="py-2 text-sm text-slate-400">还没有人名，待补。</div>'}</div>
+      ${r.notes ? `<div class="mt-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 whitespace-pre-wrap">${esc(r.notes)}</div>` : ''}
+      <div class="mt-3 flex items-center gap-3 text-xs text-slate-400">
+        <span class="flex-1">${r.by ? `最后改：${esc(r.by)} · ${esc(stamp(r.updatedAt))}` : ''}</span>
+        ${(r.history || []).length ? `<button data-ract="hist" data-id="${r.id}" class="hover:text-indigo-600">🕘 改动记录 ${r.history.length}</button>` : ''}
+        <button data-ract="edit" data-id="${r.id}" class="text-indigo-600 font-medium">✏️ 改</button>
+      </div>
+    </section>`;
+  }).join('')}</div>`;
+}
+
+function renderRosterEdit() {
+  const isNew = rosterEdit === 'new', r = isNew ? { term: '', text: '神师：\n主席：\n副主席：\n秘书：\n副秘书：\n财政：\n查帐：\n总务：', notes: '' } : ROSTER[rosterEdit];
+  view.innerHTML = `
+    <button data-ract="cancel" class="text-sm text-slate-500 hover:text-indigo-600">‹ 回历届执委</button>
+    <div class="mt-3 bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+      <div class="font-bold">${isNew ? '补一届' : esc(r.term) + ' 届'}</div>
+      ${isNew ? `<label class="block space-y-1"><span class="text-xs text-slate-500">哪一届（例如 2012 - 2013）</span><input id="r-term" class="${inp}" placeholder="2012 - 2013"></label>` : ''}
+      <label class="block space-y-1">
+        <span class="text-xs text-slate-500">一行一个岗位：「岗位：名字、名字」。备注放括号，例如「秘书：王黛红（2018 起，代秘书）」。有中文名写中文名＋英文名。</span>
+        <textarea id="r-text" rows="${Math.max(9, lines(r.text).length + 2)}" class="${inp} leading-relaxed">${esc(r.text)}</textarea>
+      </label>
+      <label class="block space-y-1"><span class="text-xs text-slate-500">这一届的备注（资料从哪里来、哪里待确认）</span>
+        <textarea id="r-notes" rows="3" class="${inp}">${esc(r.notes || '')}</textarea></label>
+      <div class="flex gap-2"><button data-ract="save" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">保存</button>
+        <button data-ract="cancel" class="px-4 py-2 rounded-lg border border-slate-300 text-sm">取消</button></div>
+      ${isNew ? '' : '<p class="text-xs text-slate-400">保存后，改之前的样子会留在「改动记录」，随时可以还原。</p>'}
+    </div>`;
+}
+
+function renderRosterHist() {
+  const r = ROSTER[rosterHist];
+  view.innerHTML = `
+    <button data-ract="cancel" class="text-sm text-slate-500 hover:text-indigo-600">‹ 回历届执委</button>
+    <div class="mt-3 font-bold">${esc(r.term)} 届 · 改动记录</div>
+    <p class="mt-1 text-xs text-slate-500">下面是每次改动<b>之前</b>的样子，新的在上面。按「还原」会把现在的换回那个版本（现在的也会留进记录）。</p>
+    <div class="mt-3 space-y-3">${(r.history || []).map((h, i) => `
+      <div class="bg-white rounded-xl border border-slate-200 p-3">
+        <div class="flex items-center gap-2 text-xs text-slate-500"><span class="flex-1">${esc(stamp(h.at))}${h.by ? ' · ' + esc(h.by) + ' 存的版本' : ''}</span>
+          <button data-ract="restore" data-id="${r.id}" data-i="${i}" class="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-indigo-400 text-slate-700">↩️ 还原</button></div>
+        <pre class="mt-2 text-xs text-slate-700 whitespace-pre-wrap font-sans">${esc(h.text)}${h.notes ? '\n\n备注：' + esc(h.notes) : ''}</pre>
+      </div>`).join('')}</div>`;
+}
+
+// 存一届：先拿最新的，别人刚改过就不盖（叫他再看一次）
+async function rosterSave(id, { term, text, notes }, isNew) {
+  const ref = doc(db, COLL, id);
+  const snap = await getDoc(ref), cur = snap.exists() ? snap.data() : null;
+  if (isNew && cur) throw new Error('这一届已经有了，回去在那一届按「改」');
+  if (!isNew && cur && ROSTER[id] && cur.updatedAt !== ROSTER[id].updatedAt) {
+    ROSTER[id] = { id, ...cur };
+    alert(`刚刚 ${cur.by || '有人'} 也改了这一届，已经换成最新的。请再看一下，需要的话再改。`);
+    return false;
+  }
+  const history = cur ? [{ at: cur.updatedAt || '', by: cur.by || '', text: cur.text || '', notes: cur.notes || '' }, ...(cur.history || [])].slice(0, 30) : [];
+  const out = { kind: 'roster', term, start: Number((term.match(/\d{4}/) || [0])[0]), text, notes, by: whoNow(), updatedAt: new Date().toISOString(), history };
+  await window.sicStaff.withAuth(() => setDoc(ref, out));
+  ROSTER[id] = { id, ...out };
+  return true;
+}
+
+view.addEventListener('click', async e => {
+  const b = e.target.closest('[data-ract]');
+  if (!b) return;
+  const act = b.dataset.ract, id = b.dataset.id;
+  if (act === 'view') { rosterView = b.dataset.v; return renderRoster(); }
+  if (act === 'new') { rosterEdit = 'new'; renderRoster(); return window.scrollTo(0, 0); }
+  if (act === 'edit') { rosterEdit = id; renderRoster(); return window.scrollTo(0, 0); }
+  if (act === 'hist') { rosterHist = id; renderRoster(); return window.scrollTo(0, 0); }
+  if (act === 'cancel') { rosterEdit = rosterHist = null; return renderRoster(); }
+  if (act === 'save') {
+    const isNew = rosterEdit === 'new';
+    const term = isNew ? $('r-term').value.trim().replace(/\s*[-–—~至]\s*/, ' - ') : ROSTER[rosterEdit].term;
+    const start = (term.match(/\d{4}/) || [])[0];
+    if (!start) return alert('请写哪一届，例如 2012 - 2013');
+    const key = isNew ? 'roster_' + start : rosterEdit;
+    b.disabled = true;
+    try {
+      const ok = await rosterSave(key, { term, text: $('r-text').value.replace(/\s+$/, ''), notes: $('r-notes').value.trim() }, isNew);
+      if (ok) rosterEdit = null; else rosterEdit = key;
+    } catch (err) { b.disabled = false; return fail(err); }
+    return renderRoster();
+  }
+  if (act === 'restore') {
+    const r = ROSTER[id], h = r.history[Number(b.dataset.i)];
+    if (!confirm(`把 ${r.term} 届换回 ${stamp(h.at)} 的版本？`)) return;
+    b.disabled = true;
+    try { if (await rosterSave(id, { term: r.term, text: h.text, notes: h.notes }, false)) rosterHist = null; }
+    catch (err) { b.disabled = false; return fail(err); }
+    return renderRoster();
+  }
+});
+
 // 在这一页用电话登录了 → 打卡、汇报那格换成他的
-document.addEventListener('sic-login', () => { window.sicLogin?.close(); if (!editing) render(); });
+document.addEventListener('sic-login', () => { window.sicLogin?.close(); if (!editing && !rosterEdit) render(); });
 
 // ───────── 开始 ─────────
 (async () => {
