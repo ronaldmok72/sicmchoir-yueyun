@@ -23,7 +23,7 @@ let YEARS = {};             // '2026' → 那一年的活动表
 let PEOPLE = {};            // 团员id → { name, cname, noCname }（出席打卡、各人汇报显示中文名）
 let yearEditing = null;     // 正在改哪一年的活动表
 let ROSTER = {};            // 历届执委：roster_2016 → { term, start, text（一行一个岗位）, notes, by, updatedAt, history }
-let rosterView = 'term', rosterEdit = null, rosterHist = null, rosterQ = '';
+let rosterView = 'grid', rosterEdit = null, rosterHist = null, rosterQ = '';
 let aiMode = null;          // 贴会议记录让 AI 整理：{ target: 要盖过去的那一场 id 或 null }
 let aiReady = null;         // 服务器的 AI 钥匙放好了没有（问过一次就记住）
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
@@ -1010,13 +1010,43 @@ function renderRoster() {
   const pill = (v, t) => `<button data-ract="view" data-v="${v}" class="px-3 py-1 rounded-full text-xs font-medium border ${rosterView === v ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}">${t}</button>`;
   const head = `
     <div class="flex items-center gap-2 flex-wrap">
-      ${pill('term', '按届看')}${pill('person', '按人看')}
+      ${pill('grid', '总表')}${pill('term', '按届看')}${pill('person', '按人看')}
       <div class="flex-1"></div>
       <button data-ract="new" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">➕ 补一届</button>
     </div>
     <p class="mt-2 text-xs text-slate-500 leading-relaxed">每位执委都可以补充、改正。每次改动都会记下是谁改的，改错了在「改动记录」按还原就回去。不确定的写「待确认」。</p>`;
   if (!list.length) {
     view.innerHTML = head + `<div class="mt-6 text-center text-sm text-slate-500 py-10 bg-white rounded-2xl border border-slate-200">还没有名单。<br>按「➕ 补一届」开始，或<button data-act="import" class="text-indigo-600 underline">导入名单文件</button>。</div>`;
+    return;
+  }
+  if (rosterView === 'grid') {
+    // 总表：一行一届、一栏一个岗位（跟 Notion 那张一样）；往下看一栏就是这个岗位历年是谁
+    const ORDER = ['神师', '主席', '副主席', '秘书', '副秘书', '财政', '查帐', '总务'];
+    const parsed = list.map(r => ({ r, roles: parseRoles(r.text) }));
+    const extra = [...new Set(parsed.flatMap(x => x.roles.map(y => y.role || '其他')))].filter(k => !ORDER.includes(k));
+    const cols = [...ORDER, ...extra];
+    const cell = (x, c) => x.roles.filter(y => (y.role || '其他') === c).flatMap(y => y.people).map(p => {
+      const { name, note } = splitNote(p);
+      return `<div class="whitespace-nowrap">${esc(name)}${note ? `<div class="text-[11px] text-slate-400 whitespace-normal">${esc(note)}</div>` : ''}</div>`;
+    }).join('');
+    view.innerHTML = head + `
+      <div class="mt-3 overflow-x-auto bg-white rounded-2xl border border-slate-200">
+        <table class="text-sm border-collapse min-w-max">
+          <thead><tr class="bg-slate-50 text-xs text-slate-500">
+            <th class="sticky left-0 bg-slate-50 px-3 py-2 text-left font-semibold border-b border-r border-slate-200">届 ＼ 岗位</th>
+            ${cols.map(c => `<th class="px-3 py-2 text-left font-semibold border-b border-slate-200">${esc(c)}</th>`).join('')}
+          </tr></thead>
+          <tbody>${parsed.map(x => {
+            const now = x.r.start <= thisY && thisY <= termEnd(x.r);
+            return `<tr class="align-top ${now ? 'bg-indigo-50/60' : ''}">
+              <td class="sticky left-0 ${now ? 'bg-indigo-50' : 'bg-white'} px-3 py-2 border-b border-r border-slate-200 whitespace-nowrap font-semibold">
+                <button data-ract="edit" data-id="${x.r.id}" class="hover:text-indigo-600 text-left">${esc(x.r.term)}</button>${now ? '<div class="text-[11px] font-normal text-indigo-600">现任</div>' : ''}</td>
+              ${cols.map(c => `<td class="px-3 py-2 border-b border-slate-100 space-y-1">${cell(x, c) || '<span class="text-slate-300">—</span>'}</td>`).join('')}
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-xs text-slate-400">往下看一栏，就是这个岗位历年是谁。手机上左右滑。按届的名字可以直接改那一届；备注和改动记录在「按届看」。</p>`;
     return;
   }
   if (rosterView === 'person') {
