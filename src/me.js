@@ -24,10 +24,18 @@ async function load() {
   if (!me) { gate.logout(); return load(); }
   f.name.value = me.name;
   f.fullName.value = me.fullName || '';
+  // 中文名：还没填的，先从全名里的中文字带出来
+  f.cname.value = me.cname || (String(me.fullName || '').match(/[\u4e00-\u9fff]{2,5}/) || [''])[0];
+  f.noCname.checked = !!me.noCname;
+  cnameState();
   $('phone-now').textContent = me.phoneTail ? `…${me.phoneTail}` : '还没登记';
   nameTip();
   renderMerge();
 }
+
+// 打勾「没有中文名」→ 中文名那格不用填
+const cnameState = () => { f.cname.disabled = f.noCname.checked; if (f.noCname.checked) f.cname.value = ''; };
+f.noCname.addEventListener('change', cnameState);
 
 // 只有一个字（Mok、Kevin）→ 提醒加姓
 function nameTip() {
@@ -78,7 +86,9 @@ f.addEventListener('submit', async e => {
   e.preventDefault();
   err(''); ok('');
   const name = f.name.value.trim(), fullName = f.fullName.value.trim(), phone = f.phone.value.trim();
+  const cname = f.cname.value.replace(/\s+/g, ''), noCname = f.noCname.checked;
   if (!name) return err('名字不能空');
+  if (!cname && !noCname) return err('请填中文全名；真的没有中文名的话，打勾「我没有中文名」。');
   if (members.some(m => m.id !== me.id && m.name.trim().toLowerCase() === name.toLowerCase())) return err(`名单上已经有「${name}」了。加上姓或中文名区别一下。`);
   const p = { name, fullName, updatedAt: new Date().toISOString() };
   let ph = null;
@@ -97,7 +107,7 @@ f.addEventListener('submit', async e => {
       if (status !== 200) throw new Error(status === 401 ? '要先用电话重新登录一次' : '电话没存到 ' + status);
       p.phoneHash = ph.phoneHash;
     }
-    await gate.withAuth(() => updateDoc(doc(db, 'members', me.id), { name, fullName, updatedAt: p.updatedAt }));
+    await gate.withAuth(() => updateDoc(doc(db, 'members', me.id), { name, fullName, cname: noCname ? '' : cname, noCname, updatedAt: p.updatedAt }));
     // 职务表、座位表里的名字也换掉；改不到（资料库锁着）→ 记下来，管理员打开团员名单时自动换
     if (name !== me.name) await renameEverywhere(db, me.name, name).catch(async x => {
       if (x.code !== 'permission-denied') throw x;

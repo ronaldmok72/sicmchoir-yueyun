@@ -213,6 +213,11 @@
       <button data-close class="${BTN} bg-white/5 hover:bg-white/10 text-zinc-300">🎼 去乐谱</button>
       ${/\s/.test(member.name.trim()) ? '' : `<a href="me.html" class="block text-center text-xs text-amber-300 hover:text-amber-200">名字只有「${esc(member.name)}」？到 ✏️ 我的资料 加上姓 ›</a>`}`);
     box.querySelector('[data-close]').addEventListener('click', close);
+    // 还没填中文名（也没说没有）→ 提醒去我的资料补
+    gate.memberById(member.id).then(m => {
+      if (!m || m.cname || m.noCname || !box) return;
+      box.firstElementChild.insertAdjacentHTML('beforeend', '<a href="me.html" class="block text-center text-xs text-amber-300 hover:text-amber-200">还没填中文全名（会议记录、出席名单要用）？到 ✏️ 我的资料 补上 ›</a>');
+    }).catch(() => {});
     document.dispatchEvent(new CustomEvent('sic-login'));
   }
 

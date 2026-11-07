@@ -1,8 +1,8 @@
 // 执委专区：每一场执委会议的议程、完整会议记录、重点（待办＋要报告的进展）
 // 资料：Firestore meetings/{日期}，一场一份。只有密码管理开了「执委专区」的人看得到、改得到（规则要贴新的）
 // 板块：TABS 一个一个排；以后要加新的板块（例如财政、资产），在 TABS 加一个 { key, label, render } 就好
-import { collection, doc, setDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, getDocs } from "./firebase.js";
+import { collection, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, FieldPath } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, getDocs, getDoc } from "./firebase.js";
 import { docx } from "./docx.js";
 
 const $ = id => document.getElementById(id);
@@ -20,6 +20,7 @@ let year = 'all', q = '';
 let todoShow = 'open', todoWho = '';
 let reportYear = null;
 let YEARS = {};             // '2026' → 那一年的活动表
+let PEOPLE = {};            // 团员id → { name, cname, noCname }（出席打卡、各人汇报显示中文名）
 let yearEditing = null;     // 正在改哪一年的活动表
 let aiMode = null;          // 贴会议记录让 AI 整理：{ target: 要盖过去的那一场 id 或 null }
 let aiReady = null;         // 服务器的 AI 钥匙放好了没有（问过一次就记住）
@@ -84,7 +85,8 @@ async function copy(text) {
   alert('已复制，可以贴到 WhatsApp 或 Word。');
 }
 
-const save = (id, m) => window.sicStaff.withAuth(() => setDoc(doc(db, COLL, id), clean(m)));
+// merge：只改表格里有的栏，别人打的卡、写的汇报（checkins、contribs）留着
+const save = (id, m, merge = false) => window.sicStaff.withAuth(() => merge ? setDoc(doc(db, COLL, id), clean(m), { merge: true }) : setDoc(doc(db, COLL, id), clean(m)));
 const fail = err => alert('保存失败：' + (err.code === 'permission-denied'
   ? '没有权限。请 Ronald 在「密码管理」帮你开「执委专区」，或 Firebase 规则还没贴新的。' : err.message));
 
@@ -92,8 +94,9 @@ const fail = err => alert('保存失败：' + (err.code === 'permission-denied'
 // 同一个 meetings 里还放每一年的「活动表」（id = year_2026，kind: 'year'），年尾交堂区报告用
 async function load() {
   await window.sicStaff?.ensureAuth?.();
-  const s = await getDocs(collection(db, COLL));
+  const [s, ms] = await Promise.all([getDocs(collection(db, COLL)), getDocs(collection(db, 'members')).catch(() => null)]);
   const docs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (ms) PEOPLE = Object.fromEntries(ms.docs.map(d => { const x = d.data(); return [d.id, { name: x.name || '', cname: x.cname || '', noCname: !!x.noCname }]; }));
   YEARS = Object.fromEntries(docs.filter(d => d.kind === 'year').map(d => [String(d.year), d]));
   MEETINGS = docs.filter(d => d.kind !== 'year').map(norm).sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -120,6 +123,83 @@ function go(t, id = null) {
   window.history.replaceState(null, '', u);
   render();
   window.scrollTo(0, 0);
+  if (id) refreshOne(id);
+}
+
+// ───────── 出席打卡、各人汇报 ─────────
+// 每个人只写自己那一格（checkins.团员id、contribs.团员id），大家同时按也不会互相盖掉
+const meNow = () => window.sicStaff?.me?.();
+const nameOf = (id, fallback = '') => PEOPLE[id]?.cname || PEOPLE[id]?.name || fallback;
+const byTime = o => Object.entries(o || {}).sort((a, b) => String(a[1].at).localeCompare(String(b[1].at)));
+const checkinNames = m => byTime(m.checkins).map(([id, c]) => nameOf(id, c.n));
+const contribList = m => byTime(m.contribs).filter(([, c]) => c.text).map(([id, c]) => ({ id, n: nameOf(id, c.n), text: c.text, at: c.at }));
+
+// 打开一场会议时再拿一次最新的（别人刚打卡、刚写汇报）
+async function refreshOne(id) {
+  try {
+    const d = await getDoc(doc(db, COLL, id));
+    if (!d.exists()) return;
+    const fresh = norm({ id, ...d.data() }), cur = byId(id);
+    const same = cur && ['checkins', 'contribs', 'draft', 'updatedAt'].every(k => JSON.stringify(cur[k]) === JSON.stringify(fresh[k]));
+    MEETINGS = MEETINGS.map(x => x.id === id ? fresh : x);
+    if (!same && openId === id && !editing && !aiMode && !yearEditing) {
+      const keep = $('my-contrib')?.value;   // 正在打的字别弄丢
+      render();
+      if (keep !== undefined && $('my-contrib')) $('my-contrib').value = keep;
+    }
+  } catch { /* 没网络就先用手上的 */ }
+}
+
+// 写自己那一格
+async function writeMine(m, field, val) {
+  const me = meNow();
+  if (!me) { window.sicLogin?.open(); throw new Error('要先用电话登录'); }
+  await window.sicStaff.withAuth(() => updateDoc(doc(db, COLL, m.id), new FieldPath(field, me.id), val === null ? deleteField() : val));
+  m[field] = { ...(m[field] || {}) };
+  if (val === null) delete m[field][me.id]; else m[field][me.id] = val;
+}
+
+// 打卡前：还没填中文名的先问一次（存进他的团员资料）
+async function askCname(me) {
+  const p = PEOPLE[me.id];
+  if (!p || p.cname || p.noCname) return;
+  const v = (prompt('请输入你的中文全名（会议记录、出席名单用）。\n真的没有中文名就按「取消」。') || '').replace(/\s+/g, '');
+  const patch = v ? { cname: v } : { noCname: true };
+  Object.assign(p, patch);
+  try { await window.sicStaff.withAuth(() => updateDoc(doc(db, 'members', me.id), { ...patch, updatedAt: new Date().toISOString() })); }
+  catch { /* 规则还没贴新的：这次先照用，下次再问 */ }
+}
+
+function togetherBox(m) {
+  const me = meNow(), mine = me && m.checkins?.[me.id];
+  const names = checkinNames(m), list = contribList(m);
+  const myText = (me && m.contribs?.[me.id]?.text) || '';
+  if (m.status !== 'agenda' && !names.length && !list.length) return '';
+  const others = list.filter(c => c.id !== me?.id);
+  return `
+    <section class="mt-3 bg-white rounded-2xl border border-slate-200 p-4">
+      <div class="flex items-center gap-2">
+        <div class="font-semibold text-sm flex-1">✋ 出席打卡 <span class="font-normal text-xs text-slate-400">${names.length} 人</span></div>
+        ${m.status === 'agenda' ? (!me ? '<button data-act="login" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">用电话登录再打卡</button>'
+          : mine ? '<button data-act="uncheckin" class="text-xs text-slate-400 hover:text-red-500">取消打卡</button>'
+          : '<button data-act="checkin" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold">✋ 我出席了</button>') : ''}
+      </div>
+      <div class="mt-2 text-sm ${names.length ? 'text-slate-700' : 'text-slate-400'}">${names.length ? names.map(esc).join('、') : '开会时每个人自己按「我出席了」，名字就会出现在这里，也会自动放进会议记录的出席名单。'}</div>
+    </section>
+
+    <section class="mt-3 bg-white rounded-2xl border border-slate-200 p-4">
+      <div class="font-semibold text-sm">🗣️ 各人汇报 <span class="font-normal text-xs text-slate-400">${list.length} 人写了</span></div>
+      ${m.status === 'agenda' ? (me ? `
+        <div class="mt-2 text-xs text-slate-500">你要报告的事写在这里（例如你负责的活动、财政、礼仪），只有你能改你这一格。写完按保存，最后会一起整理进会议记录。</div>
+        <textarea id="my-contrib" rows="${Math.max(4, myText.split('\n').length + 1)}" class="mt-1.5 ${inp} leading-relaxed" placeholder="例如：天使团现有 12 人，下次侍奉 9/27 师生弥撒……">${esc(myText)}</textarea>
+        <div class="mt-1.5 flex items-center gap-2"><button data-act="contrib-save" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">保存我的汇报</button><span id="contrib-msg" class="text-xs text-emerald-600"></span></div>`
+        : '<div class="mt-2 text-sm text-slate-500">用电话登录之后，就可以写你要报告的事。</div>') : ''}
+      ${(m.status === 'agenda' ? others : list).length ? `<div class="mt-3 space-y-2">${(m.status === 'agenda' ? others : list).map(c => `
+        <div class="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+          <div class="text-xs font-semibold text-indigo-800">${esc(c.n)}</div>
+          <div class="mt-0.5 text-sm text-slate-700 whitespace-pre-wrap">${esc(c.text)}</div>
+        </div>`).join('')}</div>` : ''}
+    </section>`;
 }
 
 const pill = m => m.status === 'agenda'
@@ -198,7 +278,7 @@ function renderDetail(m) {
       ${m.status === 'done' && !m.driveUrl ? '<div class="mt-2 text-xs text-amber-700">还没有原件：按「下载 Word」，放进 sicmchoir Drive 的「会议记录 Meeting Minutes」，再把链接贴回「修改 → 原件」。</div>' : ''}
       <div class="mt-3 space-y-1.5 text-sm">
         ${row('地点', esc(m.place))}
-        ${row('出席', esc(m.attend))}
+        ${row('出席', esc(m.attend || checkinNames(m).join('、')))}
         ${row('缺席', esc(m.absent))}
         ${row('开会祷', esc(m.prayOpen))}
         ${row('闭会祷', esc(m.prayClose))}
@@ -208,6 +288,7 @@ function renderDetail(m) {
     </section>
 
     ${m.status === 'agenda' || m.draft ? draftBox(m) : ''}
+    ${togetherBox(m)}
 
     ${carry.length ? `
     <section class="mt-3 bg-amber-50 rounded-2xl border border-amber-200 p-4">
@@ -255,10 +336,10 @@ function draftBox(m) {
     <${tag} class="mt-3 bg-white rounded-2xl border border-slate-200 p-4">
       <${head} class="font-semibold text-sm ${head === 'summary' ? 'cursor-pointer text-slate-500' : ''}">📝 会议记录草稿</${head}>
       ${m.draft ? `<div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">${esc(m.draft)}</div>`
-        : '<div class="mt-2 text-sm text-slate-500">这几个月有什么事就随手记在这里，乱写没关系。开完会补上讨论的内容，按「用笔记整理」，AI 会照以前的格式写成正式会议记录。</div>'}
+        : '<div class="mt-2 text-sm text-slate-500">这几个月有什么事就随手记在这里，乱写没关系（通常是秘书写）。每个人自己要报告的，写在下面的「各人汇报」。开完会按「整理成完整会议记录」，AI 会把草稿和大家的汇报一起整理成正式记录。</div>'}
       <div class="mt-3 flex flex-wrap gap-2">
         <button data-act="edit" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">✎ ${m.draft ? '继续写' : '开始写'}</button>
-        ${m.draft ? '<button data-act="ai-draft" id="ai-draft" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">🤖 用笔记整理成会议记录</button>' : ''}
+        ${m.draft || contribList(m).length ? '<button data-act="ai-draft" id="ai-draft" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">🤖 整理成完整会议记录</button>' : ''}
       </div>
       <div id="ai-msg" class="mt-2 text-sm"></div>
     </${tag}>`;
@@ -502,7 +583,7 @@ function renderEdit() {
             <option value="done" ${m.status !== 'agenda' ? 'selected' : ''}>已开完，有会议记录</option>
           </select></label>
         <div class="grid grid-cols-2 gap-3">${f('f-time', '时间', m.time, '2:30 PM – 5:00 PM')}${f('f-place', '地点', m.place, '例如 Room 1.1')}</div>
-        <label class="block"><div class="text-xs text-slate-500 mb-0.5">出席</div><textarea id="f-attend" rows="2" class="${inp}">${esc(m.attend)}</textarea></label>
+        <label class="block"><div class="text-xs text-slate-500 mb-0.5">出席</div><textarea id="f-attend" rows="2" class="${inp}">${esc(m.attend || checkinNames(m).join('、'))}</textarea></label>
         <label class="block"><div class="text-xs text-slate-500 mb-0.5">缺席</div><textarea id="f-absent" rows="2" class="${inp}">${esc(m.absent)}</textarea></label>
         <div class="grid grid-cols-2 gap-3">${f('f-prayOpen', '开会祷', m.prayOpen)}${f('f-prayClose', '闭会祷', m.prayClose)}</div>
         <div class="text-xs font-semibold text-slate-600 pt-1">核准上次会议记录</div>
@@ -589,7 +670,9 @@ async function submit() {
   const btn = view.querySelector('#mform button:not([type])');
   btn.disabled = true; btn.textContent = '保存中…';
   try {
-    await save(id, m);
+    // 同一场：只改表格的栏（别人刚打的卡、写的汇报不会被盖掉）；搬到别的日期才整份搬过去
+    const { checkins, contribs, ...body } = m;
+    await save(id, old === id ? body : m, old === id);
     if (old && old !== id) await window.sicStaff.withAuth(() => deleteDoc(doc(db, COLL, old)));
     await addToYears(m, old && byId(old));
   } catch (err) { btn.disabled = false; btn.textContent = '保存'; return fail(err); }
@@ -700,18 +783,20 @@ async function aiDraft(m) {
   btn.disabled = true; btn.textContent = '🤖 整理中…';
   msg('<span class="text-slate-500">AI 在读笔记，大概 20 秒到 1 分钟，请别关这页。</span>');
   const text = [
-    '（以下是执委在乐韵 App 里写的开会笔记草稿，会已经开完，请整理成正式会议记录，status 用 done。笔记里没有的不要编。）',
+    '（以下是执委在乐韵 App 里写的开会笔记草稿，加上每位执委自己写的汇报。会已经开完，请把两者合起来整理成一份完整、仔细的正式会议记录，status 用 done。'
+      + '各人汇报的内容全部放进对应的议程段落，细节、数字、日期都保留，注明是谁报告的；笔记和汇报里没有的不要编。）',
     `会议：${titleOf(m)}`, `日期：${m.date}`, m.time && `时间：${m.time}`, m.place && `地点：${m.place}`,
-    m.attend && `出席：${m.attend}`, m.absent && `缺席：${m.absent}`, m.prayOpen && `开会祷：${m.prayOpen}`, m.prayClose && `闭会祷：${m.prayClose}`,
+    (m.attend || checkinNames(m).length) && `出席：${m.attend || checkinNames(m).join('、')}`, m.absent && `缺席：${m.absent}`, m.prayOpen && `开会祷：${m.prayOpen}`, m.prayClose && `闭会祷：${m.prayClose}`,
     m.approve?.by && `核准上次会议记录：提议 ${m.approve.by}、附议 ${m.approve.second || ''}`, m.recorder && `记录员：${m.recorder}`,
     m.agenda.length && '议程：\n' + m.agenda.map((a, i) => `${i + 1}. ${a}`).join('\n'),
-    '开会笔记：\n' + m.draft,
+    m.draft && '开会笔记（秘书／大家一起写的草稿）：\n' + m.draft,
+    contribList(m).length && '各人汇报：\n' + contribList(m).map(c => `【${c.n}】\n${c.text}`).join('\n\n'),
   ].filter(Boolean).join('\n');
   let bin = '';
   new TextEncoder().encode(text).forEach(b => { bin += String.fromCharCode(b); });
   let g;
   try { g = await askAi({ file: { data: btoa(bin), mime: 'text/plain', name: 'notes.txt' } }); } catch (err) {
-    btn.disabled = false; btn.textContent = '🤖 用笔记整理成会议记录';
+    btn.disabled = false; btn.textContent = '🤖 整理成完整会议记录';
     return msg(`<span class="text-rose-600">${esc(err.message || err)}</span>`);
   }
   openAi({ ...g, date: m.date }, m, '');
@@ -788,6 +873,26 @@ view.addEventListener('click', async e => {
     case 'ai-this': aiMode = { target: m.id }; render(); return window.scrollTo(0, 0);
     case 'ai-run': return aiRun();
     case 'ai-draft': return aiDraft(m);
+    case 'login': return window.sicLogin?.open();
+    case 'checkin': case 'uncheckin': {
+      const me = meNow();
+      if (!me) return window.sicLogin?.open();
+      b.disabled = true;
+      try {
+        if (b.dataset.act === 'checkin') await askCname(me);
+        await writeMine(m, 'checkins', b.dataset.act === 'checkin' ? { n: nameOf(me.id, me.name), at: new Date().toISOString() } : null);
+      } catch (err) { b.disabled = false; return fail(err); }
+      return renderDetail(m);
+    }
+    case 'contrib-save': {
+      const me = meNow(), text = $('my-contrib').value.replace(/\s+$/, '');
+      b.disabled = true;
+      try { await writeMine(m, 'contribs', text ? { n: nameOf(me?.id, me?.name), text, at: new Date().toISOString() } : null); }
+      catch (err) { b.disabled = false; return fail(err); }
+      b.disabled = false;
+      $('contrib-msg').textContent = '✅ 存好了';
+      return;
+    }
     case 'word': return wordOf(m);
     case 'edit': editing = norm(JSON.parse(JSON.stringify(m))); render(); return window.scrollTo(0, 0);
     case 'cancel': editing = null; yearEditing = null; aiMode = null; render(); return window.scrollTo(0, 0);
@@ -847,6 +952,9 @@ $('import-file').addEventListener('change', async e => {
   alert(`导入好了：${list.length} 份`);
   go('list');
 });
+
+// 在这一页用电话登录了 → 打卡、汇报那格换成他的
+document.addEventListener('sic-login', () => { window.sicLogin?.close(); if (!editing) render(); });
 
 // ───────── 开始 ─────────
 (async () => {

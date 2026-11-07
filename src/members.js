@@ -168,7 +168,7 @@ function renderList() {
           <button data-id="${esc(m.id)}" class="w-full text-left flex items-center gap-3 px-3 py-2.5 hover:bg-indigo-50">
             <span class="w-10 shrink-0 text-center text-xs ${m.cape ? 'text-slate-700 font-semibold' : 'text-slate-300'}">${m.cape ? `#${m.cape}` : '—'}</span>
             <span class="flex-1 min-w-0">
-              <span class="block truncate text-sm ${m.active === false ? 'text-slate-400' : ''}">${esc(m.name)}${m.fullName ? `<span class="text-slate-400 text-xs">　${esc(m.fullName)}</span>` : ''}</span>
+              <span class="block truncate text-sm ${m.active === false ? 'text-slate-400' : ''}">${esc(m.name)}${m.fullName || m.cname ? `<span class="text-slate-400 text-xs">　${esc(m.fullName || '')}${m.cname && !String(m.fullName || '').includes(m.cname) ? ' ' + esc(m.cname) : ''}</span>` : ''}</span>
               ${subLine(m)}
               ${m.note ? `<span class="block truncate text-xs text-amber-600">${esc(m.note)}</span>` : ''}
             </span>
@@ -203,6 +203,8 @@ function openEditor(m) {
   $('edit-title').textContent = m ? `改：${m.name}` : '加团员';
   form.name.value = editing.name || '';
   form.fullName.value = editing.fullName || '';
+  form.cname.value = editing.cname || (String(editing.fullName || '').match(/[\u4e00-\u9fff]{2,5}/) || [''])[0];
+  form.noCname.checked = !!editing.noCname;
   form.cape.value = editing.cape || '';
   form.active.checked = editing.active !== false;
   form.note.value = editing.note || '';
@@ -272,6 +274,7 @@ form.addEventListener('submit', async e => {
   if (members.some(m => m.id !== editing.id && m.name.toLowerCase() === name.toLowerCase()) && !confirm(`已经有一位叫「${name}」，还是要存？（同名的话，建议在名字后面加姓）`)) return;
   const data = {
     name, fullName: form.fullName.value.trim(), voice: pickVoice,
+    cname: form.noCname.checked ? '' : form.cname.value.replace(/\s+/g, ''), noCname: form.noCname.checked,
     voices2: pickVoice ? VOICES.map(v => v.key).filter(k => k && k !== pickVoice && pickVoices2.has(k)) : [],
     gender: pickGender || genderFromVoice(pickVoice), genderGuess: false,
     cape: Number(form.cape.value) || null, roles: ROLES.filter(r => pickRoles.has(r)),
