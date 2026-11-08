@@ -41,6 +41,7 @@ function doPost(e) {
     if (!finance) return out_({ error: '要有「执委专区」权限' });
     if (b.action === 'upload') return out_(upload_(b));
     if (b.action === 'view') return out_(view_(b));
+    if (b.action === 'trash') return out_(trash_(b));
     if (b.action === 'status') return out_(status_());
     return out_({ error: '不认识的动作' });
   } catch (err) {
@@ -96,17 +97,27 @@ function upload_(b) {
   const f = folder.createFile(Utilities.newBlob(Utilities.base64Decode(b.data), b.mime, name));
   return { id: f.getId(), name: f.getName(), mime: b.mime };
 }
-// 只读得到「财政附件」里面的文件，这个账号的其他文件一律读不到
-function view_(b) {
-  const f = DriveApp.getFileById(String(b.id || ''));
+// 只碰得到「财政附件」里面的文件，这个账号的其他文件一律碰不到
+function financeFile_(id) {
+  const f = DriveApp.getFileById(String(id || ''));
   const base = child_(root_(), '财政附件').getId();
-  let inside = false;
   const years = f.getParents();
-  while (years.hasNext() && !inside) {
+  while (years.hasNext()) {
     const up = years.next().getParents();
-    while (up.hasNext()) if (up.next().getId() === base) inside = true;
+    while (up.hasNext()) if (up.next().getId() === base) return f;
   }
-  if (!inside) return { error: '这个文件不是财政附件' };
+  return null;
+}
+// App 里拿掉附件、这一笔存好之后才叫这里；进垃圾桶，30 天内救得回
+function trash_(b) {
+  const f = financeFile_(b.id);
+  if (!f) return { error: '这个文件不是财政附件' };
+  f.setTrashed(true);
+  return { ok: true };
+}
+function view_(b) {
+  const f = financeFile_(b.id);
+  if (!f) return { error: '这个文件不是财政附件' };
   const blob = f.getBlob();
   return { name: f.getName(), mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) };
 }

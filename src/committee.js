@@ -26,7 +26,7 @@ let ROSTER = {};            // 历届执委：roster_2016 → { term, start, tex
 let rosterView = 'grid', rosterEdit = null, rosterHist = null, rosterQ = '';
 let ITEMS = [], FIN = [];   // 团室物品、财政记录
 let boardEdit = null, boardHist = null, itemQ = '', finYear = 'all';
-let finDraft = null;   // 正在改的这一笔的附件：{ key, kept: 已经在 Drive 的, picked: 保存时才上传的 }
+let finDraft = null;   // 正在改的这一笔的附件：{ key, kept: 已经在 Drive 的, picked: 保存时才上传的, dropped: 拿掉的，保存后才从 Drive 删 }
 let aiMode = null;          // 贴会议记录让 AI 整理：{ target: 要盖过去的那一场 id 或 null }
 let aiReady = null;         // 服务器的 AI 钥匙放好了没有（问过一次就记住）
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
@@ -1330,7 +1330,7 @@ function renderFin() {
 }
 function renderFinEdit() {
   const isNew = boardEdit === 'new', x = isNew ? { date: todayStr(), type: 'out' } : FIN.find(y => y.id === boardEdit);
-  if (!finDraft || finDraft.key !== boardEdit) finDraft = { key: boardEdit, kept: [...(x.files || [])], picked: [] };
+  if (!finDraft || finDraft.key !== boardEdit) finDraft = { key: boardEdit, kept: [...(x.files || [])], picked: [], dropped: [] };
   view.innerHTML = `
     <button data-bact="cancel" data-k="fin" class="text-sm text-slate-500 hover:text-indigo-600">‹ ${backTab('fin')}</button>
     <div class="mt-2 bg-white rounded-2xl border border-slate-200 p-4 space-y-3 text-sm">
@@ -1371,6 +1371,14 @@ async function shrinkReceipt(file) {
   return { blob: file, mime: file.type, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() };
 }
 // 一个一个传；中途失败的话，传好的已经搬到 kept，再按保存只传剩下的
+// 这一笔存好了才把拿掉的附件丢进 Drive 垃圾桶；丢不掉也不影响这一笔
+async function trashDropped(files) {
+  const left = [];
+  for (const f of files) {
+    try { await window.sicStaff.driveCall('trash', { id: f.id }); } catch { left.push(f.name); }
+  }
+  if (left.length) alert(`这一笔存好了，但 Drive 里的旧附件没删到，可以自己到 Drive 删：\n${left.join('\n')}`);
+}
 // 手机、截图自动取的名字没有意义，不接在后面
 const AUTO_FILE_NAME = /^(?:(?:img|image|pxl|dsc[nf]?|mvimg|photo|scan|screenshot|file|document|mmexport|fb_img|received|cam|wp)[\s_-]*[\d(]|screen ?shot|whatsapp (?:image|video)|截图|屏幕截图|微信图片|image$|untitled|download|[\d\s_.()-]+$|[0-9a-f]{8}-[0-9a-f]{4}|\d{4}-\d{2}-\d{2}_(?:收入|支出)_)/i;
 // 存进 Drive 的名字：日期_类别_项目_金额_第几个，后面接上传的人自己取的名字（最多 100 个字，整个不超过 150）
@@ -1474,17 +1482,25 @@ view.addEventListener('click', async e => {
   if (act === 'hist') { boardHist = id; redraw(kind); return window.scrollTo(0, 0); }
   if (act === 'cancel') { boardEdit = boardHist = null; return redraw(kind); }
   if (act === 'file') return openFile(listOf(kind).find(x => x.id === id).files[Number(b.dataset.i)]);
-  if (act === 'file-drop') { finDraft[b.dataset.from].splice(Number(b.dataset.i), 1); return drawFinFiles(); }
+  if (act === 'file-drop') {
+    const [gone] = finDraft[b.dataset.from].splice(Number(b.dataset.i), 1);
+    if (b.dataset.from === 'kept' && gone) finDraft.dropped.push(gone);
+    return drawFinFiles();
+  }
   const run = async (key, data) => {
     b.disabled = true;
-    try { if (await boardSave(kind, key, data)) boardEdit = boardHist = null; }
-    catch (err) { b.disabled = false; return fail(err); }
+    let saved = false;
+    try { saved = await boardSave(kind, key, data); if (saved) boardEdit = boardHist = null; }
+    catch (err) { b.disabled = false; fail(err); return false; }
     redraw(kind);
+    return saved;
   };
   if (act === 'save') {
     const data = readBoardForm(kind);
     if (!data) return;
+    let dropped = [];
     if (kind === 'fin' && finDraft) {
+      dropped = [...finDraft.dropped];
       if (finDraft.picked.length) {
         const label = b.textContent;
         b.disabled = true;
@@ -1497,7 +1513,7 @@ view.addEventListener('click', async e => {
       }
       data.files = finDraft.kept.map(({ id, name, mime }) => ({ id, name, mime }));
     }
-    await run(boardEdit === 'new' ? null : boardEdit, data);
+    if (await run(boardEdit === 'new' ? null : boardEdit, data) && dropped.length) await trashDropped(dropped);
     return;
   }
   if (act === 'remove') {
