@@ -42,6 +42,8 @@ const TABS = [
 // ───────── 小工具 ─────────
 const WD = '日一二三四五六';
 const ymd = iso => (iso || '').split('-').map(Number);
+// 财政用的 日/月/年：手机日期格的显示跟系统语言走（会变成 月/日/年），所以自己写字，真正的日期格透明盖在上面
+const dmy = iso => /^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? `${iso.slice(8)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '';
 const fmtDate = iso => { const [y, m, d] = ymd(iso); return y ? `${y}年${m}月${d}日（${WD[new Date(y, m - 1, d).getDay()]}）` : ''; };
 const md = iso => { const [, m, d] = ymd(iso); return m ? `${m}月${d}日` : ''; };
 const pad = n => String(n).padStart(2, '0');
@@ -1318,7 +1320,7 @@ function renderFin() {
     <div class="mt-3 space-y-2">${show.length ? show.map(x => `
       <div class="bg-white rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm">
         <div class="flex items-baseline gap-2"><div class="flex-1 min-w-0 font-semibold">${esc(x.what)}</div><div class="shrink-0 font-semibold ${x.type === 'out' ? 'text-red-600' : 'text-emerald-700'}">${x.type === 'out' ? '−' : '＋'} ${rm(x.cents)}</div></div>
-        <div class="mt-0.5 flex items-baseline gap-2 text-xs text-slate-500"><div class="flex-1 min-w-0">${esc(x.date)}${x.who ? ' · 经手：' + esc(x.who) : ''}${x.note ? ' · ' + esc(x.note) : ''}</div><div class="shrink-0 text-slate-400">余 ${rm(x.bal)}</div></div>
+        <div class="mt-0.5 flex items-baseline gap-2 text-xs text-slate-500"><div class="flex-1 min-w-0">${esc(dmy(x.date) || x.date)}${x.who ? ' · 经手：' + esc(x.who) : ''}${x.note ? ' · ' + esc(x.note) : ''}</div><div class="shrink-0 text-slate-400">余 ${rm(x.bal)}</div></div>
         ${foot('fin', x)}
       </div>`).join('') : '<div class="text-sm text-slate-400 text-center py-8">还没有记录。财政报告时一边讲一边记就好。</div>'}</div>
     ${goneBox('fin', FIN.filter(x => x.removed))}`;
@@ -1329,7 +1331,7 @@ function renderFinEdit() {
     <button data-bact="cancel" data-k="fin" class="text-sm text-slate-500 hover:text-indigo-600">‹ ${backTab('fin')}</button>
     <div class="mt-2 bg-white rounded-2xl border border-slate-200 p-4 space-y-3 text-sm">
       <div class="grid grid-cols-2 gap-3">
-        <label class="block">日期<input id="b-date" type="date" value="${esc(x.date || '')}" class="mt-1 ${inp}"></label>
+        <div>日期<div class="relative mt-1"><div id="b-date-show" class="${inp}">${dmy(x.date) || '选日期'}</div><input id="b-date" type="date" aria-label="日期（日/月/年）" value="${esc(x.date || '')}" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></div></div>
         <label class="block">类别<select id="b-type" class="mt-1 ${inp}"><option value="in" ${x.type === 'in' ? 'selected' : ''}>收入</option><option value="out" ${x.type === 'out' ? 'selected' : ''}>支出</option></select></label>
       </div>
       <label class="block">金额（RM）<input id="b-amount" inputmode="decimal" value="${x.cents != null && x.cents !== '' ? (Number(x.cents) / 100).toFixed(2) : ''}" placeholder="例如：120.50" class="mt-1 ${inp}"></label>
@@ -1371,7 +1373,11 @@ function changesBox(m) {
     </section>`;
 }
 
-view.addEventListener('input', e => { if (e.target.id === 'b-q') { itemQ = e.target.value; drawItems(); } });
+view.addEventListener('input', e => {
+  if (e.target.id === 'b-q') { itemQ = e.target.value; drawItems(); }
+  if (e.target.id === 'b-date') $('b-date-show').textContent = dmy(e.target.value) || '选日期';
+});
+view.addEventListener('click', e => { if (e.target.id === 'b-date') { try { e.target.showPicker(); } catch {} } });
 view.addEventListener('click', async e => {
   const b = e.target.closest('[data-bact]');
   if (!b) return;
