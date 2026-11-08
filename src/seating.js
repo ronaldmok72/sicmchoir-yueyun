@@ -177,6 +177,18 @@ function trayPeople() {
     .sort((a, b) => roles.has(b.toLowerCase()) - roles.has(a.toLowerCase()) || order[gender(a)] - order[gender(b)] || (capeOf(a) || 999) - (capeOf(b) || 999) || a.localeCompare(b));
 }
 
+// 给人找名字用的次序（还没排座位、点空位选人）：有职务 → 说会来 → 还没回应 → 说不来，同一组照 A–Z
+// trayPeople 的次序不动：自动排位子要靠它的女生在前、披肩号码
+const AZ = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+const GROUP_LABEL = ['有职务', '🙋 说会来', '还没回应', '🙅 说不来'];
+function pickList(names, roles, toChip) {
+  const groupOf = n => roles.has(n.toLowerCase()) ? 0 : voteOf(n) === 'Y' ? 1 : voteOf(n) === 'N' ? 3 : 2;
+  const rows = names.map(n => ({ n, g: groupOf(n) })).sort((a, b) => a.g - b.g || AZ.compare(a.n, b.n));
+  const count = g => rows.filter(x => x.g === g).length;
+  const labels = names.some(n => voteOf(n));   // 这台没有人投票（例如婚礼）就不分组写字
+  return rows.map((x, i) => (labels && (!i || rows[i - 1].g !== x.g) ? `<div class="basis-full text-[11px] font-semibold text-slate-500">${GROUP_LABEL[x.g]}（${count(x.g)}）</div>` : '') + toChip(x.n)).join('');
+}
+
 // 照上一次排：指挥、乐手放台前；没来的、在台前的从座位拿掉；还没位子的女声从前面补，男声从后面补
 function autoFill() {
   const { key, date, noCapes, absent, capes, voices, guests, extra } = cur;   // 这一天自己改过的披肩、声部、加的人留着，不照上一次
@@ -398,7 +410,7 @@ function renderTray() {
   const t = trayPeople();
   $('tray-count').textContent = t.length ? `（${t.length}）` : '';
   const roles = roleMap();
-  $('tray').innerHTML = t.map(n => chip(n, `data-tray="${esc(n)}"`, sel?.kind === 'tray' && sel.name === n ? 'ring-2 ring-indigo-500' : '', roles)).join('')
+  $('tray').innerHTML = pickList(t, roles, n => chip(n, `data-tray="${esc(n)}"`, sel?.kind === 'tray' && sel.name === n ? 'ring-2 ring-indigo-500' : '', roles))
     || '<span class="text-xs text-slate-400 self-center">✅ 全部排好了</span>';
   $('absent-box').classList.toggle('hidden', !cur.absent.length);
   $('absent').innerHTML = cur.absent.map(n => `<button data-absent="${esc(n)}" class="px-2 py-1 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 text-sm line-through">${esc(n)}</button>`).join('');
@@ -578,7 +590,7 @@ function openPicker(r, c, g = null) {
     <div class="flex gap-2 mb-3">${tab('F', `👩 女生（${cnt('F')}）`)}${tab('M', `👨 男生（${cnt('M')}）`)}${tab('all', `全部（${all.length}）`)}</div>
     <div class="flex-1 overflow-y-auto flex flex-wrap gap-1.5 content-start">
       ${g === null ? '<div class="text-sm text-slate-400 py-6 w-full text-center">先选男生还是女生</div>'
-        : list.length ? list.map(n => chip(n, `data-pick="${esc(n)}"`, '', roles).replace('draggable="true"', '')).join('')
+        : list.length ? pickList(list, roles, n => chip(n, `data-pick="${esc(n)}"`, '', roles).replace('draggable="true"', ''))
         : '<div class="text-sm text-slate-400 py-6 w-full text-center">没有人了</div>'}
     </div>
     ${g && g !== 'all' && list.some(n => !gender(n)) ? '<div class="text-[11px] text-slate-400 mt-2">没填男女的人两边都会出现</div>' : ''}
