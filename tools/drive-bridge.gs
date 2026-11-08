@@ -8,7 +8,7 @@ const PROJECT = 'sicmchoir-yueyun';
 const TOP = 'SIC乐韵歌咏团';
 const ROOT = 'App 备份';
 const SHARE_TO = 'ronaldmok72@gmail.com';   // 备份文件夹分享给谁看（只能看）
-const LATEST = '完整备份_最新.json';          // 只留这一份，每晚覆盖；旧内容 Google 自己放在「版本记录」
+const KEEP_DAYS = 30;                       // 每晚的备份留 30 天；每月 1 号那份一直留
 const CLOUD = 'https://res.cloudinary.com/dsfhilcgz/';
 const LIBRARY = 'https://sicmchoir-yueyun.vercel.app/src/library.js';
 const MEDIA_INDEX = '已复制清单.json';
@@ -78,14 +78,9 @@ function child_(parent, name) {
   const it = parent.getFoldersByName(name);
   return it.hasNext() ? it.next() : parent.createFolder(name);
 }
-// 同名的直接覆盖，文件和连结都不变；太大（Google 限 10MB）才换一个新文件
+// 同名的先丢垃圾桶再写新的
 function writeText_(folder, name, text) {
   const it = folder.getFilesByName(name);
-  if (it.hasNext() && text.length * 3 < 1e7) {
-    const f = it.next();
-    f.setContent(text);
-    return f;
-  }
   while (it.hasNext()) it.next().setTrashed(true);
   return folder.createFile(name, text, 'application/json');
 }
@@ -128,10 +123,10 @@ function status_() {
 
 // ───────── 每晚备份 ─────────
 function backup_(b) {
-  if (!b.data) return { error: '备份资料不完整' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(b.day || '') || !b.data) return { error: '备份资料不完整' };
   const folder = child_(root_(), '每晚完整备份');
-  writeText_(folder, LATEST, JSON.stringify(b.data));
-  keepOnlyLatest_(folder);
+  writeText_(folder, b.day + '.json', JSON.stringify(b.data));
+  prune_(folder, b.day);
   sheet_(b.data);
   const counts = {};
   Object.keys(b.data).forEach(c => { counts[c] = Object.keys(b.data[c]).length; });
@@ -139,12 +134,11 @@ function backup_(b) {
   props().deleteProperty('mediaIdle');
   return { ok: true, counts };
 }
-// 新的写好了才清掉以前按日期存的
-function keepOnlyLatest_(folder) {
-  const it = folder.getFiles();
+function prune_(folder, today) {
+  const it = folder.getFiles(), now = Date.parse(today);
   while (it.hasNext()) {
-    const f = it.next();
-    if (f.getName() !== LATEST) f.setTrashed(true);
+    const f = it.next(), m = f.getName().match(/^(\d{4}-\d{2}-(\d{2}))\.json$/);
+    if (m && m[2] !== '01' && (now - Date.parse(m[1])) / 864e5 > KEEP_DAYS) f.setTrashed(true);
   }
 }
 function sheet_(data) {
