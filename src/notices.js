@@ -29,7 +29,6 @@ async function load() {
 function render() {
   const ed = canEdit();
   $('btn-new').classList.toggle('hidden', !ed || !$('form').classList.contains('hidden'));
-  $('btn-staff').classList.toggle('hidden', ed);
   const card = n => `<article class="bg-white rounded-2xl border border-slate-200 p-4">${noticeHtml(n, {
     titles, edit: ed ? `<button data-edit="${esc(n.id)}" class="shrink-0 text-xs text-indigo-600 hover:underline">改</button>` : '',
   })}</article>`;
@@ -137,9 +136,6 @@ $('btn-new').addEventListener('click', () => openForm(null));
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-edit]'); if (!b) return;
   openForm(notices.active.concat(notices.past).find(n => n.id === b.dataset.edit));
-});
-$('btn-staff').addEventListener('click', async () => {
-  if (await gate?.unlock('notice', '发公告要「公告」权限的密码')) render();
 });
 
 function toast(t) {

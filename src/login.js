@@ -221,7 +221,14 @@
     document.dispatchEvent(new CustomEvent('sic-login'));
   }
 
-  window.sicLogin = { open: stepPhone, close, isGuest };
+  // 已经登录、后来才开通后台的：直接到输 PIN 那一步（第一次会请他设）
+  async function askPin() {
+    const who = gate.me();
+    if (!who) return stepPhone();
+    try { member = { ...(await gate.memberById(who.id)), phoneHash: who.ph }; stepPin(); }
+    catch { alert('连不上，检查一下网络再试。'); }
+  }
+  window.sicLogin = { open: stepPhone, pin: askPin, close, isGuest };
   const auto = document.currentScript?.hasAttribute('data-auto');
   if (auto && !gate.me() && !isGuest()) {
     if (document.body) stepPhone(); else document.addEventListener('DOMContentLoaded', stepPhone);

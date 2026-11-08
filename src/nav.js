@@ -1,9 +1,9 @@
-// 菜单：每一页都有同一个「☰ 菜单」，可以去到任何一页（🔒 的要后台密码或电话登录开的权限）
+// 菜单：每一页都有同一个「☰ 菜单」。只列这个人用得到的页：后台区要开通了才看得到，没开的完全不出现
 // 普通 <script src="src/nav.js" defer> 载入，要在 gate.js 后面。
 // 页面上任何 [data-nav-open] 按钮都打开它；页面没有的话右上角浮一个。
 // 页面有设 window.sicNavDate = () => '2026-10-18' 的话，去这台弥撒／排歌／职务表／座位表／祈祷文会带着那个日期
 (function () {
-  // 测验：Ronald 在「测验结果」页开关；关着的时候团员菜单看不到，后台看得到
+  // 测验：Ronald 在「测验结果」页开关（关掉／指定团员／全团）；没开给他的看不到，做过或做到一半的照样看得到
   let quizOpen = window.sicQuiz?.cached() ?? false;
   const PAGES = [
     { group: '团员' },
@@ -15,7 +15,7 @@
     { href: 'years.html', icon: '📖', title: '历年排歌', sub: '每一年哪一天唱什么，找回以前的歌' },
     { href: 'notices.html', icon: '📢', title: '公告', sub: '最近的活动、要练哪几首歌' },
     { href: 'quiz.html', icon: '📝', title: '团员小测验', sub: '自我了解用，不影响职位', quiz: true },
-    { group: '后台区 🔒' },
+    { group: '后台区' },
     { href: 'mass.html', icon: '⛪', title: '弥撒排歌', sub: '按位置选歌，保存就更新乐谱；婚礼也在这里', staff: 'mass' },
     { href: 'duties.html', icon: '🗓️', title: '职务表', sub: '每场谁指挥、答唱咏、弹琴', staff: 'duties' },
     { href: 'seating.html', icon: '🪑', title: '座位表', sub: '谁坐哪里、今天要拿哪些披肩', staff: 'seating' },
@@ -24,6 +24,7 @@
     { href: 'admin.html', icon: '🗂️', title: '排单后台', sub: '曲库、改图、排单历史', staff: 'admin' },
     { href: 'committee.html', icon: '🏛️', title: '执委专区', sub: '会议记录、重点、待办、年度进展', staff: 'committee' },
     { href: 'quiz-admin.html', icon: '📊', title: '测验结果', sub: '全团水平、谁想当领唱／指挥', staff: 'quiz' },
+    { href: 'grant.html', icon: '🗝️', title: '分区授权', sub: '帮团员开通后台', staff: 'grant' },
     { href: 'access.html', icon: '🔑', title: '密码管理', sub: '谁的密码可以进哪几页', staff: 'access', masterOnly: true },
     { href: 'renames.html', icon: '📝', title: '改名记录', sub: '谁改了哪首歌的名字，可以改回去', staff: 'access', masterOnly: true },
   ];
@@ -58,17 +59,33 @@
       if (e.target === modal || e.target.closest('[data-close]')) return close();
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'login') { close(); if (window.sicLogin) window.sicLogin.open(); else location.href = 'me.html'; return; }
+      if (act === 'pin') { close(); if (window.sicLogin?.pin) window.sicLogin.pin(); else location.href = 'me.html'; return; }
+      if (act === 'pw') { close(); enterPassword(); return; }
       if (act === 'logout') { if (confirm('登出？这部手机就不会记得你是谁，后台也会锁回去（PIN、后台密码都要重输）。')) { window.sicStaff?.logout(); render(); } return; }
       const a = e.target.closest('a[data-staff]');
       if (!a) return;
-      if (a.dataset.here) { e.preventDefault(); close(); return; }
-      if (a.dataset.staff && !window.sicStaff?.can(a.dataset.staff)) {
-        e.preventDefault();
-        window.sicStaff?.unlock(a.dataset.staff).then(ok => { if (ok) location.href = a.getAttribute('href'); });
-      }
+      if (a.dataset.here) { e.preventDefault(); close(); }
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
   }
+
+  // 拿到后台密码的人：从菜单最下面那行输入，对了整页重开，开通的页就出现
+  async function enterPassword() {
+    const gate = window.sicStaff;
+    if (!gate?.loggedIn()) return gate?.askLogin();
+    const p = prompt('请输入后台密码：');
+    if (p === null) return;
+    try {
+      if (await gate.tryPassword(p)) location.reload(); else alert('❌ 密码错误');
+    } catch (err) {
+      if (err.code === 'login') gate.askLogin(); else alert('连不上，检查一下网络再试。');
+    }
+  }
+  // 这部手机有做过／做到一半的测验
+  const quizDraft = () => { try { return !!localStorage.getItem('sicQuizDraft'); } catch { return false; } };
+  const quizDone = () => { try { return !!localStorage.getItem('sicQuizDone'); } catch { return false; } };
+  // 团员名单上开了后台、这部手机还没输 PIN
+  const pendingPin = gate => { try { return JSON.parse(localStorage.getItem('sicMyAreas') || '[]').some(a => !gate.can(a)); } catch { return false; } };
 
   function render() {
     const gate = window.sicStaff, staff = gate?.isStaff();
@@ -79,17 +96,22 @@
       : `<button data-act="login" class="w-full flex items-center gap-2 px-3 py-2.5 mb-1 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-sm text-indigo-200"><span class="flex-1 text-left">📱 用电话号码登录</span><span class="text-xs text-indigo-300">看我坐哪里 ›</span></button>`;
     // 通行证（锁资料库用）：登录了的人看得到这部手机领到了没有
     let pass = null; try { pass = JSON.parse(localStorage.getItem('sicAuthSig') || 'null'); } catch { /* 没关系 */ }
-    const passLine = who || staff ? `<div class="px-3 pb-1 text-[11px] ${pass ? 'text-emerald-400/80' : 'text-zinc-500'}">${pass ? `🔐 通行证 ✅${pass.areas?.length ? `（后台 ${pass.areas.length} 区）` : ''}` : '🔐 通行证还没领到'}</div>` : '';
-    modal.querySelector('[data-list]').innerHTML = head + passLine + PAGES.filter(p => (!p.quiz || quizOpen || staff) && (!p.masterOnly || gate?.isMaster())).map(p => p.group
-      ? `<div class="px-2 pt-3 pb-1 text-[11px] tracking-widest text-zinc-500">${p.group}${p.group.includes('🔒') && staff ? '　已解锁' : ''}</div>`
+    const passLine = staff || (who && !pass) ? `<div class="px-3 pb-1 text-[11px] ${pass ? 'text-emerald-400/80' : 'text-zinc-500'}">${pass ? `通行证 ✅${pass.areas?.length ? `（后台 ${pass.areas.length} 区）` : ''}` : '通行证还没领到'}</div>` : '';
+    const pinLine = who && pendingPin(gate) ? '<button data-act="pin" class="w-full text-left px-3 py-2.5 mb-1 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-sm text-amber-200">🔑 你的后台开通了，按这里输 PIN ›</button>' : '';
+    const quizTest = gate?.can('quiz');
+    const allowed = p => p.group || ((!p.quiz || quizOpen || quizTest || quizDone() || quizDraft()) && (!p.staff || gate?.can(p.staff)) && (!p.masterOnly || gate?.isMaster()));
+    const vis = PAGES.filter(allowed).filter((p, i, a) => !p.group || (a[i + 1] && !a[i + 1].group));   // 下面没有页的分组，标题也不要
+    const quizSub = quizOpen ? '' : quizDraft() ? '上次做到一半，按这里接着做' : quizDone() ? '看我的成绩' : '现在没开给团员，只有你看得到';
+    modal.querySelector('[data-list]').innerHTML = head + passLine + pinLine + vis.map(p => p.group
+      ? `<div class="px-2 pt-3 pb-1 text-[11px] tracking-widest text-zinc-500">${p.group}</div>`
       : `<a href="${link(p.href)}" data-staff="${p.staff || ''}" ${here(p.href) ? 'data-here="1"' : ''} class="flex items-center gap-3 px-3 py-3 rounded-xl ${here(p.href) ? 'bg-indigo-600/20' : 'hover:bg-white/10'} transition-colors no-underline">
           <span class="text-xl w-7 text-center">${p.icon}</span>
           <span class="flex-1 min-w-0">
             <span class="block text-white font-semibold text-sm">${p.title}${here(p.href) ? ' <span class="text-[11px] font-normal text-indigo-300">你在这里</span>' : ''}</span>
-            <span class="block text-zinc-500 text-xs truncate">${p.quiz && !quizOpen ? '现在关着，团员看不到' : p.sub}</span>
+            <span class="block text-zinc-500 text-xs truncate">${p.quiz && quizSub || p.sub}</span>
           </span>
-          ${p.staff && !gate?.can(p.staff) ? '<span class="text-zinc-600 text-sm">🔒</span>' : '<span class="text-zinc-600">›</span>'}
-        </a>`).join('');
+          <span class="text-zinc-600">›</span>
+        </a>`).join('') + '<button data-act="pw" class="w-full text-center text-[11px] text-zinc-600 hover:text-zinc-300 pt-3 pb-1">有后台密码？按这里输入</button>';
   }
   function open() { if (!modal) build(); render(); modal.classList.remove('hidden'); modal.classList.add('flex'); }
   function close() { modal?.classList.add('hidden'); modal?.classList.remove('flex'); }

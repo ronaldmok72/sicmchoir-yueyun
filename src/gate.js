@@ -188,7 +188,7 @@
   // 登出：这部手机什么都不记得了（是谁、PIN、输过的后台密码），锁全部锁回去
   function logout() {
     try {
-      localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName'); localStorage.removeItem(KEY); localStorage.removeItem('sicTicket');
+      localStorage.removeItem(ME_KEY); localStorage.removeItem('sicMyName'); localStorage.removeItem(KEY); localStorage.removeItem('sicTicket'); localStorage.removeItem('sicMyAreas');
     } catch { /* 没关系 */ }
     document.cookie = 'sicMe=; Path=/; Max-Age=0; Secure; SameSite=Lax';   // 保持登录的 cookie 也拿掉
     queueAuth();
@@ -216,6 +216,7 @@
     let m;
     try { m = await memberById(cur.id); } catch { return; }   // 没网络就先照旧
     if (!m) { logout(); return; }
+    try { localStorage.setItem('sicMyAreas', JSON.stringify(m.areas || [])); } catch { /* 没关系 */ }   // 菜单提醒他输 PIN 用
     if (m.name !== cur.name) { setMe(m); document.dispatchEvent(new CustomEvent('sic-me')); }
   }
   // ───────── 团员小测验：开／关 ─────────

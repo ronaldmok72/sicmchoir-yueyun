@@ -150,7 +150,6 @@ const stageNames = d => STAGE.flatMap(k => splitNames(duties[d]?.[k]));
 // ───────── 画面 ─────────
 function render() {
   const isStaff = staff();
-  $('btn-staff').classList.toggle('hidden', isStaff);
   renderDates(isStaff);
   renderHead();
   renderRsvp();
@@ -683,6 +682,5 @@ document.addEventListener('sic-login', () => {
   render();
 });
 
-$('btn-staff').addEventListener('click', async () => { if (await window.sicStaff?.unlock()) render(); });
 
 load(true).catch(() => false).then(() => load()).catch(err => { console.error(err); if (!date) $('loading').textContent = '读取失败：' + (err.code || err.message); });

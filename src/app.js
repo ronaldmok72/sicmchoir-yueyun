@@ -75,6 +75,7 @@ async function init() {
   
   // --- 新增：指挥模式切换逻辑 ---
     if (btnConductor) {
+    btnConductor.classList.toggle('hidden', !window.sicStaff?.can('conduct'));   // 没开通指挥的人看不到这个按钮
     btnConductor.addEventListener('click', async () => {
       // 如果当前是关闭状态，准备开启，则需要验证密码
       // 这部手机已经输过指挥密码（菜单或指挥后台）就不用再问
