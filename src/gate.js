@@ -396,7 +396,7 @@
   }
 
   // ───────── 乐韵账号 Drive 小程序（tools/drive-bridge.gs）：传附件、读附件、看备份情况 ─────────
-  const DRIVE_URL = '';   // 小程序的网址，api/backup.js 也有一份；空的 = 还没接好，App 上不显示附件功能
+  const DRIVE_URL = 'https://script.google.com/macros/s/AKfycbwU7kThS9PoaDRP5e3sn-7WbcThoAIRGtaW6sUzMziIfqEaWzfkhM6Cjomk20qx7Ho/exec';   // 小程序的网址，api/backup.js 也有一份；空的 = 还没接好，App 上不显示附件功能
   async function driveCall(action, body = {}) {
     if (!DRIVE_URL) throw new Error('Drive 还没接好');
     await ensureAuth();

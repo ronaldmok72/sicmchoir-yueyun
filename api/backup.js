@@ -5,7 +5,7 @@
 const crypto = require('crypto');
 const F = require('firebase/firestore');
 
-const DRIVE_URL = '';   // 小程序的网址，src/gate.js 也有一份
+const DRIVE_URL = 'https://script.google.com/macros/s/AKfycbwU7kThS9PoaDRP5e3sn-7WbcThoAIRGtaW6sUzMziIfqEaWzfkhM6Cjomk20qx7Ho/exec';   // 小程序的网址，src/gate.js 也有一份
 const PROJECT = 'sicmchoir-yueyun';
 const CONFIG = { apiKey: 'AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U', authDomain: `${PROJECT}.firebaseapp.com`, projectId: PROJECT };
 const COLLS = ['announcements', 'attendance', 'changelog', 'config', 'custom_songs', 'duties', 'masses', 'meetings', 'members',
