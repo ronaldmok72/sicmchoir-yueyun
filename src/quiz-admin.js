@@ -25,29 +25,60 @@ function enter() {
   $('gate').classList.add('hidden');
   $('app').classList.remove('hidden');
   load();
-  window.sicQuiz?.load().then(v => { quizOpen = v; renderSwitch(); });
+  loadSwitch().catch(err => { console.error(err); $('qs-state').textContent = '读不到测验开关'; });
 }
 
-// ───────── 测验开关：只有最高权限（Ronald）可以按 ─────────
-let quizOpen = false;
-function renderSwitch() {
-  const master = window.sicStaff?.isMaster();
-  $('qs-state').innerHTML = quizOpen
-    ? '🟢 测验现在<b>开着</b>：全团在菜单看得到「团员小测验」'
-    : '⚪ 测验现在<b>关着</b>：团员看不到，只有后台看得到';
-  $('qs-sub').textContent = master ? '要做测验那天按「打开」，做完按「关掉」，以后随时可以再开。已经交的成绩不会不见。' : '只有 Ronald 可以开关。';
-  const b = $('qs-btn');
-  b.textContent = quizOpen ? '关掉测验' : '打开测验';
-  b.className = `px-4 py-2 rounded-lg font-semibold text-white ${quizOpen ? 'bg-slate-600 hover:bg-slate-500' : 'bg-emerald-600 hover:bg-emerald-500'}${master ? '' : ' hidden'}`;
-}
-$('qs-btn').addEventListener('click', async () => {
-  const want = !quizOpen;
-  if (!confirm(want ? '打开测验？全团在菜单就看得到。' : '关掉测验？团员就看不到了（已经交的成绩不会不见）。')) return;
-  $('qs-btn').disabled = true;
-  try { quizOpen = await window.sicQuiz.set(want); } catch (err) { alert('没改到，检查一下网络。\n' + err.message); }
-  $('qs-btn').disabled = false;
+// ───────── 测验开给谁：只有最高权限（Ronald）可以按 ─────────
+// 关掉／只开给指定团员／全团。不管开不开，做过的都看得到自己的成绩，做到一半的可以接着做
+let qs = { open: false, limited: false, allow: [] }, people = [], picked = new Set();
+const modeOf = s => s.open ? 'all' : s.limited ? 'some' : 'off';
+const MODES = [['off', '关掉'], ['some', '只开给指定团员'], ['all', '开放给全团']];
+async function loadSwitch() {
+  qs = await window.sicQuiz.state();
+  picked = new Set(qs.allow);
+  if (window.sicStaff?.isMaster()) people = (await window.sicStaff.listMembers()).filter(m => m.active !== false).sort((a, b) => a.name.localeCompare(b.name, 'zh'));
   renderSwitch();
+}
+function renderSwitch() {
+  const master = window.sicStaff?.isMaster(), mode = modeOf(qs);
+  $('qs-state').innerHTML = mode === 'all' ? '🟢 测验现在<b>开放给全团</b>'
+    : mode === 'some' ? `🟡 测验现在<b>只开给 ${qs.allow.length} 位指定团员</b>` : '⚪ 测验现在<b>关着</b>';
+  $('qs-sub').textContent = master ? '被指定的团员要用电话登录，菜单才看得到。不管开不开，已经做完的都看得到自己的成绩，做到一半的可以接着做。' : '只有 Ronald 可以改。';
+  $('qs-modes').classList.toggle('hidden', !master);
+  $('qs-modes').innerHTML = MODES.map(([k, t]) => `<button data-mode="${k}" class="px-3 py-1.5 rounded-lg text-sm font-semibold border ${k === mode ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}">${t}</button>`).join('');
+  $('qs-pick').classList.toggle('hidden', !(master && mode === 'some'));
+  if (master && mode === 'some') renderPick();
+}
+function renderPick() {
+  const q = $('qs-q').value.trim().toLowerCase();
+  const did = new Set(ALL.map(r => r.memberId).filter(Boolean));
+  const list = people.filter(m => !q || `${m.name} ${m.fullName || ''} ${m.cname || ''}`.toLowerCase().includes(q))
+    .sort((a, b) => picked.has(b.id) - picked.has(a.id));
+  $('qs-list').innerHTML = list.map(m => `<label class="flex items-center gap-2.5 px-3 py-2 cursor-pointer ${picked.has(m.id) ? 'bg-indigo-50' : ''}">
+    <input type="checkbox" data-pick="${esc(m.id)}" ${picked.has(m.id) ? 'checked' : ''} class="w-4 h-4">
+    <span class="flex-1 min-w-0 truncate">${esc(m.name)}${m.phoneTail ? '' : ' <span class="text-xs text-amber-700">还没登记电话</span>'}</span>
+    ${did.has(m.id) ? '<span class="text-xs text-emerald-600">✅ 交了</span>' : ''}
+  </label>`).join('');
+  $('qs-count').textContent = `勾了 ${picked.size} 位`;
+}
+async function writeSwitch(next, msg) {
+  try { qs = await window.sicQuiz.save(next); picked = new Set(qs.allow); renderSwitch(); if (msg) $('qs-count').textContent = msg; }
+  catch (err) { console.error(err); alert('没改到，检查一下网络。\n' + (err.code || err.message)); }
+}
+$('qs-modes').addEventListener('click', e => {
+  const k = e.target.closest('[data-mode]')?.dataset.mode;
+  if (!k || k === modeOf(qs)) return;
+  if (!confirm(k === 'all' ? '开放给全团？大家在菜单就看得到。' : k === 'some' ? '只开给你勾的团员？' : '关掉测验？已经交的成绩不会不见，做到一半的还可以接着做。')) return;
+  writeSwitch({ ...qs, allow: [...picked], open: k === 'all', limited: k === 'some' });
 });
+$('qs-q').addEventListener('input', renderPick);
+$('qs-list').addEventListener('change', e => {
+  const id = e.target.closest('[data-pick]')?.dataset.pick;
+  if (!id) return;
+  e.target.checked ? picked.add(id) : picked.delete(id);
+  $('qs-count').textContent = `勾了 ${picked.size} 位（还没保存）`;
+});
+$('qs-save').addEventListener('click', () => writeSwitch({ open: false, limited: true, allow: [...picked] }, '✓ 名单存好了'));
 if (window.sicStaff?.can('quiz')) enter();
 
 $('btn-reload').addEventListener('click', load);

@@ -219,34 +219,37 @@
     try { localStorage.setItem('sicMyAreas', JSON.stringify(m.areas || [])); } catch { /* 没关系 */ }   // 菜单提醒他输 PIN 用
     if (m.name !== cur.name) { setMe(m); document.dispatchEvent(new CustomEvent('sic-me')); }
   }
-  // ───────── 团员小测验：开／关 ─────────
-  // Firestore config/quiz.open；Ronald 在「测验结果」页按开关。这部手机记住上次看到的，菜单一打开就对
+  // ───────── 团员小测验：关掉／只开给指定团员／全团 ─────────
+  // Firestore config/quiz：{ open: 全团都开, limited: 只开给 allow 名单, allow: [团员id] }；Ronald 在「测验结果」页按
+  // 这部手机记住上次看到的（开给他没有），菜单一打开就对
   const QUIZ_KEY = 'sicQuizOpen';
   const quizCached = () => { try { return localStorage.getItem(QUIZ_KEY) === '1'; } catch { return false; } };
   const quizRemember = open => { try { localStorage.setItem(QUIZ_KEY, open ? '1' : '0'); } catch { /* 没关系 */ } return open; };
+  const quizForMe = s => !!s.open || (!!s.limited && !!me()?.id && (s.allow || []).includes(me().id));
+  async function quizState() {
+    const r = await rest(`${API}/config/quiz?key=${API_KEY}`, { cache: 'no-store' });
+    let s;
+    if (!r) {
+      const F = await sdk();
+      const d = await F.getDoc(F.doc(F.db, 'config', 'quiz'));
+      s = d.exists() ? d.data() : {};
+    } else if (r.status === 404) s = {};
+    else if (!r.ok) throw new Error('读不到测验开关 ' + r.status);
+    else s = plain((await r.json()).fields);
+    return { open: !!s.open, limited: !!s.limited, allow: Array.isArray(s.allow) ? s.allow : [] };
+  }
+  // 开给这个人没有（没网络就照上次）
   async function quizLoad() {
-    try {
-      const r = await rest(`${API}/config/quiz?key=${API_KEY}`, { cache: 'no-store' });
-      if (!r) {
-        const F = await sdk();
-        const d = await F.getDoc(F.doc(F.db, 'config', 'quiz'));
-        return quizRemember(d.exists() && !!d.data().open);
-      }
-      if (r.status === 404) return quizRemember(false);
-      if (!r.ok) return quizCached();
-      return quizRemember(!!(await r.json()).fields?.open?.booleanValue);
-    } catch { return quizCached(); }   // 没网络就照上次
+    try { return quizRemember(quizForMe(await quizState())); } catch { return quizCached(); }
   }
-  async function quizSet(open) {
-    const r = await rest(`${API}/config/quiz?key=${API_KEY}&updateMask.fieldPaths=open&updateMask.fieldPaths=updatedAt`, {
-      method: 'PATCH', headers: await wh(),
-      body: JSON.stringify({ fields: { open: { booleanValue: !!open }, updatedAt: { stringValue: new Date().toISOString() } } }),
-    });
-    if (!r) { const F = await sdk(); await F.setDoc(F.doc(F.db, 'config', 'quiz'), { open: !!open, updatedAt: new Date().toISOString() }, { merge: true }); }
-    else if (!r.ok) throw new Error('没存到 ' + r.status);
-    return quizRemember(!!open);
+  async function quizSave(st) {
+    const F = await sdk();
+    const out = { open: !!st.open, limited: !!st.limited, allow: st.allow || [], updatedAt: new Date().toISOString() };
+    await withAuth(() => F.setDoc(F.doc(F.db, 'config', 'quiz'), out, { merge: true }));
+    quizRemember(quizForMe(out));
+    return out;
   }
-  window.sicQuiz = { cached: quizCached, load: quizLoad, set: quizSet };
+  window.sicQuiz = { cached: quizCached, load: quizLoad, state: quizState, save: quizSave };
 
   function forget() { try { localStorage.removeItem(KEY); } catch { /* 没关系 */ } queueAuth(); }
 

@@ -48,12 +48,20 @@
       </div>
     </header>
 
-    <section class="bg-white rounded-2xl border border-slate-200 p-5 flex flex-wrap items-center gap-3">
-      <div class="flex-1 min-w-[12rem]">
+    <section class="bg-white rounded-2xl border border-slate-200 p-5 space-y-3">
+      <div>
         <div id="qs-state" class="font-semibold">读取中…</div>
         <div id="qs-sub" class="text-xs text-slate-500 mt-0.5"></div>
       </div>
-      <button id="qs-btn" class="hidden px-4 py-2 rounded-lg font-semibold text-white"></button>
+      <div id="qs-modes" class="hidden flex flex-wrap gap-2"></div>
+      <div id="qs-pick" class="hidden space-y-2">
+        <input id="qs-q" type="search" placeholder="找名字…" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
+        <div id="qs-list" class="max-h-72 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm"></div>
+        <div class="flex items-center gap-3">
+          <button id="qs-save" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">保存名单</button>
+          <span id="qs-count" class="text-xs text-slate-500"></span>
+        </div>
+      </div>
     </section>
 
     <section>

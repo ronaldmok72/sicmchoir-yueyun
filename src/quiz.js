@@ -1,5 +1,5 @@
-import { collection, addDoc, doc as docRef, updateDoc, arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, RESULTS } from "./firebase.js";
+import { collection, addDoc, doc as docRef, updateDoc, arrayUnion, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { db, RESULTS, getDocs } from "./firebase.js";
 import { QUESTIONS, CATEGORIES, INTENT, QUIZ_VERSION } from "./quiz-data.js";
 import { unlock, isRunning, now, click, playBars } from "./quiz-audio.js";
 
@@ -77,7 +77,12 @@ function renderMe() {
   }
 }
 $('btn-login').addEventListener('click', () => window.sicLogin?.open());
-document.addEventListener('sic-login', () => { window.sicLogin?.close(); renderMe(); });
+document.addEventListener('sic-login', () => {
+  window.sicLogin?.close();
+  if (!$('s-closed').classList.contains('hidden')) return location.reload();   // 刚登录：看看有没有开给他
+  renderMe();
+});
+$('closed-login').addEventListener('click', () => window.sicLogin?.open());
 
 function initStart() {
   renderMe();
@@ -617,16 +622,36 @@ function renderResult(d) {
 
 // ───────────── 启动 ─────────────
 initQuizNav();
-const done = store.get(DONE_KEY);
-// 测验关着：团员看到「没有开」（做过的还是可以看自己的结果）；有后台权限的照样可以试
+// 换了手机、或手机清掉了：登录了的人到资料库找自己交过的（用团员 id，旧的用名字）
+async function cloudDone() {
+  const who = gate?.me();
+  if (!who) return null;
+  const find = async (f, v) => (await getDocs(query(collection(db, RESULTS), where(f, '==', v)))).docs.map(d => ({ id: d.id, ...d.data() }));
+  let list = await find('memberId', who.id);
+  if (!list.length) list = (await find('nameKey', who.name.trim().toLowerCase())).filter(r => !r.memberId);
+  if (!list.length) return null;
+  const at = r => r.createdAt?.toMillis?.() ?? (Date.parse(r.clientTime) || 0);
+  const r = list.sort((a, b) => at(b) - at(a))[0];
+  const d = { id: r.id, name: r.name, scores: r.scores, correctIds: r.correctIds || [], order: r.questionIds || [], answers: r.answers || {}, tap: r.tap };
+  store.set(DONE_KEY, d);
+  return d;
+}
+
+// 有开给他（全团或指定名单）才可以开始；做过的随时看得到成绩，做到一半的随时可以接着做；有测验后台的照样可以试
 const quizOpen = await (window.sicQuiz?.load() ?? true);
-if (!quizOpen && gate?.isStaff()) $('closed-note').classList.remove('hidden');
-if (!quizOpen && !gate?.isStaff() && !done) {
-  show('s-closed');
-} else if (done && new URLSearchParams(location.search).get('again') === null) {
+const tester = gate?.can('quiz');
+const draft = store.get(DRAFT_KEY);
+const halfway = !!draft && draft.v === QUIZ_VERSION && draft.stage !== 'done';
+const done = store.get(DONE_KEY) || await cloudDone().catch(() => null);
+const again = new URLSearchParams(location.search).get('again') !== null;
+if (!quizOpen && tester) $('closed-note').classList.remove('hidden');
+if (done && !again) {
   renderResult(done);
-  addAgainLink();
-} else {
+  if (quizOpen || tester || halfway) addAgainLink();
+} else if (quizOpen || tester || halfway) {
   show('s-start');
   initStart();
+} else {
+  $('closed-login').classList.toggle('hidden', !!gate?.me());
+  show('s-closed');
 }
