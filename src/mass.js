@@ -107,6 +107,8 @@ function renderHeader() {
   $('mass-time').value = M.time || '';
   document.querySelectorAll('.wed-only').forEach(el => el.classList.toggle('hidden', !isWed(M)));
   $('btn-bulk').classList.toggle('hidden', isWed(M));
+  // 主日一定是弥撒，不给按；只有保存过、有乐谱排单的才移得动
+  $('btn-not-mass').classList.toggle('hidden', M.isNew || isWed(M) || !M.setlistName || new Date(M.date + 'T12:00').getDay() === 0);
   renderWed();
   $('mass-date').value = M.date;
   $('mass-title').value = M.title;
@@ -557,6 +559,28 @@ async function save() {
     btn.textContent = '保存并更新乐谱';
   }
 }
+
+// ───────── 放错地方的活动：从弥撒拿掉，排单留着，以后在排单后台改 ─────────
+// 排单有 date 的算「弥撒做的」（排单后台不显示、不给改），所以要把 date 拿掉；乐谱照名字开头的月日排，看乐谱一样找得到
+$('btn-not-mass').addEventListener('click', async () => {
+  if (dirty) return alert('这一场有还没保存的改动。先按「保存并更新乐谱」，再移。');
+  const name = M.setlistName;
+  if (!confirm(`「${M.date} ${M.title}」不是弥撒？\n\n会从「这台弥撒」和弥撒排歌拿掉（那一页的待办也一起没掉）。\n乐谱排单「${name}」和里面的歌都保留，以后在「排单后台」改。`)) return;
+  const btn = $('btn-not-mass');
+  btn.disabled = true;
+  try {
+    const ref = doc(db, SETLISTS, name);
+    if (!(await getDoc(ref)).exists()) { btn.disabled = false; return alert(`找不到乐谱排单「${name}」，这次没有改动。请交给管家。`); }
+    await updateDoc(ref, { date: deleteField() });
+    await deleteDoc(doc(db, MASSES, M.id));
+    alert(`✅ 移好了。排单「${name}」现在在「排单后台」的历史排单里。`);
+    location.href = 'mass.html';
+  } catch (e) {
+    console.error(e);
+    btn.disabled = false;
+    alert('没移成：' + (e.code || e.message));
+  }
+});
 
 // ───────── 复制歌单文字（贴 WhatsApp）─────────
 $('btn-copy').addEventListener('click', async () => {

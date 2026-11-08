@@ -522,20 +522,45 @@ const WD = ['星期日', '星期一', '星期二', '星期三', '星期四', '�
 const wd = dt => WD[new Date(dt + 'T12:00').getDay()];
 const canSlot = () => can('attendance') || can('admin');
 let slotForm = false;
+let adjId = null;   // 正在调整哪一场星期四／六练歌
 // 平时的时间（只是显示；迟到／早退怎么算看 checkin-common.js 的 DEFAULT_TIME）
+// 某一场调整过：rsvp/{日期}_practice 多了 off（这次没有练习）或 start／end（改时间）、reason（原因）；投票留着，恢复原样就回来
 const SLOT_TIME = { practice: { start: '20:00', end: '22:30' }, mass: { start: '11:00', end: '12:30' } };
 const h12 = t => { const [h, m] = t.split(':').map(Number); return `${h > 12 ? h - 12 : h || 12}:${String(m).padStart(2, '0')}`; };
 const ampm = t => { const h = Number(t.split(':')[0]); return h < 12 ? '早上' : h < 13 ? '中午' : h < 18 ? '下午' : '晚上'; };
 const timeRange = (a, b) => a ? `${ampm(a)} ${h12(a)}${b ? `–${h12(b)}` : ''}` : '';
 const rsvpSlots = d => {
   const base = [[addDays(d, -3), 'practice', '星期四练歌'], [addDays(d, -1), 'practice', '星期六练歌'], [d, 'mass', '主日弥撒']]
-    .map(([dt, kind, label]) => ({ id: `${dt}_${kind}`, date: dt, kind, label, ...SLOT_TIME[kind] }));
+    .map(([dt, kind, label]) => {
+      const id = `${dt}_${kind}`, o = kind === 'practice' ? rsvps[id] || {} : {};
+      return { id, date: dt, kind, label, ...SLOT_TIME[kind], ...(o.start ? { start: o.start, end: o.end, moved: true } : {}), off: !!o.off, reason: o.reason || '' };
+    });
   const lo = addDays(d, -6);
   const extra = Object.entries(rsvps).filter(([, v]) => v.extra && v.date >= lo && v.date <= d)
     .map(([id, v]) => ({ id, date: v.date, kind: 'other', label: v.label || '特别练习', start: v.start, end: v.end, extra: true }));
   const order = { practice: 0, other: 1, mass: 2 };
   return [...base, ...extra].sort((a, b) => a.date.localeCompare(b.date) || order[a.kind] - order[b.kind]);
 };
+async function saveAdj(btn) {
+  const x = rsvpSlots(date).find(s => s.id === adjId);
+  if (!x) return;
+  const start = $('adj-start').value, end = $('adj-end').value, reason = $('adj-reason').value.trim();
+  const usual = start === SLOT_TIME.practice.start && end === SLOT_TIME.practice.end;
+  const act = btn === 'adj-time' && usual ? 'adj-reset' : btn;
+  if (act === 'adj-time' && (!start || !end || start >= end)) return alert('开始时间要比结束时间早。');
+  if (act === 'adj-off' && !confirm(`${x.label} ${md(x.date)} 这次没有练习？\n团员会看到，也不能按会来／请假。`)) return;
+  const by = window.sicStaff?.me()?.name || '', gone = deleteField();
+  const patch = act === 'adj-reset' ? { off: gone, start: gone, end: gone, reason: gone, adjBy: gone }
+    : act === 'adj-off' ? { off: true, start: gone, end: gone, reason, adjBy: by }
+    : { off: gone, start, end, reason, adjBy: by };
+  try {
+    await window.sicStaff.withAuth(() => setDoc(doc(db, 'rsvp', x.id), { date: x.date, kind: 'practice', ...patch, updatedAt: new Date().toISOString() }, { merge: true }));
+    const cur = rsvps[x.id] ||= { date: x.date, kind: 'practice' };
+    Object.entries(patch).forEach(([k, v]) => { if (v === gone) delete cur[k]; else cur[k] = v; });
+    adjId = null;
+    renderRsvp();
+  } catch (err) { console.error(err); alert('没存到，检查一下网络。'); }
+}
 function renderRsvp() {
   const box = $('rsvp');
   const show = new Date(date + 'T12:00').getDay() === 0 && date >= TODAY && !onlySpecial(date);
@@ -552,16 +577,29 @@ function renderRsvp() {
         const mine = meM ? v.votes?.[meM.id] : null;
         const yes = who(v, 'Y'), no = who(v, 'N');
         const past = x.date < TODAY;
+        const canAdj = x.kind === 'practice' && canSlot() && !past;
         const btn = (k, txt, on) => `<button data-vote="${x.id}" data-v="${k}" class="px-3 py-1.5 rounded-lg border text-sm ${mine === k ? on : 'border-slate-200 text-slate-600 hover:bg-slate-50'}">${txt}</button>`;
         return `<div class="py-2.5 flex flex-wrap items-center gap-2">
           <div class="flex-1 min-w-[8rem]">
-            <div class="text-sm font-semibold">${x.extra ? '⭐ ' : ''}${esc(x.label)} <span class="font-normal text-slate-400">${x.extra ? `${wd(x.date)} ` : ''}${md(x.date)}${x.start ? ` · ${timeRange(x.start, x.end)}` : ''}</span>
+            <div class="text-sm font-semibold">${x.extra ? '⭐ ' : ''}${esc(x.label)} <span class="font-normal text-slate-400">${x.extra ? `${wd(x.date)} ` : ''}${md(x.date)}${x.start && !x.off ? ` · ${timeRange(x.start, x.end)}` : ''}</span>${x.moved && !x.off ? ' <span class="text-xs font-normal text-amber-700">⏰ 时间改了</span>' : ''}${canAdj ? `<button data-adj="${x.id}" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">✏️ 调整</button>` : ''}
               ${x.extra && canSlot() ? `<a href="attendance.html?d=${x.date}&k=other" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">📋 点名</a><button data-slot-del="${x.id}" class="ml-1 text-xs font-normal text-slate-400 hover:text-red-500" title="拿掉这个特别练习">✕</button>` : ''}</div>
-            <div class="text-xs text-slate-500">🙋 ${yes.length} 会来　🙅 ${no.length} 不来</div>
-            ${isStaff && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${no.map(esc).join('、')}` : ''}</div>` : ''}
+            ${x.off ? `<div class="text-sm text-amber-700">🚫 这次没有练习${x.reason ? `：${esc(x.reason)}` : ''}</div>` : `${x.moved && x.reason ? `<div class="text-xs text-amber-700">${esc(x.reason)}</div>` : ''}<div class="text-xs text-slate-500">🙋 ${yes.length} 会来　🙅 ${no.length} 不来</div>`}
+            ${isStaff && !x.off && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${no.map(esc).join('、')}` : ''}</div>` : ''}
           </div>
-          ${meM && !past ? `<div class="flex gap-1.5">${btn('Y', '🙋 会来', 'bg-emerald-600 border-emerald-600 text-white')}${btn('N', '📝 请假（不来）', 'bg-slate-600 border-slate-600 text-white')}</div>`
+          ${x.off ? '' : meM && !past ? `<div class="flex gap-1.5">${btn('Y', '🙋 会来', 'bg-emerald-600 border-emerald-600 text-white')}${btn('N', '📝 请假（不来）', 'bg-slate-600 border-slate-600 text-white')}</div>`
             : past ? '<span class="text-xs text-slate-400">已经过了</span>' : ''}
+          ${adjId === x.id && canAdj ? `<div class="basis-full rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2 text-sm">
+            <div class="font-semibold text-indigo-800">✏️ 调整 ${esc(x.label)} ${md(x.date)}</div>
+            <div class="flex flex-wrap gap-2 items-center"><input id="adj-start" type="time" value="${x.start}" class="border border-slate-300 rounded-lg px-2 py-1.5"> 到 <input id="adj-end" type="time" value="${x.end}" class="border border-slate-300 rounded-lg px-2 py-1.5"></div>
+            <input id="adj-reason" value="${esc(x.reason)}" placeholder="原因（可以不写），例如：朝拜圣体之后才开始" class="w-full border border-slate-300 rounded-lg px-2 py-1.5">
+            <div class="flex flex-wrap gap-2">
+              <button id="adj-time" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold">存新时间</button>
+              <button id="adj-off" class="px-3 py-1.5 rounded-lg border border-amber-400 text-amber-700 font-semibold">这次没有练习</button>
+              ${x.off || x.moved ? '<button id="adj-reset" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600">恢复原样</button>' : ''}
+              <button id="adj-close" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600">取消</button>
+            </div>
+            <div class="text-[11px] text-slate-500">已经按了会来／请假的不会不见，恢复原样就回来。改时间后，点名开 QR 会照新时间算迟到。</div>
+          </div>` : ''}
         </div>`;
       }).join('')}
     </div>
@@ -600,6 +638,10 @@ function renderRsvp() {
   });
 }
 $('rsvp').addEventListener('click', async e => {
+  const adj = e.target.closest('[data-adj]');
+  if (adj) { adjId = adjId === adj.dataset.adj ? null : adj.dataset.adj; return renderRsvp(); }
+  if (e.target.id === 'adj-close') { adjId = null; return renderRsvp(); }
+  if (['adj-time', 'adj-off', 'adj-reset'].includes(e.target.id)) return saveAdj(e.target.id);
   const del = e.target.closest('[data-slot-del]');
   if (del) {
     const id = del.dataset.slotDel, v = rsvps[id] || {};

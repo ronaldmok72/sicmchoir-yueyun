@@ -26,6 +26,7 @@ let nameOf = {};             // 团员id → 名字（包括已经不在团的�
 let fullOf = {};             // 团员id → 全名
 let rsvp = {};               // 这次点名的投票（团员在「这台弥撒」页按的会来／不来）：{ 团员id: 'Y'|'N' }
 let events = {};             // 点名id → 资料
+let adjusted = {};           // 这台弥撒页调整过的星期四／六练歌：rsvp/{日期}_practice 有 off 或 start／end
 let extras = {};             // 这台弥撒页加的特别练习：rsvp/{日期}_other = { label, start, end }
 let votes = {};              // 点名id → 投票 { 团员id: 'Y'|'N' }（rsvp/{日期_种类}，按「不来」= 请假）
 let need = 7;                // 每 3 个月要出席几次
@@ -53,6 +54,7 @@ async function load() {
     recentDocs('rsvp').then(q => {
       votes = Object.fromEntries(q.docs.map(d => [d.id, d.data().votes || {}]));
       extras = Object.fromEntries(q.docs.filter(d => d.data().extra).map(d => [d.id, d.data()]));
+      adjusted = Object.fromEntries(q.docs.filter(d => d.data().off || (d.data().start && !d.data().extra)).map(d => [d.id, d.data()]));
     }).catch(() => {}),
   ]);
   const all = ms.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -69,7 +71,7 @@ async function load() {
 function openEvent() {
   if (qrTimer) closeQr();
   const id = curId();
-  $('r-title').textContent = titleFor($('r-date').value, $('r-kind').value);
+  $('r-title').textContent = titleFor($('r-date').value, $('r-kind').value) + (adjusted[id]?.off ? '（这次标记了没有练习，不用点名）' : '');
   if (unsub) unsub();
   // 别的手机同时在点，这里也会跟着更新
   unsub = onSnapshot(doc(db, 'attendance', id), s => {
@@ -195,7 +197,10 @@ let qrTimer = null, qrObj = null;
 async function openQr() {
   const id = curId(), e = events[id];
   const x = extras[id];   // 特别练习：用加的时候填的时间
-  const [ds, de] = x ? [x.start || '', x.end || ''] : DEFAULT_TIME[$('r-kind').value] || ['', ''];
+  // 改过时间的练歌：跟平常一样前后各留半小时
+  const moved = adjusted[id]?.start;
+  const shift = (t, n) => { const [h, m] = t.split(':').map(Number), v = h * 60 + m + n; return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`; };
+  const [ds, de] = x ? [x.start || '', x.end || ''] : moved ? [shift(adjusted[id].start, 30), shift(adjusted[id].end, -30)] : DEFAULT_TIME[$('r-kind').value] || ['', ''];
   const patch = { ...base() };
   if (!e?.qr) patch.qr = randomSecret();
   if (e?.start === undefined) patch.start = ds;
