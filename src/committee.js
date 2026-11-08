@@ -985,7 +985,11 @@ const parseRoles = text => lines(text).map(l => {
 const splitNote = p => { const m = p.match(/^(.*?)[（(](.*)[）)]\s*$/); return m ? { name: m[1].trim(), note: m[2].trim() } : { name: p.trim(), note: '' }; };
 const cnPart = n => (n.match(/[\u4e00-\u9fff]+/) || [''])[0];
 const enPart = n => n.replace(/[\u4e00-\u9fff]/g, ' ').trim().toLowerCase().replace(/\s+/g, ' ');
-const stamp = iso => iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}` : '';
+const stamp = iso => {
+  if (!iso) return '';
+  const d = new Date(iso), p = n => String(n).padStart(2, '0');
+  return isNaN(d) ? String(iso) : `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 const whoNow = () => { const me = meNow(); return me ? nameOf(me.id, me.name) : '执委'; };
 
 // 按人：同一个人中英文名写法不同也合在一起（有中文名的用中文名认人）
@@ -1351,7 +1355,7 @@ function readBoardForm(kind) {
 // 开会时：上次开会到现在，物品和财政改了什么，大家一起看；要更新一按就去
 function changesBox(m) {
   const prev = MEETINGS.filter(x => x.date < m.date && x.status !== 'agenda').map(x => x.date).sort().at(-1) || '';
-  const after = x => !x.removed && String(x.updatedAt || '').slice(0, 10) > prev;
+  const after = x => !x.removed && stamp(x.updatedAt).slice(0, 10) > prev;
   const items = ITEMS.filter(after), fin = FIN.filter(after).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const more = (a, n) => a.length > n ? `<div class="text-xs text-slate-400">还有 ${a.length - n} 项，到板块里看</div>` : '';
   return `
