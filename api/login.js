@@ -324,6 +324,7 @@ const ACTIONS = {
     const m = await member(sa, id);
     if (!m) return send(res, 404);
     if (m.master && !g.master) return send(res, 403, { error: '这位有最高权限，你改不到' });
+    if (!g.master && id === g.v.member) return send(res, 403, { error: '自己的后台不能自己开，请 Ronald 开' });   // 被指定的人只能开给别人
     const set = new Set(m.areas || []);
     body.on ? set.add(area) : set.delete(area);
     const areas = [...set];

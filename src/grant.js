@@ -29,12 +29,13 @@ async function load() {
   info.grants ||= {};
   masters = new Set(info.masters || []);
   // 只在这里排一次：有开后台的排前面。之后勾选，名单不会跳来跳去
-  members = list.filter(m => info.master || m.active !== false)
+  // 被指定的人名单上没有自己：只能开给别人，自己的要 Ronald 开（服务器也挡着）
+  members = list.filter(m => info.master || (m.active !== false && m.id !== gate.me()?.id))
     .sort((a, b) => (a.active === false) - (b.active === false) || own(b).length - own(a).length || a.name.localeCompare(b.name, 'zh'));
   $('tabs').classList.toggle('hidden', !info.master);
   $('intro').innerHTML = info.master
     ? '按名字打开来勾。<b>自己能进</b>：他可以用这个后台。<b>帮别人开</b>：他可以替别人开这个后台（例如主席）。一按就存好。'
-    : `你可以帮团员开：<b>${info.areas.map(a => esc(LABEL[a])).join('、')}</b>。对方开通后，打开菜单按提示输 PIN 就进得去。一按就存好。`;
+    : `你可以帮团员开：<b>${info.areas.map(a => esc(LABEL[a])).join('、')}</b>。对方开通后，打开菜单按提示输 PIN 就进得去。一按就存好。自己的后台要请 Ronald 开。`;
   $('m-count').textContent = info.master ? `有电话的 ${members.filter(m => m.phoneTail).length} / ${members.length} 人` : '';
   status('');
   render();
