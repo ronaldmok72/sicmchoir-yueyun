@@ -24,6 +24,8 @@ let PEOPLE = {};            // 团员id → { name, cname, noCname }（出席打
 let yearEditing = null;     // 正在改哪一年的活动表
 let ROSTER = {};            // 历届执委：roster_2016 → { term, start, text（一行一个岗位）, notes, by, updatedAt, history }
 let rosterView = 'grid', rosterEdit = null, rosterHist = null, rosterQ = '';
+let ITEMS = [], FIN = [];   // 团室物品、财政记录
+let boardEdit = null, boardHist = null, itemQ = '', finYear = 'all';
 let aiMode = null;          // 贴会议记录让 AI 整理：{ target: 要盖过去的那一场 id 或 null }
 let aiReady = null;         // 服务器的 AI 钥匙放好了没有（问过一次就记住）
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
@@ -33,6 +35,8 @@ const TABS = [
   { key: 'todo', label: '✅ 待办', render: renderTodos },
   { key: 'report', label: '📈 年度进展', render: renderReport },
   { key: 'roster', label: '🏛️ 历届执委', render: renderRoster },
+  { key: 'items', label: '📦 团室物品', render: renderItems },
+  { key: 'fin', label: '💰 财政记录', render: renderFin },
 ];
 
 // ───────── 小工具 ─────────
@@ -102,7 +106,9 @@ async function load() {
   if (ms) PEOPLE = Object.fromEntries(ms.docs.map(d => { const x = d.data(); return [d.id, { name: x.name || '', cname: x.cname || '', noCname: !!x.noCname }]; }));
   YEARS = Object.fromEntries(docs.filter(d => d.kind === 'year').map(d => [String(d.year), d]));
   ROSTER = Object.fromEntries(docs.filter(d => d.kind === 'roster').map(d => [d.id, d]));
-  MEETINGS = docs.filter(d => d.kind !== 'year' && d.kind !== 'roster').map(norm).sort((a, b) => b.date.localeCompare(a.date));
+  ITEMS = docs.filter(d => d.kind === 'item');
+  FIN = docs.filter(d => d.kind === 'fin');
+  MEETINGS = docs.filter(d => !['year', 'roster', 'item', 'fin'].includes(d.kind)).map(norm).sort((a, b) => b.date.localeCompare(a.date));
 }
 
 // ───────── 画面 ─────────
@@ -120,7 +126,7 @@ function render() {
   TABS.find(t => t.key === tab).render();
 }
 function go(t, id = null) {
-  tab = t; openId = id; editing = null; yearEditing = null; aiMode = null; rosterEdit = null; rosterHist = null;
+  tab = t; openId = id; editing = null; yearEditing = null; aiMode = null; rosterEdit = null; rosterHist = null; boardEdit = null; boardHist = null;
   const u = new URL(location.href);
   u.searchParams.delete('m'); u.searchParams.delete('tab');
   if (id) u.searchParams.set('m', id); else if (t !== 'list') u.searchParams.set('tab', t);
@@ -203,7 +209,7 @@ function togetherBox(m) {
           <div class="text-xs font-semibold text-indigo-800">${esc(c.n)}</div>
           <div class="mt-0.5 text-sm text-slate-700 whitespace-pre-wrap">${esc(c.text)}</div>
         </div>`).join('')}</div>` : ''}
-    </section>`;
+    </section>${m.status === 'agenda' ? changesBox(m) : ''}`;
 }
 
 const pill = m => m.status === 'agenda'
@@ -1168,8 +1174,236 @@ view.addEventListener('click', async e => {
   }
 });
 
+// ───────── 📦 团室物品、💰 财政记录 ─────────
+// 都放在 meetings（只有执委看得到、改得到）：kind 'item' 一件一份，kind 'fin' 一笔一份
+// 执委都可以加、改；每次改都留旧版本（最多 30 个）可以还原，删除也只是收起来，可以救回来
+const STATUS = ['可以用', '要修理', '坏了', '借出去', '找不到'];
+const STATUS_C = { 可以用: 'bg-emerald-100 text-emerald-800', 要修理: 'bg-amber-100 text-amber-800', 坏了: 'bg-red-100 text-red-700', 借出去: 'bg-sky-100 text-sky-800', 找不到: 'bg-slate-200 text-slate-600' };
+const ITEM_F = ['name', 'qty', 'place', 'status', 'keeper', 'note'];
+const FIN_F = ['date', 'type', 'cents', 'what', 'who', 'note'];
+const listOf = kind => kind === 'item' ? ITEMS : FIN;
+const fieldsOf = (kind, x) => Object.fromEntries((kind === 'item' ? ITEM_F : FIN_F).map(k => [k, x[k] ?? '']));
+const backTab = kind => kind === 'item' ? '回团室物品' : '回财政记录';
+const redraw = kind => kind === 'item' ? renderItems() : renderFin();
+const rm = c => 'RM ' + (Number(c || 0) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const delta = x => x.type === 'out' ? -Number(x.cents || 0) : Number(x.cents || 0);
+
+async function boardSave(kind, id, data) {
+  const list = listOf(kind), key = id || `${kind}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const put = x => { const i = list.findIndex(y => y.id === key); if (i < 0) list.push(x); else list[i] = x; };
+  const ref = doc(db, COLL, key);
+  let history = [];
+  if (id) {
+    const snap = await getDoc(ref), cur = snap.exists() ? snap.data() : null;
+    const local = list.find(y => y.id === key);
+    if (cur && local && cur.updatedAt !== local.updatedAt) {
+      put({ id: key, ...cur });
+      alert(`刚刚 ${cur.by || '有人'} 也改了这一笔，已经换成最新的。请再看一下，需要的话再改。`);
+      return false;
+    }
+    if (cur) { const { history: h = [], kind: _k, by, updatedAt, ...old } = cur; history = [{ ...old, at: updatedAt || '', by: by || '' }, ...h].slice(0, 30); }
+  }
+  const out = { kind, ...data, by: whoNow(), updatedAt: new Date().toISOString(), history };
+  await window.sicStaff.withAuth(() => setDoc(ref, out));
+  put({ id: key, ...out });
+  return true;
+}
+
+// 改动记录（两个板块共用）
+const histLine = (kind, h) => kind === 'item'
+  ? [h.name, h.qty && `× ${h.qty}`, h.place, h.status, h.keeper && `管理：${h.keeper}`, h.note, h.removed && '（已删除）'].filter(Boolean).join(' · ')
+  : [h.date, h.type === 'out' ? '支出' : '收入', rm(h.cents), h.what, h.who && `经手：${h.who}`, h.note, h.removed && '（已删除）'].filter(Boolean).join(' · ');
+function renderBoardHist(kind) {
+  const x = listOf(kind).find(y => y.id === boardHist);
+  view.innerHTML = `
+    <button data-bact="cancel" data-k="${kind}" class="text-sm text-slate-500 hover:text-indigo-600">‹ ${backTab(kind)}</button>
+    <h2 class="mt-2 font-semibold">🕘 改动记录</h2>
+    <div class="mt-1 text-sm text-slate-700">现在：${esc(histLine(kind, x))}</div>
+    <div class="mt-3 space-y-2">${(x.history || []).map((h, i) => `
+      <div class="bg-white rounded-xl border border-slate-200 p-3 text-sm">
+        <div class="text-slate-700">${esc(histLine(kind, h))}</div>
+        <div class="mt-1 flex items-center gap-2 text-xs text-slate-400"><span class="flex-1">${esc(h.by || '?')} · ${esc(stamp(h.at))}</span>
+          <button data-bact="restore" data-k="${kind}" data-id="${x.id}" data-i="${i}" class="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-indigo-400 text-slate-700">↩️ 还原</button></div>
+      </div>`).join('')}</div>`;
+}
+const foot = (kind, x) => `<div class="mt-1.5 flex items-center gap-3 text-xs text-slate-400">
+  <span class="flex-1 min-w-0 truncate">${esc(x.by || '')}${x.updatedAt ? ' · ' + esc(stamp(x.updatedAt)) : ''}</span>
+  ${(x.history || []).length ? `<button data-bact="hist" data-k="${kind}" data-id="${x.id}" class="hover:text-indigo-600">🕘 ${x.history.length}</button>` : ''}
+  <button data-bact="edit" data-k="${kind}" data-id="${x.id}" class="text-indigo-600 font-medium">✏️ 改</button></div>`;
+const goneBox = (kind, gone) => gone.length ? `<details class="mt-4 text-sm"><summary class="cursor-pointer text-xs text-slate-400">已删除 ${gone.length} 笔（可以救回来）</summary>
+  <div class="mt-2 space-y-1.5">${gone.map(x => `<div class="flex items-center gap-2 bg-white rounded-lg border border-slate-200 px-3 py-2"><span class="flex-1 min-w-0 text-slate-500 text-xs">${esc(histLine(kind, { ...x, removed: false }))}</span><button data-bact="unremove" data-k="${kind}" data-id="${x.id}" class="shrink-0 text-xs text-indigo-600">救回来</button></div>`).join('')}</div></details>` : '';
+const editFoot = (kind, isNew) => `<div class="flex items-center gap-2">
+  <button data-bact="save" data-k="${kind}" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">保存</button>
+  <button data-bact="cancel" data-k="${kind}" class="px-4 py-2 rounded-lg border border-slate-300 text-sm">取消</button>
+  ${isNew ? '' : `<button data-bact="remove" data-k="${kind}" class="ml-auto text-xs text-red-500 hover:underline">删除</button>`}</div>`;
+
+// 📦 团室物品：照存放位置分组
+function renderItems() {
+  if (boardHist) return renderBoardHist('item');
+  if (boardEdit) return renderItemEdit();
+  const live = ITEMS.filter(x => !x.removed);
+  view.innerHTML = `
+    <div class="flex items-center gap-2">
+      <div class="flex-1 text-sm text-slate-500">团室里有什么、放哪里、谁管。一共 <b>${live.length}</b> 项${live.some(x => x.status === '要修理' || x.status === '坏了') ? `，<span class="text-amber-700">${live.filter(x => x.status === '要修理' || x.status === '坏了').length} 项要处理</span>` : ''}</div>
+      <button data-bact="new" data-k="item" class="shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">➕ 加一项</button>
+    </div>
+    <input id="b-q" value="${esc(itemQ)}" type="search" placeholder="找物品、位置、谁管…" class="mt-3 ${inp}">
+    <div id="b-list" class="mt-3"></div>
+    ${goneBox('item', ITEMS.filter(x => x.removed))}`;
+  drawItems();
+}
+function drawItems() {
+  const q = itemQ.trim().toLowerCase();
+  const list = ITEMS.filter(x => !x.removed && (!q || ITEM_F.map(k => x[k]).join(' ').toLowerCase().includes(q))).sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'));
+  const groups = {};
+  list.forEach(x => (groups[x.place || '还没写位置'] ||= []).push(x));
+  $('b-list').innerHTML = !ITEMS.some(x => !x.removed) ? '<div class="text-sm text-slate-400 text-center py-8">还没有记录。按「➕ 加一项」开始，总务报告时一边讲一边加就好。</div>'
+    : !list.length ? '<div class="text-sm text-slate-400 text-center py-6">找不到。</div>'
+    : Object.keys(groups).sort((a, b) => a.localeCompare(b, 'zh')).map(g => `
+      <div class="text-xs font-semibold text-slate-500 mt-3 mb-1.5">📍 ${esc(g)}（${groups[g].length}）</div>
+      <div class="space-y-2">${groups[g].map(x => `
+        <div class="bg-white rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm">
+          <div class="flex items-center gap-2"><div class="flex-1 min-w-0 font-semibold">${esc(x.name)}${x.qty ? ` <span class="font-normal text-slate-500">× ${esc(x.qty)}</span>` : ''}</div>
+            ${x.status ? `<span class="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_C[x.status] || 'bg-slate-100 text-slate-600'}">${esc(x.status)}</span>` : ''}</div>
+          ${x.keeper || x.note ? `<div class="mt-0.5 text-xs text-slate-500">${x.keeper ? '管理：' + esc(x.keeper) : ''}${x.keeper && x.note ? ' · ' : ''}${esc(x.note || '')}</div>` : ''}
+          ${foot('item', x)}
+        </div>`).join('')}</div>`).join('');
+}
+function renderItemEdit() {
+  const isNew = boardEdit === 'new', x = isNew ? { status: '可以用' } : ITEMS.find(y => y.id === boardEdit);
+  const places = [...new Set(ITEMS.map(y => y.place).filter(Boolean))];
+  view.innerHTML = `
+    <button data-bact="cancel" data-k="item" class="text-sm text-slate-500 hover:text-indigo-600">‹ ${backTab('item')}</button>
+    <div class="mt-2 bg-white rounded-2xl border border-slate-200 p-4 space-y-3 text-sm">
+      <label class="block">物品名字<input id="b-name" value="${esc(x.name || '')}" placeholder="例如：披肩、谱架、音响" class="mt-1 ${inp}"></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block">数量<input id="b-qty" value="${esc(x.qty || '')}" placeholder="例如：60" class="mt-1 ${inp}"></label>
+        <label class="block">状况<select id="b-status" class="mt-1 ${inp}">${STATUS.map(s => `<option ${s === x.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      </div>
+      <label class="block">放在哪里<input id="b-place" list="b-places" value="${esc(x.place || '')}" placeholder="例如：团室大柜第二层" class="mt-1 ${inp}"><datalist id="b-places">${places.map(p => `<option value="${esc(p)}">`).join('')}</datalist></label>
+      <label class="block">谁管<input id="b-keeper" value="${esc(x.keeper || '')}" class="mt-1 ${inp}"></label>
+      <label class="block">备注<textarea id="b-note" rows="2" class="mt-1 ${inp}">${esc(x.note || '')}</textarea></label>
+      ${editFoot('item', isNew)}
+    </div>`;
+}
+
+// 💰 财政记录：一笔一笔，自动算余额
+function renderFin() {
+  if (boardHist) return renderBoardHist('fin');
+  if (boardEdit) return renderFinEdit();
+  const live = FIN.filter(x => !x.removed).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
+  let run = 0;
+  const withBal = live.map(x => ({ ...x, bal: (run += delta(x)) }));
+  const years = [...new Set(live.map(x => String(x.date).slice(0, 4)))].sort().reverse();
+  const y = String(new Date().getFullYear());
+  const sum = (t, yr) => live.filter(x => x.type === t && String(x.date).startsWith(yr)).reduce((s, x) => s + Number(x.cents || 0), 0);
+  if (finYear !== 'all' && !years.includes(finYear)) finYear = 'all';
+  const show = withBal.filter(x => finYear === 'all' || String(x.date).startsWith(finYear)).reverse();
+  const yp = (v, t) => `<button data-bact="year" data-k="fin" data-v="${v}" class="px-3 py-1 rounded-full text-xs font-medium border ${finYear === v ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}">${t}</button>`;
+  view.innerHTML = `
+    <div class="bg-white rounded-2xl border border-slate-200 p-4">
+      <div class="flex items-start gap-2">
+        <div class="flex-1"><div class="text-xs text-slate-500">现在余额</div><div class="text-2xl font-semibold ${run < 0 ? 'text-red-600' : ''}">${rm(run)}</div></div>
+        <button data-bact="new" data-k="fin" class="shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">➕ 记一笔</button>
+      </div>
+      <div class="mt-2 text-sm text-slate-600">今年收入 <b class="text-emerald-700">${rm(sum('in', y))}</b> · 今年支出 <b class="text-red-600">${rm(sum('out', y))}</b></div>
+      <div class="mt-1 text-xs text-slate-400">余额是下面每一笔加起来算的。第一笔请记「承前余额」（类别选收入）。</div>
+    </div>
+    ${years.length > 1 ? `<div class="mt-3 flex flex-wrap gap-1.5">${yp('all', '全部')}${years.map(v => yp(v, v)).join('')}</div>` : ''}
+    <div class="mt-3 space-y-2">${show.length ? show.map(x => `
+      <div class="bg-white rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm">
+        <div class="flex items-baseline gap-2"><div class="flex-1 min-w-0 font-semibold">${esc(x.what)}</div><div class="shrink-0 font-semibold ${x.type === 'out' ? 'text-red-600' : 'text-emerald-700'}">${x.type === 'out' ? '−' : '＋'} ${rm(x.cents)}</div></div>
+        <div class="mt-0.5 flex items-baseline gap-2 text-xs text-slate-500"><div class="flex-1 min-w-0">${esc(x.date)}${x.who ? ' · 经手：' + esc(x.who) : ''}${x.note ? ' · ' + esc(x.note) : ''}</div><div class="shrink-0 text-slate-400">余 ${rm(x.bal)}</div></div>
+        ${foot('fin', x)}
+      </div>`).join('') : '<div class="text-sm text-slate-400 text-center py-8">还没有记录。财政报告时一边讲一边记就好。</div>'}</div>
+    ${goneBox('fin', FIN.filter(x => x.removed))}`;
+}
+function renderFinEdit() {
+  const isNew = boardEdit === 'new', x = isNew ? { date: todayStr(), type: 'out' } : FIN.find(y => y.id === boardEdit);
+  view.innerHTML = `
+    <button data-bact="cancel" data-k="fin" class="text-sm text-slate-500 hover:text-indigo-600">‹ ${backTab('fin')}</button>
+    <div class="mt-2 bg-white rounded-2xl border border-slate-200 p-4 space-y-3 text-sm">
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block">日期<input id="b-date" type="date" value="${esc(x.date || '')}" class="mt-1 ${inp}"></label>
+        <label class="block">类别<select id="b-type" class="mt-1 ${inp}"><option value="in" ${x.type === 'in' ? 'selected' : ''}>收入</option><option value="out" ${x.type === 'out' ? 'selected' : ''}>支出</option></select></label>
+      </div>
+      <label class="block">金额（RM）<input id="b-amount" inputmode="decimal" value="${x.cents != null && x.cents !== '' ? (Number(x.cents) / 100).toFixed(2) : ''}" placeholder="例如：120.50" class="mt-1 ${inp}"></label>
+      <label class="block">事项<input id="b-what" value="${esc(x.what || '')}" placeholder="例如：承前余额、买披肩、奉献" class="mt-1 ${inp}"></label>
+      <label class="block">经手人<input id="b-who" value="${esc(x.who || '')}" class="mt-1 ${inp}"></label>
+      <label class="block">备注<textarea id="b-note" rows="2" class="mt-1 ${inp}">${esc(x.note || '')}</textarea></label>
+      ${editFoot('fin', isNew)}
+    </div>`;
+}
+function readBoardForm(kind) {
+  const v = id => $(id).value.trim();
+  if (kind === 'item') {
+    if (!v('b-name')) { alert('请写物品名字'); return null; }
+    return { name: v('b-name'), qty: v('b-qty'), place: v('b-place'), status: v('b-status'), keeper: v('b-keeper'), note: v('b-note') };
+  }
+  const amt = v('b-amount').replace(/[,\s]|^RM/gi, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(amt) || Number(amt) <= 0) { alert('金额写数字，例如 120.50'); return null; }
+  if (!v('b-date')) { alert('请选日期'); return null; }
+  if (!v('b-what')) { alert('请写事项'); return null; }
+  return { date: v('b-date'), type: v('b-type'), cents: Math.round(Number(amt) * 100), what: v('b-what'), who: v('b-who'), note: v('b-note') };
+}
+
+// 开会时：上次开会到现在，物品和财政改了什么，大家一起看；要更新一按就去
+function changesBox(m) {
+  const prev = MEETINGS.filter(x => x.date < m.date && x.status !== 'agenda').map(x => x.date).sort().at(-1) || '';
+  const after = x => !x.removed && String(x.updatedAt || '').slice(0, 10) > prev;
+  const items = ITEMS.filter(after), fin = FIN.filter(after).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const more = (a, n) => a.length > n ? `<div class="text-xs text-slate-400">还有 ${a.length - n} 项，到板块里看</div>` : '';
+  return `
+    <section class="mt-3 bg-white rounded-2xl border border-slate-200 p-4">
+      <div class="font-semibold text-sm">📦💰 上次开会到现在的更新</div>
+      <div class="mt-1 text-xs text-slate-500">财政、总务报告时，直接在这里更新，记录就跟着最新。</div>
+      ${fin.length ? `<div class="mt-2 space-y-0.5 text-sm">${fin.slice(0, 6).map(x => `<div>${esc(x.date)} · ${esc(x.what)} <b class="${x.type === 'out' ? 'text-red-600' : 'text-emerald-700'}">${x.type === 'out' ? '−' : '＋'}${rm(x.cents)}</b></div>`).join('')}${more(fin, 6)}</div>` : ''}
+      ${items.length ? `<div class="mt-2 space-y-0.5 text-sm">${items.slice(0, 6).map(x => `<div>${esc(x.name)}${x.qty ? ` × ${esc(x.qty)}` : ''}${x.status ? ` · ${esc(x.status)}` : ''}${x.place ? ` · ${esc(x.place)}` : ''}</div>`).join('')}${more(items, 6)}</div>` : ''}
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button data-bact="goto" data-v="fin" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm hover:border-indigo-400">💰 更新财政记录</button>
+        <button data-bact="goto" data-v="items" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm hover:border-indigo-400">📦 更新团室物品</button>
+      </div>
+    </section>`;
+}
+
+view.addEventListener('input', e => { if (e.target.id === 'b-q') { itemQ = e.target.value; drawItems(); } });
+view.addEventListener('click', async e => {
+  const b = e.target.closest('[data-bact]');
+  if (!b) return;
+  const act = b.dataset.bact, kind = b.dataset.k, id = b.dataset.id;
+  if (act === 'goto') { go(b.dataset.v); return window.scrollTo(0, 0); }
+  if (act === 'year') { finYear = b.dataset.v; return renderFin(); }
+  if (act === 'new') { boardEdit = 'new'; redraw(kind); return window.scrollTo(0, 0); }
+  if (act === 'edit') { boardEdit = id; redraw(kind); return window.scrollTo(0, 0); }
+  if (act === 'hist') { boardHist = id; redraw(kind); return window.scrollTo(0, 0); }
+  if (act === 'cancel') { boardEdit = boardHist = null; return redraw(kind); }
+  const run = async (key, data) => {
+    b.disabled = true;
+    try { if (await boardSave(kind, key, data)) boardEdit = boardHist = null; }
+    catch (err) { b.disabled = false; return fail(err); }
+    redraw(kind);
+  };
+  if (act === 'save') {
+    const data = readBoardForm(kind);
+    if (data) await run(boardEdit === 'new' ? null : boardEdit, data);
+    return;
+  }
+  if (act === 'remove') {
+    if (!confirm('删除这一笔？（之后还可以在最下面救回来）')) return;
+    return run(boardEdit, { ...fieldsOf(kind, listOf(kind).find(x => x.id === boardEdit)), removed: true });
+  }
+  if (act === 'unremove') return run(id, fieldsOf(kind, listOf(kind).find(x => x.id === id)));
+  if (act === 'restore') {
+    const x = listOf(kind).find(y => y.id === id), h = x.history[Number(b.dataset.i)];
+    if (!confirm(`换回 ${stamp(h.at)} 的版本？`)) return;
+    const { at, by, ...data } = h;
+    return run(id, data);
+  }
+});
+
 // 在这一页用电话登录了 → 打卡、汇报那格换成他的
-document.addEventListener('sic-login', () => { window.sicLogin?.close(); if (!editing && !rosterEdit) render(); });
+document.addEventListener('sic-login', () => { window.sicLogin?.close(); if (!editing && !rosterEdit && !boardEdit) render(); });
 
 // ───────── 开始 ─────────
 (async () => {
