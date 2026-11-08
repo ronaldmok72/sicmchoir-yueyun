@@ -185,7 +185,7 @@
         <button class="${BTN} bg-indigo-600 hover:bg-indigo-500 text-white">${first ? '设好了' : '进去'}</button>
       </form>
       <button data-skip class="${BTN} bg-white/5 hover:bg-white/10 text-zinc-300">先不用后台，直接进</button>
-      ${first ? '' : '<div class="text-[11px] text-zinc-500">忘了 PIN？请 Ronald 在「🔑 密码管理」帮你清掉，再登录一次重新设。</div>'}`);
+      ${first ? '' : '<div class="text-[11px] text-zinc-500">忘了 PIN？请 Ronald 在「🔑 后台权限」帮你清掉，再登录一次重新设。</div>'}`);
     box.querySelector('[data-f]').addEventListener('submit', async e => {
       e.preventDefault();
       const pin = e.target.pin.value.trim();
@@ -211,12 +211,12 @@
       <a href="day.html" class="${BTN} block text-center bg-indigo-600 hover:bg-indigo-500 text-white">📅 看这个主日我坐哪里</a>
       <a href="scan.html" class="${BTN} block text-center bg-emerald-600 hover:bg-emerald-500 text-white">📷 扫描签到</a>
       <button data-close class="${BTN} bg-white/5 hover:bg-white/10 text-zinc-300">🎼 去乐谱</button>
-      ${/\s/.test(member.name.trim()) ? '' : `<a href="me.html" class="block text-center text-xs text-amber-300 hover:text-amber-200">名字只有「${esc(member.name)}」？到 ✏️ 我的资料 加上姓 ›</a>`}`);
+      ${/\s/.test(member.name.trim()) ? '' : `<a href="me.html#edit" class="block text-center text-xs text-amber-300 hover:text-amber-200">名字只有「${esc(member.name)}」？到 ✏️ 我的资料 加上姓 ›</a>`}`);
     box.querySelector('[data-close]').addEventListener('click', close);
     // 还没填中文名（也没说没有）→ 提醒去我的资料补
     gate.memberById(member.id).then(m => {
       if (!m || m.cname || m.noCname || !box) return;
-      box.firstElementChild.insertAdjacentHTML('beforeend', '<a href="me.html" class="block text-center text-xs text-amber-300 hover:text-amber-200">还没填中文全名（会议记录、出席名单要用）？到 ✏️ 我的资料 补上 ›</a>');
+      box.firstElementChild.insertAdjacentHTML('beforeend', '<a href="me.html#edit" class="block text-center text-xs text-amber-300 hover:text-amber-200">还没填中文全名（会议记录、出席名单要用）？到 ✏️ 我的资料 补上 ›</a>');
     }).catch(() => {});
     document.dispatchEvent(new CustomEvent('sic-login'));
   }

@@ -1,4 +1,4 @@
-// 密码管理：每个密码开哪几页。存在 Firestore config/access { json: '[{ id, name, hash, areas, master }]' }
+// 后台权限页的「共用密码」分页：每个密码开哪几页。存在 Firestore config/access { json: '[{ id, name, hash, areas, master }]' }
 // 密码本身不存，只存 gate.js 打乱过的样子（hash）；读、存都经登录服务（/api/login），这页看不到打乱过的密码
 
 const $ = id => document.getElementById(id);
@@ -10,13 +10,13 @@ const LABEL = Object.fromEntries(AREAS.map(a => [a.key, a.label]));
 let keys = null;   // null = 还没设过（还在用 sic）
 
 async function load() {
-  $('status').textContent = '读取中…';
+  $('k-status').textContent = '读取中…';
   // 打乱过的电话、PIN、密码表还在公开的地方的话，先搬去藏起来（搬过了就没事做）
   try { await gate.staffCall('migrate'); } catch (err) { console.warn('搬去藏起来', err); }
   const { status, j } = await gate.staffCall('keys');
   if (status !== 200) throw new Error(status === 401 ? '这部手机没有最高权限，重新输一次密码' : '读不到密码表 ' + status);
   keys = j.keys;
-  $('status').textContent = '';
+  $('k-status').textContent = '';
   render();
 }
 
@@ -37,7 +37,7 @@ function render() {
         ${k.master ? '' : `<button data-del="${esc(k.id)}" class="px-2 py-1 text-xs text-red-500 hover:bg-red-50 rounded-md">删除</button>`}
       </div>
       ${k.master
-        ? '<div class="text-slate-500">全部页面 ＋ 密码管理（最高权限）</div>'
+        ? '<div class="text-slate-500">全部页面（最高权限）</div>'
         : `<div class="grid sm:grid-cols-2 gap-1.5">${AREAS.map(a => box(k.id, a, (k.areas || []).includes(a.key))).join('')}</div>`}
     </div>`).join('');
   if (!$('add-areas').innerHTML) $('add-areas').innerHTML = AREAS.map(a => box('', a, false)).join('');
@@ -45,12 +45,12 @@ function render() {
 
 // 新的、换过的密码带 hash；其他的登录服务照旧。密码跟别人一样 → code dup
 async function save(msg) {
-  $('status').textContent = '保存中…';
+  $('k-status').textContent = '保存中…';
   const { status, j } = await gate.staffCall('saveKeys', { list: keys });
-  if (status === 409) { $('status').textContent = ''; throw Object.assign(new Error('这个密码已经有别人在用，换一个。'), { code: 'dup' }); }
-  if (status !== 200) { $('status').textContent = ''; throw new Error(status === 401 ? '这部手机没有最高权限' : '没存到 ' + status); }
+  if (status === 409) { $('k-status').textContent = ''; throw Object.assign(new Error('这个密码已经有别人在用，换一个。'), { code: 'dup' }); }
+  if (status !== 200) { $('k-status').textContent = ''; throw new Error(status === 401 ? '这部手机没有最高权限' : '没存到 ' + status); }
   keys = j.keys;
-  $('status').textContent = `✓ ${msg || '已保存'} ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+  $('k-status').textContent = `✓ ${msg || '已保存'} ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
 const failed = err => { console.error(err); alert(err.code === 'dup' ? err.message : '保存失败：' + (err.code || err.message)); };
 
@@ -104,8 +104,30 @@ $('list').addEventListener('change', async e => {
   const set = new Set(k.areas || []);
   i.checked ? set.add(i.dataset.area) : set.delete(i.dataset.area);
   k.areas = AREAS.map(a => a.key).filter(a => set.has(a));
-  try { await save(); render(); } catch (err) { failed(err); load(); }
+  const box = i.closest('label');
+  box.classList.toggle('border-indigo-300', i.checked);
+  box.classList.toggle('bg-indigo-50', i.checked);
+  box.classList.toggle('border-slate-200', !i.checked);
+  pushAreas();
 });
+
+// 勾选：一按画面就变；连着按的话，等上一次存完，再存最后的样子。存的时候不重画，才不会勾了又跳回去
+let pushing = false, dirty = false;
+async function pushAreas() {
+  dirty = true;
+  if (pushing) return;
+  pushing = true;
+  try {
+    while (dirty) {
+      dirty = false;
+      $('k-status').textContent = '保存中…';
+      const { status } = await gate.staffCall('saveKeys', { list: keys });
+      if (status !== 200) throw new Error(status === 401 ? '这部手机没有最高权限' : '没存到 ' + status);
+    }
+    $('k-status').textContent = `✓ 已保存 ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+  } catch (err) { dirty = false; failed(err); load(); }
+  pushing = false;
+}
 
 $('list').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;

@@ -178,7 +178,7 @@ function renderNudge() {
   $('nudge').classList.toggle('hidden', !show);
   if (!show) return;
   $('nudge').innerHTML = `<div>👋 你的资料还差：<b>${miss.join('、')}</b>。</div>
-    <div class="mt-1.5 flex items-center gap-4"><a href="me.html" class="font-semibold text-indigo-700 hover:underline">现在去补 ›</a><button id="nudge-later" class="text-xs text-amber-700 hover:underline">等下再说</button></div>`;
+    <div class="mt-1.5 flex items-center gap-4"><a href="me.html#edit" class="font-semibold text-indigo-700 hover:underline">现在去补 ›</a><button id="nudge-later" class="text-xs text-amber-700 hover:underline">等下再说</button></div>`;
   $('nudge-later').addEventListener('click', () => { try { localStorage.setItem(NUDGE_KEY, String(Date.now())); } catch { /* 没关系 */ } renderNudge(); });
 }
 document.addEventListener('sic-info', () => { if (date) renderNudge(); });

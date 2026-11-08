@@ -52,10 +52,21 @@
         <div class="text-3xl">📝</div>
         <p class="text-white font-semibold">测验现在没有开</p>
         <p class="text-sm text-zinc-400">要做的时候团里会通知，到时再打开这一页就可以。</p>
-        <button id="closed-login" class="hidden mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">📱 被安排做测验？先用电话登录</button>
+        <button id="closed-login" class="hidden mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">📱 被安排做测验，或想看成绩？先用电话登录</button>
       </div>
     </section>
     <div id="closed-note" class="hidden mb-4 text-xs rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 px-4 py-2.5">测验现在没有开给你；你有测验后台才看得到这一页。</div>
+
+    <!-- 已经做完：先给一个看结果的按钮 -->
+    <section id="s-done" class="hidden space-y-4">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl p-6 text-center space-y-2">
+        <div class="text-3xl">✅</div>
+        <p id="done-title" class="text-white font-semibold"></p>
+        <p class="text-sm text-zinc-400">成绩只有你和 Ronald 看得到，不会公开排名。</p>
+      </div>
+      <button id="btn-see-result" class="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">📊 查看我的结果</button>
+      <a id="done-again" href="?again" class="hidden block text-center text-sm text-zinc-400 hover:text-white py-2"></a>
+    </section>
 
     <!-- ① 开始 -->
     <section id="s-start" class="space-y-5">
@@ -70,7 +81,7 @@
         <p class="text-zinc-400">选项有几个看起来都对，选你觉得<b class="text-zinc-200">最对</b>的那个。不会的就猜，不要去翻笔记——这样结果才准。</p>
       </div>
       <div id="me-note" class="hidden text-sm rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 px-4 py-3"></div>
-      <button id="btn-login" class="hidden w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-sm">📱 先用电话登录／注册（声部那题就不用再答）</button>
+      <button id="btn-login" class="hidden w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-sm">📱 先用电话登录／注册（做过的可以看成绩，声部那题也不用再答）</button>
       <label id="name-box" class="block">
         <span class="text-sm text-zinc-400">你的名字（团里大家怎么叫你）</span>
         <input id="name-input" type="text" maxlength="30" autocomplete="name"

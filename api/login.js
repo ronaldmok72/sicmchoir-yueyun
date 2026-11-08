@@ -311,6 +311,8 @@ const ACTIONS = {
     if (g.master) {
       const q = await F.getDocs(F.query(await coll(sa, 'secrets'), F.where('grant', '>', '')));
       out.grants = Object.fromEntries(q.docs.map(d => [d.id.replace(/^m_/, ''), String(d.data().grant).split(',')]));
+      const qm = await F.getDocs(F.query(await coll(sa, 'secrets'), F.where('master', '==', true)));
+      out.masters = [...new Set([OWNER, ...qm.docs.map(d => d.id.replace(/^m_/, ''))])];
     }
     return send(res, 200, out);
   },

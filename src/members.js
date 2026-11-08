@@ -225,7 +225,7 @@ function openEditor(m) {
   ph.className = `text-xs rounded-lg px-3 py-2 ${m?.phoneTail ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'}`;
   ph.innerHTML = !m ? '📱 加好之后，他打开 App 用电话注册时，在名单上选自己的名字就会连起来。'
     : m.phoneTail ? `📱 电话已登记：…${esc(m.phoneTail || '')}${m.registeredAt ? `（${new Date(m.registeredAt).toLocaleDateString('en-GB')} 自己注册）` : ''}　<span class="text-slate-400">完整号码不会存，换号码到「🔑 密码管理」</span>`
-    : '📱 还没登记电话。叫他打开 App，用自己的电话注册一次就好（或在「🔑 密码管理」帮他加）。';
+    : '📱 还没登记电话。叫他打开 App，用自己的电话注册一次就好（或在「🔑 后台权限」帮他加）。';
   $('edit-delete').classList.toggle('hidden', !m);
   renderChips();
   capeWarn();

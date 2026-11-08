@@ -24,7 +24,7 @@ const shuffle = arr => {
 };
 
 const QMAP = Object.fromEntries(QUESTIONS.map(q => [q.id, q]));
-const SECTIONS = ['s-closed', 's-start', 's-quiz', 's-intent', 's-tap', 's-saving', 's-result'];
+const SECTIONS = ['s-closed', 's-done', 's-start', 's-quiz', 's-intent', 's-tap', 's-saving', 's-result'];
 const show = id => {
   SECTIONS.forEach(s => $(s).classList.toggle('hidden', s !== id));
   window.scrollTo(0, 0);
@@ -645,9 +645,23 @@ const halfway = !!draft && draft.v === QUIZ_VERSION && draft.stage !== 'done';
 const done = store.get(DONE_KEY) || await cloudDone().catch(() => null);
 const again = new URLSearchParams(location.search).get('again') !== null;
 if (!quizOpen && tester) $('closed-note').classList.remove('hidden');
+// 做完的人：先看到「查看我的结果」，按了才打开成绩；还可以重做的，下面多一行
+function showDone(d) {
+  show('s-done');
+  $('done-title').textContent = `${d.name}，你已经做完这份测验了`;
+  $('btn-see-result').onclick = () => { renderResult(d); window.scrollTo(0, 0); };
+  const more = $('done-again');
+  more.textContent = halfway ? '上次重做到一半，按这里接着做' : '重新做一次（会另外送一份）';
+  more.classList.toggle('hidden', !(quizOpen || tester || halfway));
+}
+// 在开始那一页才登录：做过的话直接给他看结果的按钮
+document.addEventListener('sic-login', async () => {
+  if (again || $('s-start').classList.contains('hidden')) return;
+  const d = await cloudDone().catch(() => null);
+  if (d) showDone(d);
+});
 if (done && !again) {
-  renderResult(done);
-  if (quizOpen || tester || halfway) addAgainLink();
+  showDone(done);
 } else if (quizOpen || tester || halfway) {
   show('s-start');
   initStart();

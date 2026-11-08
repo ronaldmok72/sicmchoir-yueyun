@@ -1,9 +1,10 @@
-// 我的资料：团员自己改名字（至少有圣名）、全名、电话；名单上本来就有他的话，自己合并
+// 我的资料：一打开先看到自己的资料、出席、测验；按「修改资料」才出现表格。团员自己改名字（至少有圣名）、全名、电话；名单上本来就有他的话，自己合并
 // 改名字时，职务表、座位表、婚礼名单上的旧名字一起改（members-common.js）
 import { collection, doc, updateDoc, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs, getDoc, RESULTS } from "./firebase.js";
 import { renameEverywhere, mergeMembers, lookAlikes } from "./members-common.js";
 import { markOf, scoreOf, fmtPts } from "./checkin-common.js";
+import { VOICE_NAME, normVoice } from "./people.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -27,6 +28,18 @@ async function load() {
   members = (await getDocs(collection(db, 'members'))).docs.map(d => ({ id: d.id, ...d.data() }));
   me = members.find(m => m.id === who.id);
   if (!me) { gate.logout(); return load(); }
+  fillForm();
+  renderView();
+  const miss = [!me.cname && !me.noCname && '中文全名', !me.birthday && '生日'].filter(Boolean);
+  $('need-box').classList.toggle('hidden', !miss.length);
+  $('need-box').innerHTML = miss.length ? `👉 还差：${miss.join('、')}。 <button type="button" id="need-go" class="font-semibold underline">现在去填 ›</button>` : '';
+  $('need-go')?.addEventListener('click', () => editing(true));
+  renderMerge();
+  renderAttendance().catch(x => { console.error(x); $('my-att-list').textContent = '读不到出席记录。'; });
+  renderQuiz().catch(x => console.error(x));
+}
+
+function fillForm() {
   f.name.value = me.name;
   f.fullName.value = me.fullName || '';
   // 中文名：还没填的，先从全名里的中文字带出来
@@ -34,15 +47,32 @@ async function load() {
   f.noCname.checked = !!me.noCname;
   cnameState();
   [f.bm.value, f.bd.value] = me.birthday ? me.birthday.split('-') : ['', ''];
-  const miss = [!me.cname && !me.noCname && '中文全名', !me.birthday && '生日'].filter(Boolean);
-  $('need-box').classList.toggle('hidden', !miss.length);
-  $('need-box').textContent = miss.length ? `👉 还差：${miss.join('、')}。在下面填好按「保存」就可以。` : '';
   $('phone-now').textContent = me.phoneTail ? `…${me.phoneTail}` : '还没登记';
   nameTip();
-  renderMerge();
-  renderAttendance().catch(x => { console.error(x); $('my-att-list').textContent = '读不到出席记录。'; });
-  renderQuiz().catch(x => console.error(x));
 }
+
+// 只看的那一块：填了才显示的（全名、声部、披肩）没有就不列
+function renderView() {
+  const row = (k, v, always) => (v || always) ? `<div class="flex items-baseline gap-3 py-2"><span class="w-16 shrink-0 text-zinc-500">${k}</span><span class="flex-1 min-w-0 ${v ? 'text-white' : 'text-zinc-600'}">${esc(v || '还没填')}</span></div>` : '';
+  const b = me.birthday ? me.birthday.split('-').map(Number) : null, v = normVoice(me.voice);
+  $('view-rows').innerHTML = row('名字', me.name, true)
+    + row('全名', me.fullName !== me.name && me.fullName)
+    + row('中文名', me.cname || (me.noCname && '没有中文名'), true)
+    + row('生日', b && `${b[0]} 月 ${b[1]} 日`, true)
+    + row('电话', me.phoneTail && `…${me.phoneTail}`, true)
+    + row('声部', v && VOICE_NAME[v])
+    + row('披肩号码', me.cape && `#${me.cape}`);
+}
+
+function editing(on) {
+  err('');
+  if (on) ok('');
+  f.classList.toggle('hidden', !on);
+  $('view-box').classList.toggle('hidden', on);
+  if (on) window.scrollTo(0, 0);
+}
+$('btn-edit').addEventListener('click', () => editing(true));
+$('btn-cancel').addEventListener('click', () => { fillForm(); f.phone.value = ''; $('phone-box').classList.add('hidden'); editing(false); });
 
 // 我的出席：今年，再按季看；跟点名页同一套算法
 async function renderAttendance() {
@@ -177,7 +207,7 @@ f.addEventListener('submit', async e => {
     f.phone.value = '';
     $('phone-box').classList.add('hidden');
     await load();
-    if (bdayFail) err('名字存好了，生日没存到，过一会儿再试一次。'); else ok('✅ 保存好了');
+    if (bdayFail) err('名字存好了，生日没存到，过一会儿再试一次。'); else { editing(false); ok('✅ 保存好了'); }
   } catch (x) { console.error(x); err('没存到，检查一下网络再试。'); }
   b.disabled = false; b.textContent = '保存';
 });
@@ -190,4 +220,5 @@ $('btn-logout').addEventListener('click', () => {
   location.href = '/';
 });
 
-load().catch(x => { console.error(x); $('status').textContent = '读取失败，检查一下网络。'; });
+// 从「现在去补」那些连结过来（me.html#edit）：直接打开表格
+load().then(() => { if (location.hash === '#edit' && me) editing(true); }).catch(x => { console.error(x); $('status').textContent = '读取失败，检查一下网络。'; });

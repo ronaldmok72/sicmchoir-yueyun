@@ -95,7 +95,7 @@ async function copy(text) {
 // merge：只改表格里有的栏，别人打的卡、写的汇报（checkins、contribs）留着
 const save = (id, m, merge = false) => window.sicStaff.withAuth(() => merge ? setDoc(doc(db, COLL, id), clean(m), { merge: true }) : setDoc(doc(db, COLL, id), clean(m)));
 const fail = err => alert('保存失败：' + (err.code === 'permission-denied'
-  ? '没有权限。请 Ronald 在「密码管理」帮你开「执委专区」，或 Firebase 规则还没贴新的。' : err.message));
+  ? '没有权限。请 Ronald 在「后台权限」帮你开「执委专区」，或 Firebase 规则还没贴新的。' : err.message));
 
 // ───────── 读资料 ─────────
 // 同一个 meetings 里还放每一年的「活动表」（id = year_2026，kind: 'year'），年尾交堂区报告用
