@@ -26,6 +26,7 @@ let ROSTER = {};            // 历届执委：roster_2016 → { term, start, tex
 let rosterView = 'grid', rosterEdit = null, rosterHist = null, rosterQ = '';
 let ITEMS = [], FIN = [];   // 团室物品、财政记录
 let boardEdit = null, boardHist = null, itemQ = '', finYear = 'all';
+let finDraft = null;   // 正在改的这一笔的附件：{ key, kept: 已经在 Drive 的, picked: 保存时才上传的 }
 let aiMode = null;          // 贴会议记录让 AI 整理：{ target: 要盖过去的那一场 id 或 null }
 let aiReady = null;         // 服务器的 AI 钥匙放好了没有（问过一次就记住）
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
@@ -1186,7 +1187,7 @@ view.addEventListener('click', async e => {
 const STATUS = ['可以用', '要修理', '坏了', '借出去', '找不到'];
 const STATUS_C = { 可以用: 'bg-emerald-100 text-emerald-800', 要修理: 'bg-amber-100 text-amber-800', 坏了: 'bg-red-100 text-red-700', 借出去: 'bg-sky-100 text-sky-800', 找不到: 'bg-slate-200 text-slate-600' };
 const ITEM_F = ['name', 'qty', 'place', 'status', 'keeper', 'note'];
-const FIN_F = ['date', 'type', 'cents', 'what', 'who', 'note'];
+const FIN_F = ['date', 'type', 'cents', 'what', 'who', 'note', 'files'];
 const listOf = kind => kind === 'item' ? ITEMS : FIN;
 const fieldsOf = (kind, x) => Object.fromEntries((kind === 'item' ? ITEM_F : FIN_F).map(k => [k, x[k] ?? '']));
 const backTab = kind => kind === 'item' ? '回团室物品' : '回财政记录';
@@ -1219,7 +1220,7 @@ async function boardSave(kind, id, data) {
 // 改动记录（两个板块共用）
 const histLine = (kind, h) => kind === 'item'
   ? [h.name, h.qty && `× ${h.qty}`, h.place, h.status, h.keeper && `管理：${h.keeper}`, h.note, h.removed && '（已删除）'].filter(Boolean).join(' · ')
-  : [h.date, h.type === 'out' ? '支出' : '收入', rm(h.cents), h.what, h.who && `经手：${h.who}`, h.note, h.removed && '（已删除）'].filter(Boolean).join(' · ');
+  : [h.date, h.type === 'out' ? '支出' : '收入', rm(h.cents), h.what, h.who && `经手：${h.who}`, h.note, h.files?.length && `📎 ${h.files.length}`, h.removed && '（已删除）'].filter(Boolean).join(' · ');
 function renderBoardHist(kind) {
   const x = listOf(kind).find(y => y.id === boardHist);
   view.innerHTML = `
@@ -1298,6 +1299,7 @@ function renderItemEdit() {
 function renderFin() {
   if (boardHist) return renderBoardHist('fin');
   if (boardEdit) return renderFinEdit();
+  finDraft = null;
   const live = FIN.filter(x => !x.removed).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
   let run = 0;
   const withBal = live.map(x => ({ ...x, bal: (run += delta(x)) }));
@@ -1321,12 +1323,14 @@ function renderFin() {
       <div class="bg-white rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm">
         <div class="flex items-baseline gap-2"><div class="flex-1 min-w-0 font-semibold">${esc(x.what)}</div><div class="shrink-0 font-semibold ${x.type === 'out' ? 'text-red-600' : 'text-emerald-700'}">${x.type === 'out' ? '−' : '＋'} ${rm(x.cents)}</div></div>
         <div class="mt-0.5 flex items-baseline gap-2 text-xs text-slate-500"><div class="flex-1 min-w-0">${esc(dmy(x.date) || x.date)}${x.who ? ' · 经手：' + esc(x.who) : ''}${x.note ? ' · ' + esc(x.note) : ''}</div><div class="shrink-0 text-slate-400">余 ${rm(x.bal)}</div></div>
+        ${(x.files || []).length ? `<div class="mt-1 flex flex-wrap gap-1.5">${x.files.map((f, i) => `<button data-bact="file" data-k="fin" data-id="${x.id}" data-i="${i}" class="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-50 text-xs text-slate-700">📎 附件 ${i + 1}</button>`).join('')}</div>` : ''}
         ${foot('fin', x)}
       </div>`).join('') : '<div class="text-sm text-slate-400 text-center py-8">还没有记录。财政报告时一边讲一边记就好。</div>'}</div>
     ${goneBox('fin', FIN.filter(x => x.removed))}`;
 }
 function renderFinEdit() {
   const isNew = boardEdit === 'new', x = isNew ? { date: todayStr(), type: 'out' } : FIN.find(y => y.id === boardEdit);
+  if (!finDraft || finDraft.key !== boardEdit) finDraft = { key: boardEdit, kept: [...(x.files || [])], picked: [] };
   view.innerHTML = `
     <button data-bact="cancel" data-k="fin" class="text-sm text-slate-500 hover:text-indigo-600">‹ ${backTab('fin')}</button>
     <div class="mt-2 bg-white rounded-2xl border border-slate-200 p-4 space-y-3 text-sm">
@@ -1338,9 +1342,82 @@ function renderFinEdit() {
       <label class="block">事项<input id="b-what" value="${esc(x.what || '')}" placeholder="例如：承前余额、买披肩、奉献" class="mt-1 ${inp}"></label>
       <label class="block">经手人<input id="b-who" value="${esc(x.who || '')}" class="mt-1 ${inp}"></label>
       <label class="block">备注<textarea id="b-note" rows="2" class="mt-1 ${inp}">${esc(x.note || '')}</textarea></label>
+      ${window.sicStaff?.driveUrl ? `<div>附图／PDF <span class="text-xs text-slate-400">（存进 Drive，一笔最多 ${MAX_FILES} 个）</span>
+        <div id="b-files" class="mt-1 space-y-1"></div>
+        <label class="mt-1 inline-block px-3 py-1.5 rounded-lg border border-slate-300 hover:border-indigo-400 cursor-pointer">📎 加附图／PDF<input id="b-file" type="file" accept="image/*,application/pdf" multiple class="hidden"></label></div>` : ''}
       ${editFoot('fin', isNew)}
     </div>`;
+  drawFinFiles();
 }
+// ───────── 财政附件：保存时才传进 Drive，资料库只记 Drive 的文件编号 ─────────
+const MAX_FILES = 5, MAX_MB = 20;
+function drawFinFiles() {
+  const el = $('b-files');
+  if (!el || !finDraft) return;
+  const row = (text, from, i) => `<div class="flex items-center gap-2 text-xs text-slate-600"><span class="flex-1 min-w-0 truncate">${esc(text)}</span><button type="button" data-bact="file-drop" data-k="fin" data-from="${from}" data-i="${i}" class="shrink-0 text-red-500 hover:underline">拿掉</button></div>`;
+  el.innerHTML = finDraft.kept.map((f, i) => row('📎 ' + f.name, 'kept', i)).join('') + finDraft.picked.map((f, i) => row(`⏳ ${f.name}（按保存才上传）`, 'picked', i)).join('');
+}
+// 手机拍的照片很大：长边缩到 2000、存成 JPG，字还看得清楚
+async function shrinkReceipt(file) {
+  try {
+    const img = await createImageBitmap(file);
+    const k = Math.min(1, 2000 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
+    if (blob) return { blob, mime: 'image/jpeg', ext: 'jpg' };
+  } catch { /* 缩不了就传原图 */ }
+  return { blob: file, mime: file.type, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() };
+}
+// 一个一个传；中途失败的话，传好的已经搬到 kept，再按保存只传剩下的
+async function uploadPicked(data, say) {
+  const d = finDraft, total = d.picked.length;
+  for (let n = 1; d.picked.length; n++) {
+    say(`上传中 ${n}/${total}…`);
+    const f = d.picked[0], nth = d.kept.length + 1;
+    const out = f.type === 'application/pdf' ? { blob: f, mime: f.type, ext: 'pdf' } : await shrinkReceipt(f);
+    const name = `${data.date}_${data.type === 'out' ? '支出' : '收入'}_${data.what}_RM${(data.cents / 100).toFixed(2)}_${nth}.${out.ext}`;
+    const j = await window.sicStaff.driveCall('upload', { name, mime: out.mime, date: data.date, data: await fileB64(out.blob) });
+    d.kept.push({ id: j.id, name: j.name, mime: j.mime });
+    d.picked.shift();
+  }
+}
+// 点 📎：经 App 读出来看（不用开放 Drive 分享）；最高权限多一个直接去 Drive 的连结
+async function openFile(f) {
+  const box = document.createElement('div');
+  box.className = 'fixed inset-0 z-50 bg-black/80 flex flex-col p-3 gap-2';
+  box.innerHTML = `<div class="flex justify-end gap-2">${window.sicStaff.isMaster() ? `<a href="https://drive.google.com/file/d/${encodeURIComponent(f.id)}/view" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-white text-sm">在 Drive 打开</a>` : ''}<button data-close class="px-3 py-1.5 rounded-lg bg-white text-sm font-semibold">关闭</button></div><div data-body class="flex-1 min-h-0 flex items-center justify-center text-white text-sm">读取中…</div>`;
+  let url = null;
+  box.querySelector('[data-close]').onclick = () => { box.remove(); if (url) URL.revokeObjectURL(url); };
+  document.body.append(box);
+  const body = box.querySelector('[data-body]');
+  try {
+    const j = await window.sicStaff.driveCall('view', { id: f.id });
+    const bytes = Uint8Array.from(atob(j.data), c => c.charCodeAt(0));
+    url = URL.createObjectURL(new Blob([bytes], { type: j.mime }));
+    if (/^image\//.test(j.mime)) {
+      body.innerHTML = '<img alt="附件" class="max-w-full max-h-full object-contain">';
+      body.firstChild.src = url;
+    } else {
+      body.innerHTML = '<a target="_blank" rel="noopener" class="px-4 py-2 rounded-lg bg-white text-slate-800 font-semibold">打开 PDF</a>';
+      body.firstChild.href = url;
+      body.firstChild.download = j.name;
+    }
+  } catch (err) { body.textContent = '打不开：' + err.message; }
+}
+view.addEventListener('change', e => {
+  if (e.target.id !== 'b-file' || !finDraft) return;
+  const room = () => MAX_FILES - finDraft.kept.length - finDraft.picked.length;
+  for (const f of e.target.files) {
+    if (!/^image\/|^application\/pdf$/.test(f.type)) { alert(`${f.name}：只收图片或 PDF`); continue; }
+    if (f.size > MAX_MB * 1048576) { alert(`${f.name}：太大了，最多 ${MAX_MB}MB`); continue; }
+    if (room() <= 0) { alert(`一笔最多 ${MAX_FILES} 个附件`); break; }
+    finDraft.picked.push(f);
+  }
+  e.target.value = '';
+  drawFinFiles();
+});
 function readBoardForm(kind) {
   const v = id => $(id).value.trim();
   if (kind === 'item') {
@@ -1384,6 +1461,8 @@ view.addEventListener('click', async e => {
   if (act === 'edit') { boardEdit = id; redraw(kind); return window.scrollTo(0, 0); }
   if (act === 'hist') { boardHist = id; redraw(kind); return window.scrollTo(0, 0); }
   if (act === 'cancel') { boardEdit = boardHist = null; return redraw(kind); }
+  if (act === 'file') return openFile(listOf(kind).find(x => x.id === id).files[Number(b.dataset.i)]);
+  if (act === 'file-drop') { finDraft[b.dataset.from].splice(Number(b.dataset.i), 1); return drawFinFiles(); }
   const run = async (key, data) => {
     b.disabled = true;
     try { if (await boardSave(kind, key, data)) boardEdit = boardHist = null; }
@@ -1392,7 +1471,21 @@ view.addEventListener('click', async e => {
   };
   if (act === 'save') {
     const data = readBoardForm(kind);
-    if (data) await run(boardEdit === 'new' ? null : boardEdit, data);
+    if (!data) return;
+    if (kind === 'fin' && finDraft) {
+      if (finDraft.picked.length) {
+        const label = b.textContent;
+        b.disabled = true;
+        try { await uploadPicked(data, t => { b.textContent = t; }); }
+        catch (err) {
+          b.disabled = false; b.textContent = label; drawFinFiles();
+          return alert(`附件没传上去：${err.message}\n这一笔还没保存。检查网络后再按一次「保存」，会接着传。`);
+        }
+        b.textContent = label;
+      }
+      data.files = finDraft.kept.map(({ id, name, mime }) => ({ id, name, mime }));
+    }
+    await run(boardEdit === 'new' ? null : boardEdit, data);
     return;
   }
   if (act === 'remove') {

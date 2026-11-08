@@ -395,8 +395,41 @@
     if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
   }
 
+  // ───────── 乐韵账号 Drive 小程序（tools/drive-bridge.gs）：传附件、读附件、看备份情况 ─────────
+  const DRIVE_URL = '';   // 小程序的网址，api/backup.js 也有一份；空的 = 还没接好，App 上不显示附件功能
+  async function driveCall(action, body = {}) {
+    if (!DRIVE_URL) throw new Error('Drive 还没接好');
+    await ensureAuth();
+    const token = await idToken();
+    if (!token) throw new Error('要先登录');
+    const r = await fetch(DRIVE_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...body, action, token }) });
+    if (!r.ok) throw new Error(`Drive 连不上（${r.status}）`);
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    return j;
+  }
+  // 备份断了要看得到：超过 3 天没备份，给最高权限（Ronald）一条红色提醒；每 6 小时最多问一次
+  const DRIVE_KEY = 'sicDriveStatus', DRIVE_HIDE = 'sicDriveHide';
+  function driveWatch() {
+    if (!DRIVE_URL || !isMaster() || /^(localhost|127\.)/.test(location.hostname)) return;
+    const go = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      if (lsGet(DRIVE_HIDE) >= today) return;
+      let c = lsGet(DRIVE_KEY);
+      if (!c || Date.now() - c.at > 6 * 3600e3) { c = { at: Date.now(), last: (await driveCall('status')).lastBackupAt }; lsSet(DRIVE_KEY, c); }
+      if (c.last && Date.now() - Date.parse(c.last) < 3 * 864e5) return;
+      const bar = document.createElement('div');
+      bar.style.cssText = 'background:#dc2626;color:#fff;position:relative;z-index:60;display:flex;gap:12px;align-items:flex-start;padding:12px 16px;font-size:14px;line-height:1.6';
+      bar.innerHTML = `<div style="flex:1">🗂️ <b>Drive 备份断了</b>：${c.last ? '最后一次是 ' + c.last.slice(0, 10) : '还没备份成功过'}。叫管家查一下。</div><button style="flex-shrink:0;text-decoration:underline;background:none;border:0;color:inherit;font:inherit;cursor:pointer">知道了</button>`;
+      bar.querySelector('button').onclick = () => { lsSet(DRIVE_HIDE, new Date(Date.now() + 864e5).toISOString().slice(0, 10)); bar.remove(); };
+      document.body.prepend(bar);
+    };
+    const safe = () => go().catch(() => { /* 没网络就算了 */ });
+    if (document.body) safe(); else document.addEventListener('DOMContentLoaded', safe);
+  }
+
   window.sicStaff = { AREAS, ALL, can, isStaff: () => can(), isMaster, unlock, tryPassword, refresh, forget, hash, staffCall, loggedIn, askLogin,
-    cloudUsage, cloudBanner, idToken, syncAuth, ensureAuth, withAuth,
+    cloudUsage, cloudBanner, idToken, syncAuth, ensureAuth, withAuth, driveUrl: DRIVE_URL, driveCall,
     me, findByPhone, phoneHash, normPhone, setMe, memberUnlock, memberSetPin, logout, listMembers, register, memberById, syncMe };
 
   try { localStorage.removeItem('sicStaff'); } catch { /* 旧的「输过 sic」记录不再用 */ }
@@ -418,6 +451,7 @@
   const need = tag && tag.hasAttribute('data-require') ? (tag.getAttribute('data-require') || '') : null;
   syncMe();
   cloudWatch();
+  driveWatch();
   queueAuth();
   if (need === null) { refresh(); return; }
   const kick = () => { document.documentElement.style.display = 'none'; location.replace('/'); };

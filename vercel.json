@@ -1,5 +1,7 @@
 {
   "functions": {
-    "api/summarize.js": { "maxDuration": 300 }
-  }
+    "api/summarize.js": { "maxDuration": 300 },
+    "api/backup.js": { "maxDuration": 120 }
+  },
+  "crons": [{ "path": "/api/backup", "schedule": "0 19 * * *" }]
 }
