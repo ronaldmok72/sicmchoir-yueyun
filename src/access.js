@@ -4,7 +4,7 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const gate = window.sicStaff;
-const AREAS = gate.AREAS;
+const AREAS = gate.AREAS.filter(a => a.key !== 'grant');   // 分区授权只给团员（电话＋PIN），不给密码
 const LABEL = Object.fromEntries(AREAS.map(a => [a.key, a.label]));
 
 let keys = null;   // null = 还没设过（还在用 sic）

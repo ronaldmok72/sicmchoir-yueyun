@@ -79,7 +79,7 @@ async function renderQuiz() {
   const open = await window.sicQuiz?.load();
   const box = $('my-quiz');
   const link = (t, h) => `<a href="${h}" class="block text-indigo-300 hover:text-white">${t} ›</a>`;
-  if (r) box.innerHTML = `<div class="text-white font-semibold">📝 我的测验成绩</div><div class="text-zinc-300">40 题答对 <b class="text-white">${r.totalCorrect}</b> 题</div>`.replace('40', r.totalQuestions) + link('看详细成绩', 'quiz.html');
+  if (r) box.innerHTML = `<div class="text-white font-semibold">📝 我的测验成绩</div><div class="text-zinc-300">${r.totalQuestions} 题答对 <b class="text-white">${r.totalCorrect}</b> 题</div>` + link('看详细成绩', 'quiz.html');
   else if (halfway) box.innerHTML = '<div class="text-white font-semibold">📝 测验</div>' + link('上次做到一半，接着做', 'quiz.html');
   else if (open) box.innerHTML = '<div class="text-white font-semibold">📝 测验</div>' + link('去做测验', 'quiz.html');
   box.classList.toggle('hidden', !r && !halfway && !open);

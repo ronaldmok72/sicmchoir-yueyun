@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 加到手机主画面：一律叫「SIC乐韵」、用乐韵的 logo（不管从哪一页加） -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="SIC乐韵">
+  <meta name="application-name" content="SIC乐韵">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#09090b">
+  <title>分区授权 - 乐韵歌咏团</title>
+  <script src="src/gate.js" data-require="grant"></script>
+  <script src="src/nav.js" defer></script>
+  <link rel="stylesheet" href="tailwind.css">
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-[100dvh] font-sans">
+  <main class="max-w-2xl mx-auto px-4 py-6 pb-24">
+    <header class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-semibold">🗝️ 分区授权</h1>
+      <button type="button" data-nav-open class="shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-slate-200 text-slate-600">☰ 菜单</button>
+    </header>
+    <div id="intro" class="text-sm text-slate-600 mb-3"></div>
+    <input id="q" type="search" placeholder="找名字…" class="w-full border border-slate-300 rounded-lg px-3 py-2 mb-2 text-sm bg-white">
+    <div id="list" class="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 text-sm"></div>
+    <details class="mt-4 bg-white rounded-2xl border border-slate-200 p-4 text-sm">
+      <summary class="font-semibold cursor-pointer">🕘 最近谁开了什么</summary>
+      <div id="log" class="mt-2 space-y-1 text-xs text-slate-600"></div>
+    </details>
+    <div id="status" class="text-xs text-slate-400 text-center mt-4"></div>
+  </main>
+  <script src="src/login.js"></script>
+  <script type="module" src="src/grant.js"></script>
+</body>
+</html>

@@ -41,7 +41,10 @@ service cloud.firestore {
     match /meetings/{id}      { allow read, write: if can(['committee']); }
 
     match /members/{id} {
-      allow write: if can(['members', 'seating']);
+      // 开后台（areas）只有最高权限和登录服务（分区授权）改得到；有团员名单／座位表权限的人改不到
+      allow create: if can(['members', 'seating']) && !request.resource.data.keys().hasAny(['areas']);
+      allow update: if can(['members', 'seating']) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['areas']);
+      allow delete: if can(['members', 'seating']);
       // 自己改自己：名字；改名／合并的待办（电话经登录服务换）
       allow update: if me() == id && changedOnly(['name', 'fullName', 'cname', 'noCname', 'birthday', 'updatedAt', 'pendingRename', 'pendingMerge']);
     }

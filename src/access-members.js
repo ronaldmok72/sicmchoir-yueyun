@@ -8,7 +8,7 @@ import { db, getDocs } from "./firebase.js";
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const gate = window.sicStaff;
-const AREAS = gate.AREAS;
+const AREAS = gate.AREAS.filter(a => a.key !== 'grant');   // 分区授权在「🗝️ 分区授权」那一页指定
 const LABEL = Object.fromEntries(AREAS.map(a => [a.key, a.label]));
 
 let members = [];
@@ -90,7 +90,7 @@ $('m-list').addEventListener('change', async e => {
   const m = members.find(x => x.id === i.dataset.m);
   const set = new Set(m.areas || []);
   i.checked ? set.add(i.dataset.area) : set.delete(i.dataset.area);
-  const areas = AREAS.map(a => a.key).filter(a => set.has(a));
+  const areas = AREAS.map(a => a.key).filter(a => set.has(a)).concat(set.has('grant') ? ['grant'] : []);
   try { await save(m, { areas }, `${m.name} 的权限改好了`); m.areas = areas; render(); }
   catch (err) { console.error(err); alert('保存失败：' + (err.code || err.message)); load(); }
 });

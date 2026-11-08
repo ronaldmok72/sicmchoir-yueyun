@@ -19,7 +19,7 @@
 const crypto = require('crypto');
 
 const PROJECT = 'sicmchoir-yueyun';
-const ALL = ['conduct', 'mass', 'duties', 'seating', 'members', 'attendance', 'notice', 'admin', 'quiz', 'photos', 'committee', 'access'];
+const ALL = ['conduct', 'mass', 'duties', 'seating', 'members', 'attendance', 'notice', 'admin', 'quiz', 'photos', 'committee', 'grant', 'access'];
 const sha = s => crypto.createHash('sha256').update(s).digest('hex');
 // 还没在「密码管理」设过任何密码之前，旧密码 sic 暂时当最高权限（跟 App 一样）
 const BOOT = sha('sicmchoir|sic');
@@ -148,6 +148,7 @@ async function verify(sa, body) {
     const a = ok ? (doc.master ? ALL : (doc.areas || []).filter(a => ALL.includes(a) && a !== 'access')) : [];
     out.pins.push(a.length ? a : null);
   }
+  out.pinOk = !!out.member && pins.some((p, i) => p.m === out.member && out.pins[i]);   // 这位团员自己的 PIN 对了
   [...out.keys, ...out.pins].forEach(a => (a || []).forEach(x => out.areas.add(x)));
   return out;
 }
@@ -161,6 +162,16 @@ function token(sa, areas, member) {
     iat: now, exp: now + 3600, uid,
     claims: { areas: [...areas], member: member || '' },
   }) };
+}
+
+// 分区授权：这次带来的证明，可以替别人开哪几区（最高权限 = 全部，但永远不包括 access 和 grant）
+const grantable = a => ALL.includes(a) && a !== 'access' && a !== 'grant';
+async function grantor(sa, body) {
+  const v = await verify(sa, body);
+  if (v.areas.has('access')) return { v, list: ALL.filter(grantable), master: true };
+  if (!v.pinOk || !v.areas.has('grant')) return { v, list: [], master: false };
+  const s = await getDoc(sa, secPath(v.member));
+  return { v, list: String(s?.grant || '').split(',').filter(grantable), master: false };
 }
 
 const ACTIONS = {
@@ -255,7 +266,7 @@ const ACTIONS = {
     const next = body.list.map(k => ({
       id: str(k?.id, 40), name: str(k?.name, 80).trim(),
       hash: HEX.test(k?.hash || '') ? k.hash : old.get(k?.id)?.hash || '',
-      ...(k?.master ? { master: true } : { areas: (Array.isArray(k?.areas) ? k.areas : []).filter(a => ALL.includes(a) && a !== 'access') }),
+      ...(k?.master ? { master: true } : { areas: (Array.isArray(k?.areas) ? k.areas : []).filter(a => ALL.includes(a) && a !== 'access' && a !== 'grant') }),
     }));
     if (next.some(k => !k.id || !k.hash) || !next.some(k => k.master)) return send(res, 400, { error: '密码表不对' });
     if (new Set(next.map(k => k.hash)).size !== next.length) return send(res, 409, { code: 'dup' });
@@ -288,6 +299,49 @@ const ACTIONS = {
     await patch(sa, secPath(body.id), {}, ['pinHash']);
     await patch(sa, 'members/' + encodeURIComponent(body.id), {}, ['pinHash', 'hasPin']);
     return send(res, 200);
+  },
+  // ── 分区授权：最高权限指定某位团员（例如主席）可以替别人开哪几区 ──
+  // 存在 secrets/m_{团员id}.grant（逗号隔开，手机改不到）；被指定的人名单上多一区 grant，菜单才看得到「分区授权」
+  // 被指定的人一定要电话＋PIN 都对；只能开 Ronald 准的那几区，碰不到最高权限（access）和别人的 grant，也改不到有最高权限的人
+  async grantInfo(sa, body, res) {
+    const g = await grantor(sa, body);
+    if (!g.list.length) return send(res, 401);
+    const log = await getDoc(sa, 'secrets/grantLog');
+    const out = { areas: g.list, master: g.master, log: JSON.parse(log?.json || '[]').slice(-40).reverse() };
+    if (g.master) {
+      const q = await F.getDocs(F.query(await coll(sa, 'secrets'), F.where('grant', '>', '')));
+      out.grants = Object.fromEntries(q.docs.map(d => [d.id.replace(/^m_/, ''), String(d.data().grant).split(',')]));
+    }
+    return send(res, 200, out);
+  },
+  // 帮某位团员开／关一区
+  async grantArea(sa, body, res) {
+    const g = await grantor(sa, body);
+    const id = str(body.id), area = str(body.area, 20);
+    if (!id || !g.list.includes(area)) return send(res, 401);
+    const m = await member(sa, id);
+    if (!m) return send(res, 404);
+    if (m.master && !g.master) return send(res, 403, { error: '这位有最高权限，你改不到' });
+    const set = new Set(m.areas || []);
+    body.on ? set.add(area) : set.delete(area);
+    const areas = [...set];
+    await F.setDoc(await ref(sa, 'members/' + encodeURIComponent(id)), { areas, updatedAt: new Date().toISOString() }, { merge: true });
+    const old = await getDoc(sa, 'secrets/grantLog');
+    const log = JSON.parse(old?.json || '[]').concat({ at: new Date().toISOString(), by: g.v.memberName || '', who: m.name || '', area, on: !!body.on }).slice(-200);
+    await patch(sa, 'secrets/grantLog', { json: JSON.stringify(log) });
+    return send(res, 200, { areas });
+  },
+  // 指定谁可以替别人开、可以开哪几区（只有最高权限）；areas 空 = 拿掉
+  async setGrant(sa, body, res) {
+    if (!(await verify(sa, body)).areas.has('access') || !str(body.id)) return send(res, 401);
+    const m = await member(sa, body.id);
+    if (!m) return send(res, 404);
+    const list = (Array.isArray(body.areas) ? body.areas : []).filter(grantable);
+    await patch(sa, secPath(body.id), list.length ? { grant: list.join(',') } : {}, list.length ? [] : ['grant']);
+    const set = new Set(m.areas || []);
+    list.length ? set.add('grant') : set.delete('grant');
+    await F.setDoc(await ref(sa, 'members/' + encodeURIComponent(body.id)), { areas: [...set], updatedAt: new Date().toISOString() }, { merge: true });
+    return send(res, 200, { grant: list });
   },
   // 合并同一个人的两笔：把要删掉那笔的电话、PIN 搬到留下的那笔（团员名单权限）。其他资料网页自己搬
   async mergeSecrets(sa, body, res) {
