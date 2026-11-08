@@ -205,6 +205,12 @@ function openEditor(m) {
   form.fullName.value = editing.fullName || '';
   form.cname.value = editing.cname || (String(editing.fullName || '').match(/[\u4e00-\u9fff]{2,5}/) || [''])[0];
   form.noCname.checked = !!editing.noCname;
+  if (form.bm.options.length < 2) {
+    const two = n => String(n).padStart(2, '0');
+    form.bm.innerHTML = '<option value="">月</option>' + Array.from({ length: 12 }, (_, i) => `<option value="${two(i + 1)}">${i + 1} 月</option>`).join('');
+    form.bd.innerHTML = '<option value="">日</option>' + Array.from({ length: 31 }, (_, i) => `<option value="${two(i + 1)}">${i + 1} 日</option>`).join('');
+  }
+  [form.bm.value, form.bd.value] = editing.birthday ? editing.birthday.split('-') : ['', ''];
   form.cape.value = editing.cape || '';
   form.active.checked = editing.active !== false;
   form.note.value = editing.note || '';
@@ -272,8 +278,10 @@ form.addEventListener('submit', async e => {
   const name = form.name.value.trim();
   if (!name) return;
   if (members.some(m => m.id !== editing.id && m.name.toLowerCase() === name.toLowerCase()) && !confirm(`已经有一位叫「${name}」，还是要存？（同名的话，建议在名字后面加姓）`)) return;
+  if (!form.bm.value !== !form.bd.value) return alert('生日要月和日都选；不填就两个都留空。');
   const data = {
     name, fullName: form.fullName.value.trim(), voice: pickVoice,
+    birthday: form.bm.value ? `${form.bm.value}-${form.bd.value}` : '',
     cname: form.noCname.checked ? '' : form.cname.value.replace(/\s+/g, ''), noCname: form.noCname.checked,
     voices2: pickVoice ? VOICES.map(v => v.key).filter(k => k && k !== pickVoice && pickVoices2.has(k)) : [],
     gender: pickGender || genderFromVoice(pickVoice), genderGuess: false,

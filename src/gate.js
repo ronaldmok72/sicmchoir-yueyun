@@ -216,7 +216,11 @@
     let m;
     try { m = await memberById(cur.id); } catch { return; }   // 没网络就先照旧
     if (!m) { logout(); return; }
-    try { localStorage.setItem('sicMyAreas', JSON.stringify(m.areas || [])); } catch { /* 没关系 */ }   // 菜单提醒他输 PIN 用
+    try {
+      localStorage.setItem('sicMyAreas', JSON.stringify(m.areas || []));   // 菜单提醒他输 PIN 用
+      localStorage.setItem('sicMyInfo', JSON.stringify({ cname: !!m.cname, noCname: m.noCname === true, birthday: !!m.birthday }));   // 首页提醒他补资料用
+    } catch { /* 没关系 */ }
+    document.dispatchEvent(new CustomEvent('sic-info'));
     if (m.name !== cur.name) { setMe(m); document.dispatchEvent(new CustomEvent('sic-me')); }
   }
   // ───────── 团员小测验：关掉／只开给指定团员／全团 ─────────

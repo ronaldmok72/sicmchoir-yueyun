@@ -150,6 +150,8 @@ const stageNames = d => STAGE.flatMap(k => splitNames(duties[d]?.[k]));
 // ───────── 画面 ─────────
 function render() {
   const isStaff = staff();
+  renderNudge();
+  renderBday();
   renderDates(isStaff);
   renderHead();
   renderRsvp();
@@ -164,6 +166,31 @@ function render() {
   renderSeats(isStaff);
   renderPhotos();
   renderNotices(isStaff);
+}
+
+// 登录了但还没填中文名／生日：提醒去补（按「等下再说」7 天内不再提）
+const NUDGE_KEY = 'sicNudgeAt';
+function renderNudge() {
+  let info = null, snooze = 0;
+  try { info = JSON.parse(localStorage.getItem('sicMyInfo') || 'null'); snooze = Number(localStorage.getItem(NUDGE_KEY) || 0); } catch { /* 没关系 */ }
+  const miss = window.sicStaff?.me() && info ? [!info.cname && !info.noCname && '中文全名', !info.birthday && '生日'].filter(Boolean) : [];
+  const show = miss.length && Date.now() - snooze > 7 * 864e5;
+  $('nudge').classList.toggle('hidden', !show);
+  if (!show) return;
+  $('nudge').innerHTML = `<div>👋 你的资料还差：<b>${miss.join('、')}</b>。</div>
+    <div class="mt-1.5 flex items-center gap-4"><a href="me.html" class="font-semibold text-indigo-700 hover:underline">现在去补 ›</a><button id="nudge-later" class="text-xs text-amber-700 hover:underline">等下再说</button></div>`;
+  $('nudge-later').addEventListener('click', () => { try { localStorage.setItem(NUDGE_KEY, String(Date.now())); } catch { /* 没关系 */ } renderNudge(); });
+}
+document.addEventListener('sic-info', () => { if (date) renderNudge(); });
+
+// 寿星：今天到下一个主日（今天就是主日的话，到下个星期的主日）
+function renderBday() {
+  const dow = new Date(TODAY + 'T12:00').getDay(), last = dow === 0 ? 7 : 7 - dow;
+  const days = Array.from({ length: last + 1 }, (_, i) => addDays(TODAY, i));
+  const list = days.flatMap(d => memberList.filter(m => m.birthday === d.slice(5)).map(m => ({ n: m.cname || m.name, d })));
+  $('bday').classList.toggle('hidden', !list.length);
+  $('bday').innerHTML = list.length ? `<div class="font-semibold">🎂 寿星（今天到 ${md(days.at(-1))} 主日）</div>
+    <div class="mt-1 space-y-0.5">${list.map(x => `<div>${esc(x.n)}　<span class="text-xs text-pink-700">${x.d === TODAY ? '今天生日 🎉' : `${md(x.d)} 星期${week(x.d)}`}</span></div>`).join('')}</div>` : '';
 }
 
 function renderDates(isStaff) {

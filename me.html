@@ -39,6 +39,7 @@
     <section id="body" class="hidden space-y-5">
       <!-- 名单上可能本来就有你 -->
       <div id="merge-box" class="hidden rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-2"></div>
+      <div id="need-box" class="hidden rounded-2xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-200"></div>
 
       <form id="f" class="rounded-2xl bg-zinc-900 border border-white/10 p-4 space-y-4">
         <label class="block space-y-1.5">
@@ -58,6 +59,14 @@
           <span class="flex items-center gap-2 text-xs text-zinc-400"><input name="noCname" type="checkbox" class="h-4 w-4"> 我没有中文名</span>
         </label>
         <div class="space-y-1.5">
+          <span class="text-zinc-400">生日</span>
+          <div class="flex gap-2">
+            <select name="bm" class="flex-1 rounded-xl bg-zinc-800 border border-white/10 px-3 py-3 text-white focus:outline-none focus:border-indigo-400"></select>
+            <select name="bd" class="flex-1 rounded-xl bg-zinc-800 border border-white/10 px-3 py-3 text-white focus:outline-none focus:border-indigo-400"></select>
+          </div>
+          <span class="block text-[11px] text-zinc-500">只放月和日，不用年份。生日那个星期，首页会祝你生日快乐。</span>
+        </div>
+        <div class="space-y-1.5">
           <span class="text-zinc-400">电话</span>
           <div class="flex items-center gap-2">
             <span id="phone-now" class="flex-1 text-zinc-300"></span>
@@ -72,6 +81,13 @@
         <button id="btn-save" class="w-full rounded-xl py-3 font-semibold bg-indigo-600 hover:bg-indigo-500 text-white">保存</button>
         <div id="ok" class="hidden text-emerald-400 text-xs text-center"></div>
       </form>
+
+      <section id="my-att" class="rounded-2xl bg-zinc-900 border border-white/10 p-4 space-y-2">
+        <div class="text-white font-semibold">🗓️ 我的出席和积分</div>
+        <div class="text-[11px] leading-relaxed text-amber-300">还在测试：现在以纸本点名为准，这里的数字还不是正式的。正式从哪天开始算，执委会议决定后会通知。</div>
+        <div id="my-att-list" class="divide-y divide-white/5 text-zinc-500">读取中…</div>
+      </section>
+      <section id="my-quiz" class="hidden rounded-2xl bg-zinc-900 border border-white/10 p-4 space-y-1"></section>
 
       <div class="grid grid-cols-2 gap-2">
         <a href="day.html" class="rounded-xl py-3 text-center bg-white/5 hover:bg-white/10">📅 我坐哪里</a>

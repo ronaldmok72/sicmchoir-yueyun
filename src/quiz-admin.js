@@ -91,6 +91,7 @@ async function load() {
     .map(r => ({ ...r, _t: r.createdAt?.toMillis?.() ?? (Date.parse(r.clientTime) || 0) }))
     .sort((a, b) => b._t - a._t);
   render();
+  if (window.sicStaff?.isMaster() && modeOf(qs) === 'some') renderPick();   // 名单上标「交了」
 }
 
 function rows() {
