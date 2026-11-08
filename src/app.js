@@ -71,7 +71,7 @@ async function init() {
   window.addEventListener('resize', resizeCanvas);
   
   if (btnDraw) btnDraw.addEventListener('click', toggleDrawMode);
-  if (btnSync) btnSync.addEventListener('click', syncSelectedSetlist);
+  if (btnSync) btnSync.addEventListener('click', () => syncSelectedSetlist());
   
   // --- 新增：指挥模式切换逻辑 ---
     if (btnConductor) {
@@ -130,7 +130,9 @@ resizeCanvas();
   flushRenames(db).then(() => refreshLocalTitles());
   window.addEventListener('online', () => flushRenames(db));
   // 从「这台弥撒」总览点「打开乐谱」：?setlist=1018 常年29主日 → 直接下载那份排单
-  const want = new URLSearchParams(location.search).get('setlist');
+  // 「看乐谱」和菜单的「乐谱」（?score）：打开最近一场
+  const params = new URLSearchParams(location.search);
+  const want = params.get('setlist') || (params.has('score') ? nearestSetlist() : null);
   if (want && !allSetlists.some(o => o.id === want)) await addSetlist(want);   // 以前的那一份：单独读
   // 排单被删掉了，但弥撒排歌还记着那一台：照样列出来，载入时照弥撒的歌排
   if (want && !allSetlists.some(o => o.id === want)) { allSetlists.push({ id: want, name: want, date: setlistDate({ name: want }) }); renderSetlistOptions(); }
@@ -138,7 +140,8 @@ resizeCanvas();
     if (!setlistSelect.querySelector(`option[value="${CSS.escape(want)}"]`)) { showPastSetlists = true; renderSetlistOptions(); }
     setlistSelect.value = want;
     history.replaceState(null, '', location.pathname);
-    if (localStorage.getItem('offline_playlist_name') !== want) syncSelectedSetlist();
+    if (localStorage.getItem('offline_playlist_name') !== want) syncSelectedSetlist(`已打开最新排单：${want}`);
+    else refreshIfChanged(want);
   }
 }
 
@@ -189,6 +192,12 @@ function setlistDate(d) {
   if (Number(m[1]) < c.getMonth() + 1 - 6) y++;   // 12 月建 1 月的排单
   return `${y}-${m[1]}-${m[2]}`;
 }
+// 今天或以后、最近的一份有歌的排单
+function nearestSetlist() {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return allSetlists.filter(o => o.date && o.date >= today && o.count !== 0).sort((a, b) => a.date.localeCompare(b.date))[0]?.id || null;
+}
 function renderSetlistOptions() {
   const keep = setlistSelect.value;
   const saved = localStorage.getItem('offline_playlist_name');
@@ -209,7 +218,7 @@ function renderSetlistOptions() {
 
 // 平常只读最近两星期建的、或今天前两星期以后的排单（排单一直累积，以前每次开乐谱都整份读）；all = 连以前的也读
 let allLoaded = false;
-const listItem = (id, d) => ({ id, name: d.name, createdAt: d.createdAt, date: setlistDate(d) });
+const listItem = (id, d) => ({ id, name: d.name, createdAt: d.createdAt, date: setlistDate(d), count: (d.items || []).length });
 async function loadSetlistOptions(all) {
   try {
     const cut = new Date(Date.now() - 14 * 864e5);
@@ -247,7 +256,8 @@ async function itemsFromMass(name) {
   return items.length ? items : null;
 }
 
-async function syncSelectedSetlist() {
+// autoMsg：按「看乐谱／打开乐谱」自动下载的，不跳窗口要人按，只在上面显示一下这句话
+async function syncSelectedSetlist(autoMsg) {
   const selectedId = setlistSelect.value;
   if (!selectedId) {
     alert("请先选择一个排单！");
@@ -257,12 +267,14 @@ async function syncSelectedSetlist() {
   const label = btnSync.innerHTML;
   btnSync.textContent = '载入中…';
   btnSync.disabled = true;
+  if (autoMsg) titleEl.textContent = '正在载入最新乐谱…';
 
   try {
     await flushRenames(db);
     const docRef = doc(db, "setlists", selectedId);
     const docSnap = await getDoc(docRef);
     const items = docSnap.exists() ? docSnap.data().items || [] : await itemsFromMass(selectedId);
+    if (autoMsg && !items?.length) throw new Error('这份排单没有歌');
 
     if (items) {
       PLAYLIST = applyPending(await freshTitles(db, items));
@@ -296,7 +308,9 @@ async function syncSelectedSetlist() {
       // --- 新增：同步完成后，开启监听（照弥撒排出来的没有排单，不能跟指挥翻页）---
       if (docSnap.exists()) startLiveSyncListener(selectedId);
       
-      if (failCount > 0) {
+      if (autoMsg) {
+        flash(failCount ? `有 ${failCount} 首的谱下载不到，其他的好了` : autoMsg);
+      } else if (failCount > 0) {
         alert(`✅ 同步完成！\n成功: ${successCount} 首\n失败: ${failCount} 首 (云端无图片)\n现在可以离线查看了。`);
       } else {
         alert(`✅ 成功同步排单：【${selectedId}】！\n现在可以离线查看了。`);
@@ -307,12 +321,37 @@ async function syncSelectedSetlist() {
     }
   } catch (error) {
     console.error('Sync failed', error);
-    alert('❌ 同步失败，请检查网络连接。');
+    if (autoMsg) {
+      // 下载不到：画面和排单选单换回手机里原来那一份
+      const had = localStorage.getItem('offline_playlist_name');
+      if (had && setlistSelect.querySelector(`option[value="${CSS.escape(had)}"]`)) setlistSelect.value = had;
+      if (PLAYLIST.length) loadSong(currentIndex); else titleEl.textContent = "按右下角「排单」选一份";
+      flash(PLAYLIST.length ? '下载不到最新排单，现在显示的是手机里上次的谱' : '下载不到排单，检查一下网络');
+    } else alert('❌ 同步失败，请检查网络连接。');
   } finally {
     btnSync.innerHTML = label;
     btnSync.disabled = false;
     document.getElementById('tool-panel')?.classList.add('hidden');
   }
+}
+
+// 上面显示几秒的小字，不用人按
+function flash(msg) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  el.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:9999;max-width:88vw;padding:8px 14px;border-radius:12px;background:rgba(24,24,27,.94);color:#fff;font-size:13px;border:1px solid rgba(255,255,255,.15);text-align:center;pointer-events:none';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// 手机里已经是这一份：有网络就对一下，歌或谱改过才重新下载（标注是跟着每首歌存的，不会不见）
+async function refreshIfChanged(id) {
+  try {
+    const d = await getDoc(doc(db, 'setlists', id));
+    const items = d.exists() ? d.data().items || [] : await itemsFromMass(id);
+    const key = l => JSON.stringify(l.map(x => [x.id, x.imageUrl]));
+    if (items?.length && key(items) !== key(PLAYLIST)) syncSelectedSetlist('排单有更新，已换成最新的');
+  } catch (err) { console.warn('对排单失败', err); }   // 没网络就照手机里的
 }
 
 // 本地存着的排单：歌名跟曲库对一下（别的手机改过名，这里也跟上）
