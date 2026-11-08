@@ -1,8 +1,9 @@
 // 改歌名：乐谱（指挥模式）和排单后台共用
 // 歌名以曲库 custom_songs 为准（靠 id 认歌）；排单里只改那一首，不会把整份排单盖回去
-// 每次改名都记在 song_renames，密码管理旁边的「改名记录」看得到、改得回去
-import { doc, setDoc, addDoc, collection, runTransaction } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+// 每次改名都记在「改动记录」（changelog.js），看得到、改得回去
+import { doc, setDoc, runTransaction } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { bumpSongs, customSongs } from "./song-cache.js";
+import { logChange } from "./changelog.js";
 
 // r = { id, imageUrl, oldTitle, newTitle, where, setlistId, at }
 // 谁改的：用电话登录的就记他的名字；只输了后台密码的记「用后台密码的人」
@@ -18,10 +19,10 @@ export async function renameSong(db, r) {
       t.update(ref, { items });
     });
   }
-  await addDoc(collection(db, 'song_renames'), {
+  await logChange(db, {
+    cat: '改名', item: r.newTitle, at: r.at, by: r.by,
     songId: r.id, oldTitle: r.oldTitle, newTitle: r.newTitle, imageUrl: r.imageUrl || '',
-    where: r.where || '', setlist: r.setlistId || '', at: r.at || new Date().toISOString(),
-    by: r.by || window.sicStaff?.me?.()?.name || '用后台密码的人',
+    where: r.where || '', setlist: r.setlistId || '',
   });
 }
 

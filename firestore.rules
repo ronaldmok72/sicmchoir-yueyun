@@ -18,13 +18,18 @@ service cloud.firestore {
 
     // 其他没列出来的：只有最高权限能改；secrets 谁都不能看；meetings（执委会议记录）在下面另外管
     match /{coll}/{document=**} {
-      allow read: if coll != 'secrets' && coll != 'meetings';
+      allow read: if coll != 'secrets' && coll != 'meetings' && coll != 'changelog';
       allow write: if coll != 'secrets' && can([]);
     }
 
     // secrets 只给登录服务（/api/login 自己发的 svc 通行证，只有服务器钥匙发得出）读写；App 的手机谁都碰不到
     match /secrets/{id}       { allow read, write: if signedIn() && request.auth.token.get('svc', false) == true; }
 
+    // 改动记录：有任何后台权限的人看得到、加得到；只能加，不能减（最高权限走上面那条，什么都能改）
+    match /changelog/{id} {
+      allow read, create: if areas().size() > 0;
+      allow update: if areas().size() > 0 && request.resource.data.entries.size() > resource.data.entries.size();
+    }
     match /setlists/{id}      { allow write: if can(['admin', 'mass', 'conduct']); }
     match /custom_songs/{id}  { allow write: if can(['admin', 'mass', 'conduct']); }
     match /song_renames/{id}  { allow write: if can(['admin', 'conduct']); }

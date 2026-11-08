@@ -3,6 +3,7 @@ import { collection, doc, setDoc, deleteDoc, updateDoc, deleteField } from "http
 import { db, getDocs, getDoc, history as recentDocs } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { bumpSongs } from "./song-cache.js";
+import { logChange } from "./changelog.js";
 import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
 import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER } from "./autofill.js";
 import { WEDDING_ROLES, WEDDING_TIMES, timeText, findMember, roleZh } from "./weddings-common.js";
@@ -551,6 +552,7 @@ async function save() {
     renderHeader();
     renderSlots();
     $('status').textContent = `✅ 已保存，乐谱排单「${name}」已更新（${items.length} 页）`;
+    logChange(db, { cat: '弥撒排歌', item: `${M.date} ${M.title}`, text: `保存了（${items.length} 页）`, merge: true });
   } catch (e) {
     console.error(e);
     alert('保存失败：' + (e.code || e.message));
@@ -573,6 +575,7 @@ $('btn-not-mass').addEventListener('click', async () => {
     if (!(await getDoc(ref)).exists()) { btn.disabled = false; return alert(`找不到乐谱排单「${name}」，这次没有改动。请交给管家。`); }
     await updateDoc(ref, { date: deleteField() });
     await deleteDoc(doc(db, MASSES, M.id));
+    await logChange(db, { cat: '排单', item: name, text: `不是弥撒，从弥撒排歌移到排单后台（${M.date}）` });
     alert(`✅ 移好了。排单「${name}」现在在「排单后台」的历史排单里。`);
     location.href = 'mass.html';
   } catch (e) {
@@ -695,6 +698,7 @@ $('btn-bulk').addEventListener('click', async () => {
   await loadMasses();
   openMass(masses.find(x => x.id === plan[0].m.id));
   $('status').textContent = `✅ 排好 ${plan.length} 场草稿，在上面的选单里一场一场检查`;
+  logChange(db, { cat: '弥撒排歌', item: `${plan[0].m.date} 起 ${plan.length} 场`, text: '自动排了草稿' });
 });
 $('mass-select').addEventListener('change', e => {
   if (e.target.value === '__new') return;

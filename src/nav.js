@@ -30,7 +30,7 @@
     { href: 'committee.html', icon: '🏛️', title: '执委专区', sub: '会议记录、待办、团室物品、财政记录', staff: 'committee' },
     { group: '🔑 权限', tone: 'violet', back: true },
     { href: 'grant.html', icon: '🔑', title: '后台权限', sub: '谁可以进哪个后台、谁可以帮别人开', staff: 'grant' },
-    { href: 'renames.html', icon: '✏️', title: '改名记录', sub: '谁改了哪首歌的名字，可以改回去', staff: 'access', masterOnly: true },
+    { href: 'renames.html', icon: '📝', title: '改动记录', sub: '谁改了什么：改名、排单、弥撒排歌、座位表', anyStaff: true },
   ];
   // 每一块一个颜色：[整块的底和边, 标题字, 图示底]（要写完整的字，Tailwind 才认得）
   const TONE = {
@@ -120,7 +120,7 @@
     const passLine = staff || (who && !pass) ? `<div class="px-3 pb-1 text-[11px] ${pass ? 'text-emerald-400/80' : 'text-zinc-500'}">${pass ? `通行证 ✅${pass.areas?.length ? `（后台 ${pass.areas.length} 区）` : ''}` : '通行证还没领到'}</div>` : '';
     const pinLine = who && pendingPin(gate) ? '<button data-act="pin" class="w-full text-left px-3 py-2.5 mb-1 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-sm text-amber-200">🔑 你的后台开通了，按这里输 PIN ›</button>' : '';
     const quizTest = gate?.can('quiz');
-    const allowed = p => p.group || ((!p.quiz || quizOpen || quizTest || quizDone() || quizDraft()) && (!p.staff || gate?.can(p.staff)) && (!p.masterOnly || gate?.isMaster()));
+    const allowed = p => p.group || ((!p.quiz || quizOpen || quizTest || quizDone() || quizDraft()) && (!p.staff || gate?.can(p.staff)) && (!p.anyStaff || gate?.isStaff()) && (!p.masterOnly || gate?.isMaster()));
     const vis = PAGES.filter(allowed).filter((p, i, a) => !p.group || (a[i + 1] && !a[i + 1].group));   // 下面没有页的分组，标题也不要
     const quizSub = quizDraft() ? '上次做到一半，按这里接着做' : quizDone() ? '✅ 做完了，按这里看我的结果' : quizOpen ? '' : '现在没开给团员，只有你看得到';
     // 一块一块：每块一个颜色；后台的前面隔一条线

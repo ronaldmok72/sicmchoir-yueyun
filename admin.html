@@ -214,6 +214,7 @@
     import { getFirestore, doc, setDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
     import { LIBRARY_DATA } from "./src/library.js";
     import { renameSong } from "./src/rename.js";
+    import { logChange } from "./src/changelog.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyD77WKlfYpUS1MJKu5J_xdV3adMZc5-c8U",
@@ -614,7 +615,9 @@
         try {
           // 注意：这里需要确保顶部 import 了 deleteDoc
           // import { ..., deleteDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+          const gone = window._setlists?.[id]?.items || [];
           await deleteDoc(doc(db, "setlists", id ));
+          await logChange(db, { cat: '排单', item: id, text: `删除了这份排单（${gone.length} 首）${gone.length ? '：' + gone.map(x => x.title).join('、') : ''}` });
           alert(`✅ 已删除排单：${id}`);
           window.loadHistory(); 
         } catch (error) {
@@ -648,6 +651,7 @@
           createdAt: new Date().toISOString(),
           items: payload
         });
+        logChange(db, { cat: '排单', item: setNameInput, text: `发布了排单（${payload.length} 首）`, merge: true });
         alert(`🎉 成功发布/保存排单：【${setNameInput}】！`);
         window.loadHistory(); 
       } catch (error) {
@@ -770,7 +774,7 @@
     };
 
 
-    // --- 改歌名：存进曲库，每次都留记录（密码管理旁边的「改名记录」看得到、改得回去）---
+    // --- 改歌名：存进曲库，每次都留记录（「改动记录」看得到、改得回去）---
     window.renameLibrarySong = async function(id) {
       const song = LIBRARY_DATA.find(s => s.id === id);
       if (!song) return;

@@ -8,6 +8,7 @@
 //   人只拿排歌页「来唱的团员」，琴师从「谁做什么」拿
 import { collection, doc, setDoc, updateDoc, arrayUnion, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs, history as recentDocs } from "./firebase.js";
+import { logChange } from "./changelog.js";
 import { litDay } from "./liturgy.js";
 import { genderOf, VOICE_SHORT, normVoice } from "./people.js";
 import { timeText, findMember } from "./weddings-common.js";
@@ -482,6 +483,7 @@ async function save() {
     await setDoc(doc(db, SEATINGS, cur.key), data);
     const first = !S[cur.key];
     S[cur.key] = data;
+    logChange(db, { cat: '座位表', item: `${cur.date.split('-').reverse().slice(0, 2).map(Number).join('/')}${W[cur.key] ? '（婚礼）' : ''} 座位表`, text: '改了座位', merge: true });
     if (first) { renderDates(); $('seed-box').classList.add('hidden'); }
     $('status').textContent = adopted.length ? `✓ 已保存。📌 ${adopted.join('；')}` : flash ? `✓ 已保存。${flash}` : `✓ 已保存 ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
     flash = '';
