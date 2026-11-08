@@ -1371,13 +1371,25 @@ async function shrinkReceipt(file) {
   return { blob: file, mime: file.type, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() };
 }
 // 一个一个传；中途失败的话，传好的已经搬到 kept，再按保存只传剩下的
+// 手机、截图自动取的名字没有意义，不接在后面
+const AUTO_FILE_NAME = /^(?:(?:img|image|pxl|dsc[nf]?|mvimg|photo|scan|screenshot|file|document|mmexport|fb_img|received|cam|wp)[\s_-]*[\d(]|screen ?shot|whatsapp (?:image|video)|截图|屏幕截图|微信图片|image$|untitled|download|[\d\s_.()-]+$|[0-9a-f]{8}-[0-9a-f]{4}|\d{4}-\d{2}-\d{2}_(?:收入|支出)_)/i;
+// 存进 Drive 的名字：日期_类别_项目_金额_第几个，后面接上传的人自己取的名字（最多 100 个字，整个不超过 150）
+function finFileName(data, nth, ext, original) {
+  const head = `${data.date}_${data.type === 'out' ? '支出' : '收入'}_${data.what}_RM${(data.cents / 100).toFixed(2)}_${nth}`;
+  const own = String(original || '').replace(/\.[^.]*$/, '').trim();
+  const room = 150 - head.length - ext.length - 2;
+  if (!own || AUTO_FILE_NAME.test(own) || room < 1) return `${head}.${ext}`;
+  const kept = [...own].slice(0, 100);
+  while (kept.join('').length > room) kept.pop();
+  return `${head}_${kept.join('').trim()}.${ext}`;
+}
 async function uploadPicked(data, say) {
   const d = finDraft, total = d.picked.length;
   for (let n = 1; d.picked.length; n++) {
     say(`上传中 ${n}/${total}…`);
     const f = d.picked[0], nth = d.kept.length + 1;
     const out = f.type === 'application/pdf' ? { blob: f, mime: f.type, ext: 'pdf' } : await shrinkReceipt(f);
-    const name = `${data.date}_${data.type === 'out' ? '支出' : '收入'}_${data.what}_RM${(data.cents / 100).toFixed(2)}_${nth}.${out.ext}`;
+    const name = finFileName(data, nth, out.ext, f.name);
     const j = await window.sicStaff.driveCall('upload', { name, mime: out.mime, date: data.date, data: await fileB64(out.blob) });
     d.kept.push({ id: j.id, name: j.name, mime: j.mime });
     d.picked.shift();
