@@ -38,6 +38,15 @@ async function loadSwitch() {
   picked = new Set(qs.allow);
   if (window.sicStaff?.isMaster()) people = (await window.sicStaff.listMembers()).filter(m => m.active !== false).sort((a, b) => a.name.localeCompare(b.name, 'zh'));
   renderSwitch();
+  if (ALL.length && people.length) render();   // 成绩比名单先读好的话，补上「这份是谁的」
+}
+// 早期没登录就交的测验没有账号记号，本人登录后找不到。最高权限在这里指定一次是谁的（不靠猜姓氏，同姓的人才不会看到别人的成绩）
+function linkPicker(r) {
+  if (r.memberId || !people.length) return '';
+  const words = (r.nameKey || '').split(/\s+/);
+  const near = m => words.some(w => m.name.toLowerCase().split(/\s+/).includes(w));
+  const opts = [...people].sort((a, b) => near(b) - near(a));
+  return `<select data-link="${esc(r.id)}" class="mt-1 block w-32 text-xs border border-amber-300 rounded-md px-1 py-1 bg-amber-50 text-amber-800"><option value="">⚠️ 这份是谁的？</option>${opts.map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('')}</select>`;
 }
 function renderSwitch() {
   const master = window.sicStaff?.isMaster(), mode = modeOf(qs);
@@ -216,6 +225,7 @@ function render() {
               <ul class="list-none">${wrongHtml || '<li>全对</li>'}</ul>
             </div>
           </details>
+          ${linkPicker(r)}
         </td>
         <td class="py-2.5 pr-3 font-semibold">${r.totalCorrect ?? '—'}</td>
         ${CATS.map(c => `<td class="py-2.5 pr-3">${cell(r, c)}</td>`).join('')}
@@ -244,6 +254,14 @@ function render() {
       if (v === null) ALL.filter(x => x.nameKey === r?.nameKey).forEach(x => { x.ronaldScore = null; });
     } catch (e) { alert('存不进去：' + (e.code || e.message)); }
     sel.disabled = false;
+  }));
+  $('people').querySelectorAll('[data-link]').forEach(sel => sel.addEventListener('change', async () => {
+    const r = ALL.find(x => x.id === sel.dataset.link), m = people.find(x => x.id === sel.value);
+    if (!r || !m) return;
+    if (!confirm(`「${r.name}」这一份是 ${m.name} 的？对上之后，他登录就看得到自己的成绩。`)) { sel.value = ''; return; }
+    sel.disabled = true;
+    try { await updateDoc(doc(db, RESULTS, r.id), { memberId: m.id }); r.memberId = m.id; render(); }
+    catch (e) { alert('存不进去：' + (e.code || e.message)); sel.disabled = false; sel.value = ''; }
   }));
   $('people').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm(`删除「${b.dataset.name}」这一份结果？删了就找不回来。`)) return;
