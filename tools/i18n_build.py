@@ -21,6 +21,18 @@ fix = json.load(open(FIX_FILE, encoding='utf-8')) if os.path.exists(FIX_FILE) el
 en.update(fix)
 src += [k for k in fix if k not in set(src)]   # 手动加的新句子
 
+# 固定的东西不翻（Ronald 2026-11-13）：礼仪名称、节日、弥撒各部分的名称、甲乙丙年 —— 照中文
+FIXED = ('将临期 四旬期 复活期 常年期 圣诞期 主日 第 甲年 乙年 丙年 '
+         '圣诞前夕 圣诞节前夕 圣诞节 圣诞 圣家节 天主之母节 主显节 主受洗节 圣灰礼仪 圣枝主日 主的晚餐 主受难日 复活前夕 复活节 '
+         '耶稣升天节 圣神降临节 天主圣三节 基督圣体圣血节 耶稣圣心节 诸圣节 追思已亡节 光荣十字圣架节 圣母升天节 '
+         '圣母始胎无染原罪节 献耶稣于圣殿节 耶稣显圣容节 主保庆典 新春感恩弥撒 新年前夕 耶稣普世君王节 基督君王 '
+         '进堂咏 答唱咏 奉献咏 奉献歌 领主咏 谢主咏 礼成咏 垂怜曲 垂怜经 光荣颂 福音前欢呼 阿肋路亚 圣圣圣 羔羊颂 '
+         '天主经 信经 祝圣后欢呼词 欢迎曲 集祷经 读经一 读经二 福音 答唱咏').split()
+FIXED_RE = re.compile('^(?:' + '|'.join(sorted(map(re.escape, FIXED), key=len, reverse=True)) + ')+$')
+def fixed(k):
+    core = re.sub(r'\{\d+\}|[\s\d·•、，,：:（）()\-–~/&＋+📅🎵🎶✓]', '', k)
+    return bool(core) and bool(FIXED_RE.match(core))
+
 missing, bad, p, t = [], [], {}, {}
 for k in src:
     v = en.get(k)
@@ -28,7 +40,7 @@ for k in src:
         missing.append(k); continue
     if not isinstance(v, str) or not v.strip() or v == k:
         continue
-    if k not in fix and (len(k) <= 1 or k in SKIP) or len(k) > 300:   # 太长的（给 AI 的指示、祷文）不是画面上的字
+    if k not in fix and (len(k) <= 1 or k in SKIP or fixed(k)) or len(k) > 300:   # 太长的（给 AI 的指示、祷文）不是画面上的字
         continue
     ks, vs = sorted(re.findall(r'\{\d+\}', k)), sorted(re.findall(r'\{\d+\}', v))
     if ks != vs:

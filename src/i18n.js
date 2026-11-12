@@ -15,7 +15,7 @@
 
   document.documentElement.lang = 'en';
   document.documentElement.classList.add('sic-en-wait');
-  document.write('<style>html.sic-en-wait body{opacity:0}</style><script src="/src/i18n-en.js?v=3409d120"><\/script>');
+  document.write('<style>html.sic-en-wait body{opacity:0}</style><script src="/src/i18n-en.js?v=2f88fe60"><\/script>');
 
   const HAN = /[㐀-鿿]/;
   let P = null, T = [];
@@ -63,14 +63,11 @@
     if (i < 0) return [...x].map(c => D.indexOf(c)).join('');
     return String((i ? D.indexOf(x[0]) : 1) * 10 + (x[i + 1] ? D.indexOf(x[i + 1]) : 0));
   }
-  // 带日期的一行（排单、座位表的列表）：里面的礼仪名称、星期几、时间、状态一块一块换；只限有日期的行，歌名不会被动到
-  const SEASON = { 常年期: 'Ordinary Time', 将临期: 'Advent', 四旬期: 'Lent', 复活期: 'Easter' };
-  const SEASON_RE = /(常年期|将临期|四旬期|复活期)第\s*([0-9〇一二三四五六七八九十廿]+)\s*主日/g;
+  // 带日期的一行（排单、座位表的列表）：里面的星期几、时间、状态一块一块换；礼仪名称、歌名是固定的，照中文
   const DATED = /\d{1,2}\/\d{1,2}|\d{4}-\d{2}-\d{2}/;
   function phrase(n) {
     if (!DATED.test(n)) return null;
-    let x = n.replace(SEASON_RE, (_, a, k) => `${SEASON[a]} Sunday ${CN.test(k) ? cn2n(k) : k}`)
-      .replace(/星期([日一二三四五六])/g, (_, d) => WD[d])
+    let x = n.replace(/星期([日一二三四五六])/g, (_, d) => WD[d])
       .replace(/(早上|上午|中午|下午|晚上)\s*(\d{1,2}[:.]\d{2}(?:\s*[–-]\s*\d{1,2}[:.]\d{2})?)/g, (_, a, t) => `${t} ${/早|上午/.test(a) ? 'am' : 'pm'}`);
     x = x.split(/(\s+|（[^（）]*）)/).map(tok => {
       if (!HAN.test(tok)) return tok;
