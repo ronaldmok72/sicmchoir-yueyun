@@ -18,7 +18,7 @@ service cloud.firestore {
 
     // 其他没列出来的：只有最高权限能改；secrets 谁都不能看；meetings（执委会议记录）在下面另外管
     match /{coll}/{document=**} {
-      allow read: if coll != 'secrets' && coll != 'meetings' && coll != 'changelog';
+      allow read: if coll != 'secrets' && coll != 'meetings' && coll != 'changelog' && coll != 'leave_reasons';
       allow write: if coll != 'secrets' && can([]);
     }
 
@@ -68,6 +68,16 @@ service cloud.firestore {
         && request.resource.data.get('votes', {}).keys().hasOnly([me()]) && request.resource.data.get('names', {}).keys().hasOnly([me()]);
       allow update: if me() != '' && changedOnly(['votes', 'names', 'updatedAt'])
         && ownOnly('votes') && ownOnly('names');
+    }
+
+    // 请假原因：只有点名负责人和本人看得到；团员只能写、删自己的（id = 那一格_团员id）
+    match /leave_reasons/{id} {
+      allow read: if can(['attendance', 'admin']) || (me() != '' && resource.data.member == me());
+      allow create, update: if me() != '' && request.resource.data.member == me()
+        && id == request.resource.data.slot + '_' + me()
+        && request.resource.data.keys().hasOnly(['slot', 'member', 'name', 'reason', 'updatedAt'])
+        && request.resource.data.reason is string && request.resource.data.reason.size() > 0 && request.resource.data.reason.size() <= 1000;
+      allow delete: if can(['attendance', 'admin']) || (me() != '' && resource.data.member == me());
     }
 
     match /quiz_results/{id} {
