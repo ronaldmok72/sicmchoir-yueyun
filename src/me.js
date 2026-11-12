@@ -3,7 +3,7 @@
 import { collection, doc, updateDoc, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs, getDoc, RESULTS } from "./firebase.js";
 import { renameEverywhere, mergeMembers, lookAlikes } from "./members-common.js";
-import { markOf, scoreOf, fmtPts } from "./checkin-common.js";
+import { markOf, scoreOf, fmtPts, OFFICIAL_FROM } from "./checkin-common.js";
 import { VOICE_NAME, normVoice } from "./people.js";
 
 const $ = id => document.getElementById(id);
@@ -80,7 +80,10 @@ async function renderAttendance() {
   const since = c => getDocs(query(collection(db, c), where(documentId(), '>=', `${y}-01-01`))).catch(() => ({ docs: [] }));
   const [at, rv, cfg] = await Promise.all([since('attendance'), since('rsvp'), getDoc(doc(db, 'config', 'attendance')).catch(() => null)]);
   const votes = Object.fromEntries(rv.docs.map(d => [d.id, d.data().votes || {}]));
-  const evs = at.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.date && e.date <= today);
+  // 2027-01-01 起正式算，之前试行的不算进去
+  const official = today >= OFFICIAL_FROM;
+  if (official) $('my-att-note')?.remove();
+  const evs = at.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.date && e.date <= today && (!official || e.date >= OFFICIAL_FROM));
   const need = cfg?.data?.()?.need || 7;
   const line = (label, list, want) => {
     const c = { P: 0, T: 0, L: 0, A: 0 };

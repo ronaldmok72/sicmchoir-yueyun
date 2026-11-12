@@ -2,10 +2,10 @@
 // 每一次点名 = attendance/{日期_种类} { date, kind, title, marks: { 团员id: P|T|L|A }, names: { 团员id: 名字 } }
 // 每点一个人就存那一个人（两个人一起点也不会互相盖掉）
 // 章程：3 个月出席 7 次（config/attendance.need 可以改）；有到 + 迟到早退 = 出席，请假不算出席也不算缺席
-import { collection, doc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs, getDoc, history as recentDocs } from "./firebase.js";
 import { litDay } from "./liturgy.js";
-import { DEFAULT_TIME, slotNow, tokenOf, randomSecret, hm, PTS, markOf, scoreOf, fmtPts } from "./checkin-common.js";
+import { DEFAULT_TIME, slotNow, tokenOf, randomSecret, hm, PTS, markOf, scoreOf, fmtPts, OFFICIAL_FROM, OFFICIAL_TXT } from "./checkin-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -28,6 +28,7 @@ let rsvp = {};               // 这次点名的投票（团员在「这台弥撒
 let events = {};             // 点名id → 资料
 let adjusted = {};           // 这台弥撒页调整过的星期四／六练歌：rsvp/{日期}_practice 有 off 或 start／end
 let extras = {};             // 这台弥撒页加的特别练习：rsvp/{日期}_other = { label, start, end }
+let why = {};                // 这次点名：团员id → 请假原因（leave_reasons/{点名id}_{团员id}）
 let votes = {};              // 点名id → 投票 { 团员id: 'Y'|'N' }（rsvp/{日期_种类}，按「不来」= 请假）
 let need = 7;                // 每 3 个月要出席几次
 let unsub = null;
@@ -79,6 +80,9 @@ function openEvent() {
     renderRoll();
   }, err => console.error(err));
   rsvp = {};
+  why = {};
+  getDocs(query(collection(db, 'leave_reasons'), where(documentId(), '>=', id + '_'), where(documentId(), '<=', id + '_')))
+    .then(q => { if (curId() !== id) return; q.docs.forEach(d => { why[d.data().member] = d.data().reason; }); renderRoll(); }).catch(() => {});
   getDoc(doc(db, 'rsvp', id)).then(s => { votes[id] = s.exists() ? s.data().votes || {} : {}; if (curId() === id) { rsvp = votes[id]; renderRoll(); } }).catch(() => {});
   renderRoll();
 }
@@ -107,7 +111,7 @@ function renderRoll() {
         <span class="font-semibold">${esc(p.name)}</span>
         ${p.fullName && p.fullName !== p.name ? `<span class="text-xs text-slate-400 ml-1">${esc(p.fullName)}</span>` : ''}
         ${p.gone ? '<span class="text-xs text-slate-400 ml-1">不在名单了</span>' : ''}
-        ${rsvp[p.id] === 'Y' ? '<span class="text-xs text-emerald-700 ml-1">🙋 说会来</span>' : rsvp[p.id] === 'N' ? `<span class="text-xs text-sky-700 ml-1">🙅 说不来${marks[p.id] ? '' : '（算请假）'}</span>` : ''}
+        ${rsvp[p.id] === 'Y' ? '<span class="text-xs text-emerald-700 ml-1">🙋 说会来</span>' : rsvp[p.id] === 'N' ? `<span class="text-xs text-sky-700 ml-1">🙅 说不来${marks[p.id] ? '' : '（算请假）'}${why[p.id] ? `：${esc(why[p.id])}` : ''}</span>` : ''}
         ${k(p) ? `<span class="text-xs text-slate-400 ml-1">${fmtPts(scoreOf(e, p.id, rsvp[p.id]))} 分</span>` : ''}
         ${e?.times?.[p.id] ? `<div class="text-[11px] text-slate-400">📱 ${e.times[p.id].in ? `到 ${hm(e.times[p.id].in)}` : '<span class="text-amber-600">没签到</span>'}${e.times[p.id].out ? ` · 走 ${hm(e.times[p.id].out)}` : ' · <span class="text-amber-600">还没签退</span>'}</div>` : ''}
       </div>
@@ -266,15 +270,17 @@ function periods() {
     { key: 'r12', label: '最近 12 个月', from: back(12), to: TODAY, q: 4 },
   ];
   // 有点名记录的每一季
-  const qs = new Set(Object.values(events).map(e => `${e.date.slice(0, 4)}-${Math.floor((+e.date.slice(5, 7) - 1) / 3) + 1}`));
+  const qs = new Set(Object.values(events).filter(e => e.date).map(e => `${e.date.slice(0, 4)}-${Math.floor((+e.date.slice(5, 7) - 1) / 3) + 1}`));
   qs.add(`${now.getFullYear()}-${Math.floor(now.getMonth() / 3) + 1}`);
   [...qs].sort().reverse().forEach(k => {
     const [y, n] = k.split('-').map(Number);
     const m1 = (n - 1) * 3 + 1;
     list.push({ key: 'q' + k, label: `${y} 年第 ${n} 季（${m1}–${m1 + 2} 月）`, from: `${y}-${String(m1).padStart(2, '0')}-01`, to: `${y}-${String(m1 + 2).padStart(2, '0')}-31`, q: 1 });
   });
-  list.push({ key: 'all', label: '全部', from: '0000', to: '9999', q: 0 });
-  return list;
+  list.push({ key: 'all', label: TODAY >= OFFICIAL_FROM ? `全部（${OFFICIAL_FROM.slice(0, 4)} 年起）` : '全部', from: '0000', to: '9999', q: 0 });
+  // 正式开始算以后：之前试行的不算进去
+  if (TODAY < OFFICIAL_FROM) return list;
+  return list.filter(p => p.to >= OFFICIAL_FROM).map(p => ({ ...p, from: p.from < OFFICIAL_FROM ? OFFICIAL_FROM : p.from }));
 }
 
 function renderPeriods() {
@@ -320,6 +326,7 @@ function renderStats() {
        ${want ? `<div class="text-slate-600">${okN ? `✅ <b>${okN}</b> 人已经够 ${want} 次。` : ''}${p.q >= 4 ? `一年积分 <b>${want}</b> 分就可以提名、晋升` : `这段时间要 <b>${want}</b> 分`}（每 3 个月 ${need} 分，会一直累积上去）。</div>` : ''}
        <div class="text-xs text-slate-400">积分：完整出席 1 · 迟到、早退各扣 0.2 · 只签到没签退 0.5 · 请假 0.1（在 App 按不来也算）· 缺席 0</div>
        ${first && first > p.from && p.key !== 'all' ? `<div class="text-xs text-slate-400">点名记录从 ${dm(first)} 才开始，之前纸上的没算进来，次数会慢慢累积。</div>` : ''}`;
+  if (TODAY < OFFICIAL_FROM) $('s-head').insertAdjacentHTML('afterbegin', `<div class="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-2.5 py-1.5 text-xs">🧪 试行中：出席率 ${OFFICIAL_TXT}起正式计算，现在的数字只供参考，不作准。</div>`);
 
   $('s-list').innerHTML = evs.length ? came.map(r => `
     <div class="flex items-center gap-3 px-3.5 py-2.5">
@@ -353,6 +360,7 @@ $('s-copy').addEventListener('click', async () => {
   const s = lastStats; if (!s?.evs.length) return;
   const kindTxt = s.kind ? `只算${KIND[s.kind]}，` : '';
   let t = `📊 *乐韵歌咏团出席率*\n${s.p.label}（${dm(s.evs[0].date)}–${dm(s.evs.at(-1).date)}），${kindTxt}点名 ${s.evs.length} 次`;
+  if (TODAY < OFFICIAL_FROM) t += `\n（试行中，${OFFICIAL_TXT}起正式计算，现在的数字不作准）`;
   t += `\n\n🏆 积分（出席次数）：\n${s.rows.map(r => `${s.rows.findIndex(x => x.score === r.score) + 1}. ${r.name} ${fmtPts(r.score)} 分（${r.att} 次）${r.ok ? ' ✅' : ''}`).join('\n')}`;
   if (s.want) t += `\n\n✅ = 已经够 ${s.want} 分${s.p.q >= 4 ? '（一年 ' + s.want + ' 分可以提名、晋升）' : ''}`;
   t += `\n\n积分：完整出席 1｜迟到、早退各扣 0.2｜只签到没签退 0.5｜请假 0.1｜缺席 0`;

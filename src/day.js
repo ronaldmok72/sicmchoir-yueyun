@@ -3,7 +3,7 @@
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
 // 这里会写的只有两样：团员投票会不会来（rsvp/{日期_practice|mass}）、合照（photos/{日期 或 婚礼id}，相片本身放 Cloudinary）
 import { collection, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc, query, where, documentId, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, getDocs } from "./firebase.js";
+import { db, getDocs, getDoc } from "./firebase.js";
 import { customSongs, cachedSongs } from "./song-cache.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
@@ -35,6 +35,9 @@ let notices = [], songTitles = {};
 let specials = {};   // 婚礼 { 日期: [几台] }：排歌页 masses 里有 kind 的
 let wseats = {};     // 婚礼的座位表 seatings/{日期_时间}
 let memberList = [];
+let reasons = {};    // leave_reasons/{那一格}_{团员id}：{ reason }；只有点名负责人和本人读得到
+let reasonsFor = ''; // 读过哪一天、谁的请假原因
+let leaveFor = null; // 正在写请假原因的那一格
 let rsvps = {};      // rsvp/{日期_kind}：{ votes: { 团员id: 'Y'|'N' }, names }
 let photos = {};     // photos/{日期 或 婚礼id}：{ items: [{ url, by, at }] }
 let date = null;
@@ -569,6 +572,7 @@ function renderRsvp() {
   const meM = window.sicStaff?.me();
   const isStaff = staff();
   const who = (v, want) => Object.entries(v.votes || {}).filter(([, x]) => x === want).map(([id]) => v.names?.[id] || memberList.find(m => m.id === id)?.name || '?');
+  loadReasons(meM);
   box.innerHTML = card('🗳️ 这个礼拜会来吗？', '') + `
     ${meM ? '' : '<div class="mb-2 text-sm"><button id="btn-login-vote" class="text-indigo-600 hover:underline">📱 用电话登录就可以按</button></div>'}
     <div class="divide-y divide-slate-100">
@@ -576,6 +580,8 @@ function renderRsvp() {
         const v = rsvps[x.id] || {};
         const mine = meM ? v.votes?.[meM.id] : null;
         const yes = who(v, 'Y'), no = who(v, 'N');
+        const noTxt = Object.entries(v.votes || {}).filter(([, k]) => k === 'N').map(([id]) => { const r = reasons[`${x.id}_${id}`]?.reason; return esc(v.names?.[id] || memberList.find(m => m.id === id)?.name || '?') + (r ? `<span class="text-slate-500">（${esc(r)}）</span>` : ''); });
+        const myWhy = meM ? reasons[`${x.id}_${meM.id}`]?.reason : '';
         const past = x.date < TODAY;
         const canAdj = x.kind === 'practice' && canSlot() && !past;
         const btn = (k, txt, on) => `<button data-vote="${x.id}" data-v="${k}" class="px-3 py-1.5 rounded-lg border text-sm ${mine === k ? on : 'border-slate-200 text-slate-600 hover:bg-slate-50'}">${txt}</button>`;
@@ -584,10 +590,16 @@ function renderRsvp() {
             <div class="text-sm font-semibold">${x.extra ? '⭐ ' : ''}${esc(x.label)} <span class="font-normal text-slate-400">${x.extra ? `${wd(x.date)} ` : ''}${md(x.date)}${x.start && !x.off ? ` · ${timeRange(x.start, x.end)}` : ''}</span>${x.moved && !x.off ? ' <span class="text-xs font-normal text-amber-700">⏰ 时间改了</span>' : ''}${canAdj ? `<button data-adj="${x.id}" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">✏️ 调整</button>` : ''}
               ${x.extra && canSlot() ? `<a href="attendance.html?d=${x.date}&k=other" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">📋 点名</a><button data-slot-del="${x.id}" class="ml-1 text-xs font-normal text-slate-400 hover:text-red-500" title="拿掉这个特别练习">✕</button>` : ''}</div>
             ${x.off ? `<div class="text-sm text-amber-700">🚫 这次没有练习${x.reason ? `：${esc(x.reason)}` : ''}</div>` : `${x.moved && x.reason ? `<div class="text-xs text-amber-700">${esc(x.reason)}</div>` : ''}<div class="text-xs text-slate-500">🙋 ${yes.length} 会来　🙅 ${no.length} 不来</div>`}
-            ${isStaff && !x.off && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${no.map(esc).join('、')}` : ''}</div>` : ''}
+            ${isStaff && !x.off && yes.length + no.length ? `<div class="text-[11px] text-slate-400 mt-0.5">${yes.length ? `会来：${yes.map(esc).join('、')}` : ''}${no.length ? `${yes.length ? '<br>' : ''}不来：${noTxt.join('、')}` : ''}</div>` : ''}
           </div>
           ${x.off ? '' : meM && !past ? `<div class="flex gap-1.5">${btn('Y', '🙋 会来', 'bg-emerald-600 border-emerald-600 text-white')}${btn('N', '📝 请假（不来）', 'bg-slate-600 border-slate-600 text-white')}</div>`
             : past ? '<span class="text-xs text-slate-400">已经过了</span>' : ''}
+          ${!x.off && meM && !past && mine === 'N' && leaveFor !== x.id ? `<div class="basis-full text-xs text-slate-600">📝 请假原因：${myWhy ? esc(myWhy) : '<span class="text-amber-700">还没写</span>'} <button data-reason-edit="${x.id}" class="ml-1 text-indigo-600 hover:underline">✏️ ${myWhy ? '改' : '补写'}</button></div>` : ''}
+          ${!x.off && meM && !past && leaveFor === x.id ? `<div class="basis-full rounded-xl border border-slate-300 bg-slate-50 p-3 space-y-2 text-sm">
+            <div class="font-semibold">📝 请假原因（一定要写）</div>
+            <input id="leave-reason" maxlength="200" value="${esc(myWhy || '')}" placeholder="例如：出差、家里有事、身体不舒服" class="w-full border border-slate-300 rounded-lg px-2 py-1.5">
+            <div class="flex gap-2"><button id="leave-send" data-slot="${x.id}" class="px-3 py-1.5 rounded-lg bg-slate-700 text-white font-semibold">送出请假</button><button id="leave-cancel" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600">取消</button></div>
+          </div>` : ''}
           ${adjId === x.id && canAdj ? `<div class="basis-full rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2 text-sm">
             <div class="font-semibold text-indigo-800">✏️ 调整 ${esc(x.label)} ${md(x.date)}</div>
             <div class="flex flex-wrap gap-2 items-center"><input id="adj-start" type="time" value="${x.start}" class="border border-slate-300 rounded-lg px-2 py-1.5"> 到 <input id="adj-end" type="time" value="${x.end}" class="border border-slate-300 rounded-lg px-2 py-1.5"></div>
@@ -651,6 +663,10 @@ $('rsvp').addEventListener('click', async e => {
     catch (err) { console.error(err); alert('没拿掉，检查一下网络。'); }
     return;
   }
+  const ed = e.target.closest('[data-reason-edit]');
+  if (ed) { leaveFor = ed.dataset.reasonEdit; renderRsvp(); return $('leave-reason')?.focus(); }
+  if (e.target.id === 'leave-cancel') { leaveFor = null; return renderRsvp(); }
+  if (e.target.id === 'leave-send') return sendLeave(e.target);
   const b = e.target.closest('[data-vote]'); if (!b) return;
   const meM = window.sicStaff?.me(); if (!meM) return;
   const id = b.dataset.vote, v = b.dataset.v;
@@ -658,6 +674,10 @@ $('rsvp').addEventListener('click', async e => {
   const cur = rsvps[id] ||= { date: x.date, kind: x.kind, votes: {}, names: {} };
   cur.votes ||= {}; cur.names ||= {};
   const undo = cur.votes[meM.id] === v;   // 再按一次同一个 = 取消
+  // 请假一定要写原因：先开一格写原因，按「送出请假」才存
+  if (v === 'N' && !undo) { leaveFor = id; renderRsvp(); return $('leave-reason')?.focus(); }
+  const wasN = cur.votes[meM.id] === 'N';
+  leaveFor = null;
   b.disabled = true;
   try {
     if (undo) {
@@ -667,9 +687,54 @@ $('rsvp').addEventListener('click', async e => {
       await window.sicStaff.withAuth(() => setDoc(doc(db, 'rsvp', id), { date: x.date, kind: x.kind, votes: { [meM.id]: v }, names: { [meM.id]: meM.name }, updatedAt: new Date().toISOString() }, { merge: true }));
       cur.votes[meM.id] = v; cur.names[meM.id] = meM.name;
     }
+    if (wasN) dropReason(id, meM.id);   // 不请假了：原因一起拿掉
   } catch (err) { console.error(err); alert('没存到，检查一下网络。'); }
   renderRsvp();
 });
+
+// 请假原因：点名负责人读这几天全部；团员只读自己按了请假的那几格
+async function loadReasons(meM) {
+  const key = `${date}|${canSlot() ? '*' : meM?.id || ''}`;
+  if (reasonsFor === key) return;
+  reasonsFor = key;
+  try {
+    if (canSlot()) {
+      const q = await getDocs(query(collection(db, 'leave_reasons'), where(documentId(), '>=', addDays(date, -7)), where(documentId(), '<=', date + '')));
+      q.docs.forEach(d => { reasons[d.id] = d.data(); });
+    } else if (meM) {
+      const mine = rsvpSlots(date).filter(x => rsvps[x.id]?.votes?.[meM.id] === 'N');
+      if (!mine.length) return;
+      await Promise.all(mine.map(async x => { const s = await getDoc(doc(db, 'leave_reasons', `${x.id}_${meM.id}`)); if (s.exists()) reasons[s.id] = s.data(); }));
+    } else return;
+  } catch (err) { console.warn('请假原因读不到', err); return; }
+  renderRsvp();
+}
+async function sendLeave(b) {
+  const meM = window.sicStaff?.me(); if (!meM) return;
+  const id = b.dataset.slot, x = rsvpSlots(date).find(s => s.id === id);
+  const reason = $('leave-reason').value.trim();
+  if (!reason) { alert('请先写请假原因，才能送出。'); return $('leave-reason').focus(); }
+  if (!x) return;
+  b.disabled = true;
+  const k = `${id}_${meM.id}`, at = new Date().toISOString();
+  try {
+    await window.sicStaff.withAuth(() => setDoc(doc(db, 'leave_reasons', k), { slot: id, member: meM.id, name: meM.name, reason, updatedAt: at }));
+    reasons[k] = { slot: id, member: meM.id, name: meM.name, reason };
+    const cur = rsvps[id] ||= { date: x.date, kind: x.kind, votes: {}, names: {} };
+    cur.votes ||= {}; cur.names ||= {};
+    if (cur.votes[meM.id] !== 'N') {
+      await window.sicStaff.withAuth(() => setDoc(doc(db, 'rsvp', id), { date: x.date, kind: x.kind, votes: { [meM.id]: 'N' }, names: { [meM.id]: meM.name }, updatedAt: at }, { merge: true }));
+      cur.votes[meM.id] = 'N'; cur.names[meM.id] = meM.name;
+    }
+    leaveFor = null;
+  } catch (err) { console.error(err); b.disabled = false; return alert('没存到，检查一下网络。'); }
+  renderRsvp();
+}
+function dropReason(slot, mid) {
+  const k = `${slot}_${mid}`;
+  delete reasons[k];
+  Promise.resolve().then(() => window.sicStaff.withAuth(() => deleteDoc(doc(db, 'leave_reasons', k)))).catch(() => {});
+}
 
 // ───────── 合照：每一台一个相册；相片放 Cloudinary（乐谱也放那里），资料库只记连结 ─────────
 // 有「合照」权限的人（密码管理里开）才能加、拿掉；大家都看得到

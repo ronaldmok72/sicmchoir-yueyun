@@ -33,6 +33,9 @@ export function markFor(t, start, end) {
 // 完整出席 1 分；迟到扣 0.2、早退扣 0.2；有签到没签退只给 0.5（不知道几点走）；请假 0.1；缺席 0
 // 10/25 Ronald 定：忘了签到、走的时候才签退 → 0.5 分，早退也不扣；只要有出席，最少 0.5 分
 // 每次点名存在 attendance/{id}.pts[团员id]；手动点的照下面 PTS；没点到、但在「这台弥撒」按了不来 → 算请假
+// 出席率 2027-01-01 起正式算（Ronald 2026-11-12 定）；之前是试行，数字不作准
+export const OFFICIAL_FROM = '2027-01-01';
+export const OFFICIAL_TXT = '2027 年 1 月 1 日';
 export const PTS = { P: 1, T: 0.8, L: 0.1, A: 0 };
 export const IN_ONLY = 0.5;
 const r1 = x => Math.round(x * 10) / 10;
