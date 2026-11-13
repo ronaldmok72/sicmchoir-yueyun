@@ -104,19 +104,34 @@ minutes（完整记录）：**细节全部保留**，不要删、不要缩成摘
 
 async function gemini(key, content, topics) {
   const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } } : { text: content.text }, { text: prompt(topics) }];
-  let busy = false;
+  let busy = false, slow = false;
   const tried = new Set(), gone = [];
-  const once = async model => {
+  const deadline = Date.now() + 270e3;   // Vercel 最多给 300 秒，留点时间回话
+  // 整理会议记录不用「想」很久：叫它少想、直接写（新旧型号写法不一样）
+  const think = model => /gemini-2\.5/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: 'low' };   // 新型号（含 gemini-flash-latest）；不认的话下面会自动不加再试
+  const once = async (model, noThink) => {
     tried.add(model);
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 32768, responseMimeType: 'application/json', responseSchema: SCHEMA },
-      }),
-    });
+    const left = deadline - Date.now();
+    if (left < 20e3) { slow = true; return null; }
+    const cfg = { temperature: 0.2, maxOutputTokens: 32768, responseMimeType: 'application/json', responseSchema: SCHEMA };
+    const tc = !noThink && think(model);
+    if (tc) cfg.thinkingConfig = tc;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), Math.min(left, 130e3));
+    let r;
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST', signal: ac.signal,
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: cfg }),
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') { slow = true; return null; }   // 太久 → 换下一个
+      throw e;
+    } finally { clearTimeout(timer); }
     const j = await r.json().catch(() => ({}));
+    // 这个型号不认「少想」的写法 → 同一个型号不加再试一次
+    if (r.status === 400 && tc && /think/i.test(j.error?.message || '')) return once(model, true);
     if (r.status === 404) { gone.push(model); return null; }   // 型号退休了 → 试下一个
     // 太多人用（503）／一时出错（500）→ 换下一个型号
     if (r.status === 503 || r.status === 500) { busy = true; return null; }
@@ -135,6 +150,7 @@ async function gemini(key, content, topics) {
     const g = await once(model);
     if (g) return g;
   }
+  if (slow) throw new Error('AI 整理太久没做完（内容很长）。再按一次试试；还是不行，把「录音补充」分两次贴、整理两次');
   if (busy) throw new Error('Google 的 AI 现在太多人用，请过一两分钟再按一次');
   throw new Error(`找不到可以用的 AI 型号（试过 ${gone.join('、')}），请跟 Ronald 说`);
 }

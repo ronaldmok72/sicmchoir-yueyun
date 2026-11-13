@@ -776,7 +776,7 @@ async function askAi(src) {
   };
   let r = await call();
   if (r.status === 401) { await window.sicStaff.ensureAuth(true); r = await call(); }
-  const j = await r.json().catch(() => ({ error: '服务器没有回答（' + r.status + '）' }));
+  const j = await r.json().catch(() => ({ error: r.status === 504 ? 'AI 整理太久没做完（内容很长）。再按一次试试；还是不行，把「录音补充」分两次贴、整理两次' : '服务器没有回答（' + r.status + '）' }));
   if (!r.ok) throw new Error(j.error || r.status);
   return j.meeting;
 }
