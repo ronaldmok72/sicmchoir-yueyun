@@ -2,8 +2,11 @@
 // 钥匙放在 Vercel 的环境变量 GEMINI_API_KEY（Ronald 自己在 Google AI Studio 申请），只有这里看得到，网页拿不到。
 // 只有开了「执委专区」的人能用：网页带 Firebase 通行证（Authorization: Bearer），这里验过才做
 //
-// POST { url } 或 { file: { data: base64, mime, name } }，可加 topics: ['指挥培训', ...]（以前用过的进展分类）
-//   → { meeting: { date, no, title, status, time, place, ..., minutes, summary: { points, todos, reports } } }
+// 分两步（一次做完，长的会议会超时）：
+// 第 1 步 POST { url } 或 { file: { data: base64, mime, name } }
+//   → { meeting: { date, no, title, status, time, place, ..., agenda, minutes, next } }
+// 第 2 步 POST { stage: 'summary', minutes, date, title, topics: ['指挥培训', ...] }（topics 是以前用过的进展分类）
+//   → { summary: { points, todos, reports, events } }
 // GET → { configured: true/false }
 const crypto = require('crypto');
 
@@ -56,7 +59,10 @@ async function fromUrl(url) {
 // ───────── 叫 AI 整理 ─────────
 const S = (type, extra = {}) => ({ type, ...extra });
 const STR = S('STRING');
-const SCHEMA = S('OBJECT', {
+// 分两步做（内容长的会议一步做完会超时）：
+//   第 1 步 → 读原始资料，写完整会议记录（资料栏＋minutes）
+//   第 2 步 stage:'summary' → 只读第 1 步写好的记录，抽出重点、待办、进展、年度活动（很快）
+const SCHEMA_MIN = S('OBJECT', {
   properties: {
     date: S('STRING', { description: '开会日期 YYYY-MM-DD' }),
     no: S('STRING', { description: '这一年的第几次会议，数字；不知道就空' }),
@@ -65,17 +71,23 @@ const SCHEMA = S('OBJECT', {
     approveBy: STR, approveSecond: STR,
     agenda: S('ARRAY', { items: STR }),
     minutes: STR, next: STR,
+  },
+  required: ['date', 'no', 'title', 'status', 'time', 'place', 'attend', 'absent', 'prayOpen', 'prayClose', 'recorder',
+    'approveBy', 'approveSecond', 'agenda', 'minutes', 'next'],
+});
+const SCHEMA_SUM = S('OBJECT', {
+  properties: {
     points: S('ARRAY', { items: STR }),
     todos: S('ARRAY', { items: S('OBJECT', { properties: { t: STR, who: STR, due: STR }, required: ['t', 'who', 'due'] }) }),
     reports: S('ARRAY', { items: S('OBJECT', { properties: { topic: STR, text: STR }, required: ['topic', 'text'] }) }),
     events: S('ARRAY', { items: STR }),
   },
-  required: ['date', 'no', 'title', 'status', 'time', 'place', 'attend', 'absent', 'prayOpen', 'prayClose', 'recorder',
-    'approveBy', 'approveSecond', 'agenda', 'minutes', 'next', 'points', 'todos', 'reports', 'events'],
+  required: ['points', 'todos', 'reports', 'events'],
 });
 
-const prompt = topics => `你是八打灵圣依纳爵天主堂「乐韵歌咏团」执委会的秘书助手。上面是一场执委会议的会议记录（或会前议程）。
-把它整理成下面的格式，全部用简体中文，人名照原文。
+const promptMin = () => `你是八打灵圣依纳爵天主堂「乐韵歌咏团」执委会的秘书助手。上面是一场执委会议的资料（会议记录、会前议程，或几个人写的草稿＋录音补充）。
+**从头到尾全部读完**：资料可能来自好几个人（秘书草稿、另一位秘书的草稿、各人汇报、录音补充），每一份都要用上；同一件事几份都有写，合成一条，不要重复。
+全部用简体中文，人名照原文。
 
 资料栏：
 - date：开会日期 YYYY-MM-DD。原文年份明显写错时（例如内容讲的是 2026 年的事，却写 2025），按内容改正，并在 minutes 第一行用括号注明「原文日期写 …，按内容是 …」。
@@ -85,25 +97,28 @@ const prompt = topics => `你是八打灵圣依纳爵天主堂「乐韵歌咏团
 - agenda：议程项目，一项一行，短短的。
 - next：下次会议日期时间地点（有写才填）。
 
-minutes（完整记录）：**细节全部保留**，不要删、不要缩成摘要；只是整理成好读的格式：
-- 每个议程一段，标题用「### 」开头（例如「### 3. 歌咏团常规练习与管理」）
+minutes（完整记录）：要完整、有细节，但不啰嗦。照以前会议记录的样子：
+- 每个议程一段，标题用「### 」加中文序号（例如「### 三、上次会议待办跟进」）
 - 内容一行一点，用「- 」开头；下一层用两个空格再「- 」
-- 重要的字（负责人、日期、金额、决议）可以用 **粗体**
+- 每一点写清楚：谁报告／谁提议、讨论到什么、最后怎么定；数字、日期、金额、人名全部保留
+- 会议**通过的决定**，那一点开头加编号「**【决议 第几次会议-序号】**」（例如第 6 次会议：【决议 6-1】、【决议 6-2】…，整份按顺序编），以后可以追溯
+- 交代给人去做的事，在那一点后面写「→ 负责：某某（期限）」
+- 只是提议、还没定的，写「（待定）」，不要写成决议
 - 出席率表之类的表格，压成一行一类，不要丢数字
+- 资料里没有的不要编`;
 
-重点（给忙的人 1 分钟看完）：
-- points：4–8 句，每句一件最要紧的事（决议、日期、金额、新安排），白话，不要客套。
-- todos：会议交代下来、要人去做的事。t 写要做什么；who 写负责人（原文没写就空）；due 有日期就写 YYYY-MM-DD（年份按开会日期推），没有就空。
+const promptSum = topics => `上面是乐韵歌咏团一场执委会议的正式会议记录。只根据这份记录，抽出下面几样（不要编记录里没有的）：
+
+- points：4–8 句，给忙的人 1 分钟看完，每句一件最要紧的事（决议、日期、金额、新安排），白话，不要客套；是决议的句子开头带编号，例如「【6-2】…」。
+- todos：会议交代下来、要人去做的事（记录里「→ 负责：」的都要有）。t 写要做什么；who 写负责人（没写就空）；due 有日期就写 YYYY-MM-DD（年份按开会日期推），没有就空。
 - reports：年底要报告的进展，每项一个 topic（分类）＋ text（一两句写到哪了，带数字和日期）。
   topic 尽量用这些现有的分类：${topics.length ? topics.join('、') : '指挥培训、声乐培训、天使团、报佳音 Cantata、披肩／制服、设备、礼仪、新歌、组织与行政、改选与章程、财务、出席率、交流活动、培训'}；真的不合才开新的。
-
-年度活动表（每年年尾交堂区，这场会议的会一条条自动加进去）：
-- events：会议里提到「已经办完」（检讨到的）和「已经定好日子要办」的活动，一项一行，开头写月份：「5月 天使团参与侍奉母亲节弥撒」。跟开会不同年的写「2027年1月 …」。
+- events（年度活动表，每年年尾交堂区）：记录里提到「已经办完」（检讨到的）和「已经定好日子要办」的活动，一项一行，开头写月份：「5月 天使团参与侍奉母亲节弥撒」。跟开会不同年的写「2027年1月 …」。
   活动名要短，像「圣诞报佳音 Cantata」「复活节礼仪中文弥撒」「婚礼礼仪 – 2 场」「声乐培训」；有确切日子可加在后面「（22/8）」。
   只是提议、还没定的不要放；不要放「歌咏团执委会议」（会自动加）。`;
 
-async function gemini(key, content, topics) {
-  const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } } : { text: content.text }, { text: prompt(topics) }];
+async function gemini(key, content, instruction, schema) {
+  const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } } : { text: content.text }, { text: instruction }];
   let busy = false, slow = false;
   const tried = new Set(), gone = [];
   const deadline = Date.now() + 270e3;   // Vercel 最多给 300 秒，留点时间回话
@@ -113,11 +128,11 @@ async function gemini(key, content, topics) {
     tried.add(model);
     const left = deadline - Date.now();
     if (left < 20e3) { slow = true; return null; }
-    const cfg = { temperature: 0.2, maxOutputTokens: 32768, responseMimeType: 'application/json', responseSchema: SCHEMA };
+    const cfg = { temperature: 0.2, maxOutputTokens: 32768, responseMimeType: 'application/json', responseSchema: schema };
     const tc = !noThink && think(model);
     if (tc) cfg.thinkingConfig = tc;
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), Math.min(left, 130e3));
+    const timer = setTimeout(() => ac.abort(), Math.min(left, 200e3));
     let r;
     try {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -150,7 +165,7 @@ async function gemini(key, content, topics) {
     const g = await once(model);
     if (g) return g;
   }
-  if (slow) throw new Error('AI 整理太久没做完（内容很长）。再按一次试试；还是不行，把「录音补充」分两次贴、整理两次');
+  if (slow) throw new Error('AI 整理太久没做完（内容很长）。再按一次试试；还是不行，请跟 Ronald 说');
   if (busy) throw new Error('Google 的 AI 现在太多人用，请过一两分钟再按一次');
   throw new Error(`找不到可以用的 AI 型号（试过 ${gone.join('、')}），请跟 Ronald 说`);
 }
@@ -170,7 +185,6 @@ async function currentModels(key) {
 
 // AI 回来的 → 跟 App 里一场会议一样的样子
 function meetingOf(g) {
-  const due = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : '';
   return {
     date: /^\d{4}-\d{2}-\d{2}$/.test(g.date || '') ? g.date : '',
     no: /^\d+$/.test(String(g.no || '').trim()) ? Number(g.no) : '',
@@ -179,12 +193,15 @@ function meetingOf(g) {
     prayOpen: g.prayOpen || '', prayClose: g.prayClose || '', recorder: g.recorder || '',
     approve: { by: g.approveBy || '', second: g.approveSecond || '' },
     agenda: (g.agenda || []).filter(Boolean), minutes: g.minutes || '', next: g.next || '',
-    summary: {
-      points: (g.points || []).filter(Boolean),
-      todos: (g.todos || []).filter(t => t?.t).map(t => ({ t: t.t, who: t.who || '', due: due(t.due), done: false })),
-      reports: (g.reports || []).filter(r => r?.text).map(r => ({ topic: r.topic || '其他', text: r.text })),
-      events: (g.events || []).map(e => String(e || '').trim()).filter(e => /^(\d{4}\s*年\s*)?\d{1,2}\s*月/.test(e)),
-    },
+  };
+}
+function summaryOf(g) {
+  const due = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : '';
+  return {
+    points: (g.points || []).filter(Boolean),
+    todos: (g.todos || []).filter(t => t?.t).map(t => ({ t: t.t, who: t.who || '', due: due(t.due), done: false })),
+    reports: (g.reports || []).filter(r => r?.text).map(r => ({ topic: r.topic || '其他', text: r.text })),
+    events: (g.events || []).map(e => String(e || '').trim()).filter(e => /^(\d{4}\s*年\s*)?\d{1,2}\s*月/.test(e)),
   };
 }
 
@@ -204,6 +221,14 @@ module.exports = async (req, res) => {
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const topics = (Array.isArray(body.topics) ? body.topics : []).map(String).slice(0, 40);
+    // 第 2 步：只读第 1 步写好的记录
+    if (body.stage === 'summary') {
+      const minutes = String(body.minutes || '').slice(0, 200000);
+      if (!minutes.trim()) throw new Error('还没有会议记录可以抽重点');
+      const head = `会议：${String(body.title || '')}　日期：${String(body.date || '')}\n\n`;
+      const g = await gemini(key, { text: head + minutes }, promptSum(topics), SCHEMA_SUM);
+      return res.status(200).end(JSON.stringify({ summary: summaryOf(g) }));
+    }
     let content;
     if (body.url) content = await fromUrl(String(body.url));
     else if (body.file?.data) {
@@ -213,7 +238,8 @@ module.exports = async (req, res) => {
       else if (mime.startsWith('text/')) content = { text: Buffer.from(body.file.data, 'base64').toString('utf8') };
       else throw new Error('只读得懂 PDF（Word 请先导出成 PDF）');
     } else throw new Error('请贴 Drive 链接或选一个 PDF');
-    const g = await gemini(key, content, topics);
+    // 第 1 步：完整会议记录
+    const g = await gemini(key, content, promptMin(), SCHEMA_MIN);
     return res.status(200).end(JSON.stringify({ meeting: meetingOf(g) }));
   } catch (e) {
     return fail(400, String(e.message || e));

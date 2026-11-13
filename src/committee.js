@@ -582,7 +582,7 @@ function renderEdit() {
         <button type="button" data-act="cancel" class="text-sm text-slate-500 hover:text-indigo-600">← 取消</button>
         <h2 class="font-semibold flex-1 text-right">${m.id ? '修改会议' : '新会议'}</h2>
       </div>
-      ${m._ai ? `<div class="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">🤖 AI 整理好了，请看一遍，有错就改，再按最下面「保存」。${m.id ? `<br>保存后会盖过原本的「${esc(titleOf(byId(m.id) || m))}」。` : ''}</div>` : ''}
+      ${m._ai ? `<div class="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">🤖 AI 整理好了，请看一遍，有错就改，再按最下面「保存」。${m._sumErr ? `<br>⚠️ 完整记录好了，但「重点、待办、进展、活动表」没抽成功（${esc(m._sumErr)}）：可以自己填，或先保存、再按一次整理。` : ''}${m.id ? `<br>保存后会盖过原本的「${esc(titleOf(byId(m.id) || m))}」。` : ''}</div>` : ''}
 
       <section class="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
         <div class="grid grid-cols-2 gap-3">
@@ -656,7 +656,7 @@ async function submit() {
   const v = id => $(id).value.trim();
   const date = v('f-date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('请选日期');
-  const { _ai, ...was } = editing;
+  const { _ai, _sumErr, ...was } = editing;
   const m = {
     ...was, date, no: v('f-no') ? Number(v('f-no')) : '', title: v('f-title'), status: v('f-status'),
     time: v('f-time'), place: v('f-place'), attend: v('f-attend'), absent: v('f-absent'),
@@ -755,10 +755,9 @@ async function aiRun() {
   if (f && f.size > 4 * 1024 * 1024) return msg('<span class="text-rose-600">文件太大（超过 4MB）</span>');
   const btn = $('ai-go');
   btn.disabled = true; btn.textContent = '🤖 整理中…';
-  msg('<span class="text-slate-500">AI 在读会议记录，大概 20 秒到 1 分钟，请别关这页。</span>');
   let g;
   try {
-    g = await askAi(f ? { file: { data: await fileB64(f), mime: f.type || (/\.txt$/i.test(f.name) ? 'text/plain' : 'application/pdf'), name: f.name } } : { url });
+    g = await askAi(f ? { file: { data: await fileB64(f), mime: f.type || (/\.txt$/i.test(f.name) ? 'text/plain' : 'application/pdf'), name: f.name } } : { url }, aiStepMsg(msg, '会议记录'));
   } catch (err) {
     btn.disabled = false; btn.textContent = '🤖 开始整理';
     return msg(`<span class="text-rose-600">${esc(err.message || err)}</span>`);
@@ -767,19 +766,36 @@ async function aiRun() {
   openAi(g, aiMode.target ? byId(aiMode.target) : MEETINGS.find(x => g.date && x.date === g.date), url);
 }
 
-async function askAi(src) {
+// 分两步：① 读原始资料写完整记录 ② 只读写好的记录，抽重点、待办、进展、活动表（长的会议一步做完会超时）
+async function askAi(src, step = () => {}) {
   const topics = [...new Set(MEETINGS.flatMap(x => x.summary.reports.map(r => r.topic)).filter(Boolean))];
-  const body = JSON.stringify({ ...src, topics });
-  const call = async () => {
-    await window.sicStaff.ensureAuth();
-    return fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await window.sicStaff.idToken()) }, body });
+  const post = async payload => {
+    const body = JSON.stringify(payload);
+    const call = async () => {
+      await window.sicStaff.ensureAuth();
+      return fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await window.sicStaff.idToken()) }, body });
+    };
+    let r = await call();
+    if (r.status === 401) { await window.sicStaff.ensureAuth(true); r = await call(); }
+    const j = await r.json().catch(() => ({ error: r.status === 504 ? 'AI 整理太久没做完（内容很长）。再按一次试试；还是不行，请跟 Ronald 说' : '服务器没有回答（' + r.status + '）' }));
+    if (!r.ok) throw new Error(j.error || r.status);
+    return j;
   };
-  let r = await call();
-  if (r.status === 401) { await window.sicStaff.ensureAuth(true); r = await call(); }
-  const j = await r.json().catch(() => ({ error: r.status === 504 ? 'AI 整理太久没做完（内容很长）。再按一次试试；还是不行，把「录音补充」分两次贴、整理两次' : '服务器没有回答（' + r.status + '）' }));
-  if (!r.ok) throw new Error(j.error || r.status);
-  return j.meeting;
+  step(1);
+  const g = (await post(src)).meeting;
+  g.summary = { points: [], todos: [], reports: [], events: [] };
+  if (!g.minutes?.trim()) return g;
+  step(2);
+  try {
+    g.summary = (await post({ stage: 'summary', minutes: g.minutes, date: g.date, title: g.title, topics })).summary;
+  } catch (err) {
+    g._sumErr = String(err.message || err);   // 完整记录已经好了，重点那一块自己补或再按一次
+  }
+  return g;
 }
+const aiStepMsg = (msg, what) => n => msg(`<span class="text-slate-500">${n === 1
+  ? `第 1 步／共 2 步：AI 在读${what}，写完整会议记录（内容长的要 1–3 分钟），请别关这页。`
+  : '第 2 步／共 2 步：完整记录写好了，正在抽出重点、待办、进展、年度活动…'}</span>`);
 
 // AI 整理好的 → 打开修改页给人看一遍再保存
 function openAi(g, base, url) {
@@ -794,10 +810,9 @@ function openAi(g, base, url) {
 async function aiDraft(m) {
   const btn = $('ai-draft'), msg = t => { $('ai-msg').innerHTML = t; };
   btn.disabled = true; btn.textContent = '🤖 整理中…';
-  msg('<span class="text-slate-500">AI 在读笔记，大概 20 秒到 1 分钟，请别关这页。</span>');
   const text = [
-    '（以下是执委在乐韵 App 里写的开会笔记草稿，加上每位执委自己写的汇报。会已经开完，请把两者合起来整理成一份完整、仔细的正式会议记录，status 用 done。'
-      + '各人汇报的内容全部放进对应的议程段落，细节、数字、日期都保留，注明是谁报告的；笔记和汇报里没有的不要编。）',
+    '（以下是执委在乐韵 App 里写的开会笔记草稿（可能有好几位秘书写的，也有录音补充），加上每位执委自己写的汇报。会已经开完，请**全部读完**，合起来整理成一份完整、仔细的正式会议记录，status 用 done。'
+      + '各人汇报的内容全部放进对应的议程段落，细节、数字、日期都保留，注明是谁报告的；同一件事几份都写到的合成一条；笔记和汇报里没有的不要编。）',
     `会议：${titleOf(m)}`, `日期：${m.date}`, m.time && `时间：${m.time}`, m.place && `地点：${m.place}`,
     (m.attend || checkinNames(m).length) && `出席：${m.attend || checkinNames(m).join('、')}`, m.absent && `缺席：${m.absent}`, m.prayOpen && `开会祷：${m.prayOpen}`, m.prayClose && `闭会祷：${m.prayClose}`,
     m.approve?.by && `核准上次会议记录：提议 ${m.approve.by}、附议 ${m.approve.second || ''}`, m.recorder && `记录员：${m.recorder}`,
@@ -808,7 +823,7 @@ async function aiDraft(m) {
   let bin = '';
   new TextEncoder().encode(text).forEach(b => { bin += String.fromCharCode(b); });
   let g;
-  try { g = await askAi({ file: { data: btoa(bin), mime: 'text/plain', name: 'notes.txt' } }); } catch (err) {
+  try { g = await askAi({ file: { data: btoa(bin), mime: 'text/plain', name: 'notes.txt' } }, aiStepMsg(msg, '全部草稿和汇报')); } catch (err) {
     btn.disabled = false; btn.textContent = '🤖 整理成完整会议记录';
     return msg(`<span class="text-rose-600">${esc(err.message || err)}</span>`);
   }
