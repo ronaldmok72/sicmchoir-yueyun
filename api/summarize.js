@@ -104,8 +104,10 @@ minutes（完整记录）：**细节全部保留**，不要删、不要缩成摘
 
 async function gemini(key, content, topics) {
   const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } } : { text: content.text }, { text: prompt(topics) }];
-  let last;
-  for (const model of MODELS) {
+  let busy = false;
+  const tried = new Set(), gone = [];
+  const once = async model => {
+    tried.add(model);
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
@@ -115,16 +117,39 @@ async function gemini(key, content, topics) {
       }),
     });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 404) { last = `找不到 AI 型号 ${model}`; continue; }   // 型号退休了 → 试下一个
+    if (r.status === 404) { gone.push(model); return null; }   // 型号退休了 → 试下一个
     // 太多人用（503）／一时出错（500）→ 换下一个型号
-    if (r.status === 503 || r.status === 500) { last = 'Google 的 AI 现在太多人用，请过一两分钟再按一次'; continue; }
+    if (r.status === 503 || r.status === 500) { busy = true; return null; }
     if (r.status === 429) throw new Error('AI 今天的免费额度用完了，明天再试');
     if (!r.ok) throw new Error('AI 出错：' + (j.error?.message || r.status));
     const text = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
     if (!text) throw new Error('AI 没有回答（' + (j.candidates?.[0]?.finishReason || j.promptFeedback?.blockReason || '不知道原因') + '）');
     return JSON.parse(text);
+  };
+  for (const model of MODELS) {
+    const g = await once(model);
+    if (g) return g;
   }
-  throw new Error(last || 'AI 出错');
+  // 认识的型号都不在了 → 问 Google 现在有哪些，挑 flash 的（新的先试，lite 最后）
+  for (const model of (await currentModels(key)).filter(m => !tried.has(m)).slice(0, 4)) {
+    const g = await once(model);
+    if (g) return g;
+  }
+  if (busy) throw new Error('Google 的 AI 现在太多人用，请过一两分钟再按一次');
+  throw new Error(`找不到可以用的 AI 型号（试过 ${gone.join('、')}），请跟 Ronald 说`);
+}
+
+async function currentModels(key) {
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } });
+    const j = await r.json();
+    const ver = n => Number((n.match(/(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+    return (j.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => m.name.replace(/^models\//, ''))
+      .filter(n => /^gemini-[\d.]+-flash/.test(n) && !/image|tts|audio|live|thinking/.test(n))
+      .sort((a, b) => (/lite/.test(a) - /lite/.test(b)) || (/preview|exp/.test(a) - /preview|exp/.test(b)) || (ver(b) - ver(a)));
+  } catch { return []; }
 }
 
 // AI 回来的 → 跟 App 里一场会议一样的样子
