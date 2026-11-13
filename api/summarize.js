@@ -5,7 +5,8 @@
 // 分两步（一次做完，长的会议会超时）：
 // 第 1 步 POST { url } 或 { file: { data: base64, mime, name } }
 //   → { meeting: { date, no, title, status, time, place, ..., agenda, minutes, next } }
-// 第 2 步 POST { stage: 'summary', minutes, date, title, topics: ['指挥培训', ...] }（topics 是以前用过的进展分类）
+// 第 2 步 POST { stage: 'summary', minutes, date, title, topics: ['指挥培训', ...], known: [已有待办], prevPoints: [上一版重点] }
+//   （topics 是以前用过的进展分类；known／prevPoints 是再整理一次时带上的，AI 只补新的）
 //   → { summary: { points, todos, reports, events } }
 // GET → { configured: true/false }
 const crypto = require('crypto');
@@ -105,12 +106,21 @@ minutes（完整记录）：要完整、有细节，但不啰嗦。照以前会�
 - 交代给人去做的事，在那一点后面写「→ 负责：某某（期限）」
 - 只是提议、还没定的，写「（待定）」，不要写成决议
 - 出席率表之类的表格，压成一行一类，不要丢数字
-- 资料里没有的不要编`;
+- 资料里没有的不要编
 
-const promptSum = topics => `上面是乐韵歌咏团一场执委会议的正式会议记录。只根据这份记录，抽出下面几样（不要编记录里没有的）：
+如果资料里有「上一版完整记录」：这场会已经整理过一次，现在是**在上一版上面更新**，不是重写：
+- 上一版的段落、文字、决议编号**照抄保留**（那些可能是人手改过的），不要改写、不要重新编号、不要删
+- 只把草稿／汇报里**新补、上一版还没有**的内容，加进对应的段落；新的决议接着上一版最后一个编号往下编
+- 草稿跟上一版写得不一样时，以上一版为准，在那一点后面加「（草稿另写：…，要核对）」`;
 
-- points：4–8 句，给忙的人 1 分钟看完，每句一件最要紧的事（决议、日期、金额、新安排），白话，不要客套；是决议的句子开头带编号，例如「【6-2】…」。
-- todos：会议交代下来、要人去做的事（记录里「→ 负责：」的都要有）。t 写要做什么；who 写负责人（没写就空）；due 有日期就写 YYYY-MM-DD（年份按开会日期推），没有就空。
+const promptSum = (topics, known = [], prevPoints = []) => `上面是乐韵歌咏团一场执委会议的正式会议记录。只根据这份记录，抽出下面几样（不要编记录里没有的）：
+
+- points：4–8 句，给忙的人 1 分钟看完，每句一件最要紧的事（决议、日期、金额、新安排），白话，不要客套；是决议的句子开头带编号，例如「【6-2】…」。${prevPoints.length ? `
+  上一版的重点（可能有人改过，**照抄保留**，只在有新的要紧事时补上，总数最多 8 句）：
+${prevPoints.map(p => '  · ' + p).join('\n')}` : ''}
+- todos：会议交代下来、要人去做的事（记录里「→ 负责：」的都要有）。t 写要做什么；who 写负责人（没写就空）；due 有日期就写 YYYY-MM-DD（年份按开会日期推），没有就空。${known.length ? `
+  下面这些待办**已经有了**，不要再列，只列新的：
+${known.map(t => '  · ' + t).join('\n')}` : ''}
 - reports：年底要报告的进展，每项一个 topic（分类）＋ text（一两句写到哪了，带数字和日期）。
   topic 尽量用这些现有的分类：${topics.length ? topics.join('、') : '指挥培训、声乐培训、天使团、报佳音 Cantata、披肩／制服、设备、礼仪、新歌、组织与行政、改选与章程、财务、出席率、交流活动、培训'}；真的不合才开新的。
 - events（年度活动表，每年年尾交堂区）：记录里提到「已经办完」（检讨到的）和「已经定好日子要办」的活动，一项一行，开头写月份：「5月 天使团参与侍奉母亲节弥撒」。跟开会不同年的写「2027年1月 …」。
@@ -226,7 +236,8 @@ module.exports = async (req, res) => {
       const minutes = String(body.minutes || '').slice(0, 200000);
       if (!minutes.trim()) throw new Error('还没有会议记录可以抽重点');
       const head = `会议：${String(body.title || '')}　日期：${String(body.date || '')}\n\n`;
-      const g = await gemini(key, { text: head + minutes }, promptSum(topics), SCHEMA_SUM);
+      const strs = a => (Array.isArray(a) ? a : []).map(String).filter(Boolean).slice(0, 60);
+      const g = await gemini(key, { text: head + minutes }, promptSum(topics, strs(body.known), strs(body.prevPoints)), SCHEMA_SUM);
       return res.status(200).end(JSON.stringify({ summary: summaryOf(g) }));
     }
     let content;

@@ -767,7 +767,7 @@ async function aiRun() {
 }
 
 // 分两步：① 读原始资料写完整记录 ② 只读写好的记录，抽重点、待办、进展、活动表（长的会议一步做完会超时）
-async function askAi(src, step = () => {}) {
+async function askAi(src, step = () => {}, prev = null) {
   const topics = [...new Set(MEETINGS.flatMap(x => x.summary.reports.map(r => r.topic)).filter(Boolean))];
   const post = async payload => {
     const body = JSON.stringify(payload);
@@ -787,11 +787,23 @@ async function askAi(src, step = () => {}) {
   if (!g.minutes?.trim()) return g;
   step(2);
   try {
-    g.summary = (await post({ stage: 'summary', minutes: g.minutes, date: g.date, title: g.title, topics })).summary;
+    g.summary = (await post({ stage: 'summary', minutes: g.minutes, date: g.date, title: g.title, topics,
+      known: (prev?.todos || []).map(t => t.t), prevPoints: prev?.points || [] })).summary;
+    if (prev) g.summary = keepPrev(prev, g.summary);
   } catch (err) {
     g._sumErr = String(err.message || err);   // 完整记录已经好了，重点那一块自己补或再按一次
   }
   return g;
+}
+// 再整理一次：上一版的待办全部留着（打的勾、改过的负责人和期限都在），AI 抽到的只加新的
+const todoKey = t => String(t || '').replace(/[\s，,。、；;：:（）()「」〈〉《》\-–—]/g, '').toLowerCase();
+function keepPrev(prev, now) {
+  const old = prev.todos || [];
+  const same = (a, b) => { const x = todoKey(a), y = todoKey(b); return x === y || (Math.min(x.length, y.length) >= 6 && (x.includes(y) || y.includes(x))); };
+  const add = (now.todos || []).filter(t => !old.some(o => same(o.t, t.t)));
+  const ev = [...(prev.events || [])];
+  (now.events || []).forEach(e => { if (!ev.some(x => todoKey(x) === todoKey(e))) ev.push(e); });
+  return { ...now, todos: [...old.map(t => ({ ...t })), ...add], events: ev };
 }
 const aiStepMsg = (msg, what) => n => msg(`<span class="text-slate-500">${n === 1
   ? `第 1 步／共 2 步：AI 在读${what}，写完整会议记录（内容长的要 1–3 分钟），请别关这页。`
@@ -812,6 +824,7 @@ async function aiDraft(m) {
   btn.disabled = true; btn.textContent = '🤖 整理中…';
   const text = [
     '（以下是执委在乐韵 App 里写的开会笔记草稿（可能有好几位秘书写的，也有录音补充），加上每位执委自己写的汇报。会已经开完，请**全部读完**，合起来整理成一份完整、仔细的正式会议记录，status 用 done。'
+      + (m.minutes ? '这场会已经整理过一次，最下面附「上一版完整记录」：请在上一版上面更新，上一版的文字和决议编号照抄保留，只把草稿和汇报里新补的加进去。' : '')
       + '各人汇报的内容全部放进对应的议程段落，细节、数字、日期都保留，注明是谁报告的；同一件事几份都写到的合成一条；笔记和汇报里没有的不要编。）',
     `会议：${titleOf(m)}`, `日期：${m.date}`, m.time && `时间：${m.time}`, m.place && `地点：${m.place}`,
     (m.attend || checkinNames(m).length) && `出席：${m.attend || checkinNames(m).join('、')}`, m.absent && `缺席：${m.absent}`, m.prayOpen && `开会祷：${m.prayOpen}`, m.prayClose && `闭会祷：${m.prayClose}`,
@@ -819,11 +832,12 @@ async function aiDraft(m) {
     m.agenda.length && '议程：\n' + m.agenda.map((a, i) => `${i + 1}. ${a}`).join('\n'),
     m.draft && '开会笔记（秘书／大家一起写的草稿）：\n' + m.draft,
     contribList(m).length && '各人汇报：\n' + contribList(m).map(c => `【${c.n}】\n${c.text}`).join('\n\n'),
+    m.minutes && '━━ 上一版完整记录（已经整理过，可能有人手改过；在这份上面更新）━━\n' + m.minutes,
   ].filter(Boolean).join('\n');
   let bin = '';
   new TextEncoder().encode(text).forEach(b => { bin += String.fromCharCode(b); });
   let g;
-  try { g = await askAi({ file: { data: btoa(bin), mime: 'text/plain', name: 'notes.txt' } }, aiStepMsg(msg, '全部草稿和汇报')); } catch (err) {
+  try { g = await askAi({ file: { data: btoa(bin), mime: 'text/plain', name: 'notes.txt' } }, aiStepMsg(msg, m.minutes ? '上一版记录和新补的草稿' : '全部草稿和汇报'), m.minutes ? m.summary : null); } catch (err) {
     btn.disabled = false; btn.textContent = '🤖 整理成完整会议记录';
     return msg(`<span class="text-rose-600">${esc(err.message || err)}</span>`);
   }
