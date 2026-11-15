@@ -4,8 +4,8 @@ import { db, getDocs, getDoc, history as recentDocs } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { bumpSongs } from "./song-cache.js";
 import { logChange } from "./changelog.js";
-import { clean, waTitle, ORDINARY, massSetOf } from "./mass-common.js";
-import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER } from "./autofill.js";
+import { clean, waTitle, ORDINARY, massSetOf, MASS_SETS } from "./mass-common.js";
+import { autofill, sourcesFor, litDay, suggestFor, warmHistory, PROPER, whichDay, ordinaryFrom, amenFrom } from "./autofill.js";
 import { WEDDING_ROLES, WEDDING_TIMES, timeText, findMember, roleZh } from "./weddings-common.js";
 
 const $ = id => document.getElementById(id);
@@ -23,6 +23,7 @@ const SLOT_TEMPLATE = [
   { key: 'offertory',   label: '奉献咏',              code: 'D' },
   { key: 'sanctus',     label: '圣圣圣',              hint: ['圣圣圣'] },
   { key: 'mystery',     label: '信德的奥迹',          hint: ['信德的奥迹', '欢呼词'] },
+  { key: 'amen',        label: '大阿门',              hint: ['大阿们', '大阿门', '亚孟'] },
   { key: 'pater',       label: '天主经',              hint: ['天主经'] },
   { key: 'doxology',    label: '天下万国',            hint: ['天下万国'] },
   { key: 'agnus',       label: '羔羊颂',              hint: ['羔羊'] },
@@ -155,8 +156,14 @@ function renderAutoBox(tools) {
         ${sources.map(s => `<option value="${esc(s.id)}" ${s.id === M.autoFrom ? 'selected' : ''}>${s.cycle === day.cycle ? '★ ' : ''}${esc(s.label)}</option>`).join('')}
       </select></label>
       <div class="text-slate-400">★ = 同一个${day.cycle}年，最适合照着排</div>` : ''}
-    ${M.autoFrom !== undefined && M.ordinaryHint ? `<div class="text-amber-700">${esc(M.ordinaryHint)}</div>` : ''}`;
+    ${M.autoFrom !== undefined && M.ordinaryHint ? `<div class="text-amber-700">${esc(M.ordinaryHint)}</div>` : ''}
+    ${M.kind === 'rite' ? '' : `<label class="flex flex-wrap items-center gap-2 text-slate-500">整套弥撒曲换成：
+      <select id="swap-set" class="flex-1 min-w-[12rem] border border-slate-300 rounded-md px-2 py-1 bg-white text-slate-700">
+        <option value="">— 选一套（垂怜曲到羔羊颂一次换）—</option>
+        ${[...new Set(MASS_SETS.map(x => x[1]))].map(n => `<option>${esc(n)}</option>`).join('')}
+      </select></label>`}`;
   tools.appendChild(box);
+  box.querySelector('#swap-set')?.addEventListener('change', e => { const n = e.target.value; e.target.value = ''; if (n) swapSet(n); });
   box.querySelector('#auto-src')?.addEventListener('change', e => {
     if (!e.target.value) return;
     const filled = M.slots.some(s => s.songs.length);
@@ -466,7 +473,7 @@ function assignToSlots(items) {
   const slots = SLOT_TEMPLATE.map(s => ({ key: s.key, label: s.label, songs: [] }));
   const S = Object.fromEntries(slots.map(s => [s.key, s]));
   const order = SLOT_TEMPLATE.map(s => s.key);
-  const hintOrder = ['psalm', 'kyrie', 'gloria', 'alleluia', 'sanctus', 'mystery', 'pater', 'doxology', 'agnus', 'welcome'];
+  const hintOrder = ['psalm', 'kyrie', 'gloria', 'alleluia', 'amen', 'sanctus', 'mystery', 'pater', 'doxology', 'agnus', 'welcome'];
   let last = -1;
   const put = (key, it) => { S[key].songs.push({ id: it.id, title: it.title, imageUrl: it.imageUrl }); last = Math.max(last, order.indexOf(key)); };
   items.forEach(it => {
@@ -641,9 +648,61 @@ function openMass(m) {
   closeSlotForm();
   M = { ...m, slots: m.slots.map(s => ({ ...s, songs: s.songs.map(x => ({ ...x })) })), isNew: false,
     ...(m.kind ? { roles: (m.roles || []).map(r => ({ ...r })), singers: [...(m.singers || [])] } : {}) };
-  setDirty(false);
+  const added = addAmenSlot();
+  setDirty(added);
   renderHeader();
   renderSlots();
+  if (added) $('status').textContent = '● 照最近一台加上了大阿门，保存才会进乐谱';
+}
+// 以前存的弥撒没有「大阿门」这个位置（2026-11-15 才加）：补在信德的奥迹后面；有人排过大阿门的话一起带上 → 回 true
+function addAmenSlot() {
+  if (M.kind === 'rite' || M.slots.some(s => s.key === 'amen')) return false;
+  const at = M.slots.findIndex(s => s.key === 'mystery');
+  if (at < 0) return false;
+  const day = whichDay(M.date, M.title);
+  const songs = amenFrom(M.date, ordinaryFrom(M.date, day.season, regular()), regular());
+  M.slots.splice(at + 1, 0, { key: 'amen', label: TPL.amen.label, songs });
+  return songs.length > 0;
+}
+
+// ───────── 整套弥撒曲一次换掉（垂怜曲、光荣颂、阿肋路亚、圣圣圣、信德的奥迹、大阿门、羔羊颂）─────────
+// 先找最近一台用过这一套的弥撒，照它排（大家平常怎么排就怎么排）；没有的话照曲库歌名找
+// 将临期、四旬期不唱光荣颂；四旬期的福音前欢呼、还有自己另外选的阿肋路亚（例如姜震 A 版）不动
+const SET_SLOTS = ['kyrie', 'gloria', 'alleluia', 'sanctus', 'mystery', 'amen', 'agnus'];
+const SET_PICK = { kyrie: /垂怜/, gloria: /光荣颂/, alleluia: /阿肋路亚|福音前欢呼|欢呼歌/, sanctus: /圣圣圣(?!后)/, mystery: /奥迹|祝圣后欢呼/, amen: /大阿们|大阿门|亚孟/, agnus: /羔羊/ };
+function setSongs(name) {
+  const isSet = m => SET_SLOTS.some(k => (m.slots || []).find(s => s.key === k)?.songs.some(x => massSetOf(x.title) === name));
+  const donor = regular().filter(m => m.date !== M.date && isSet(m))
+    .sort((a, b) => Math.abs(new Date(a.date) - new Date(M.date)) - Math.abs(new Date(b.date) - new Date(M.date)))[0];
+  const out = {};
+  if (donor) {
+    SET_SLOTS.forEach(k => { out[k] = ((donor.slots.find(s => s.key === k)?.songs) || []).filter(x => massSetOf(x.title) === name).map(x => ({ ...x })); });
+  } else {
+    const songs = allSongs().filter(x => massSetOf(x.title) === name).sort((a, b) => clean(a.title).localeCompare(clean(b.title)));
+    SET_SLOTS.forEach(k => { out[k] = []; });
+    songs.forEach(x => { const k = SET_SLOTS.find(k => SET_PICK[k].test(x.title)); if (k) out[k].push({ id: x.id, title: x.title, imageUrl: x.imageUrl }); });
+  }
+  return { out, donor };
+}
+function swapSet(name) {
+  const { out, donor } = setSongs(name);
+  if (!SET_SLOTS.some(k => out[k].length)) return alert(`曲库里找不到「${name}」的谱`);
+  const season = whichDay(M.date, M.title).season;
+  addAmenSlot();
+  const changed = [];
+  SET_SLOTS.forEach(k => {
+    const slot = M.slots.find(s => s.key === k);
+    if (!slot || !out[k].length) return;
+    if (k === 'gloria' && ['ADV', 'LENT'].includes(season)) return;
+    if (k === 'alleluia' && (season === 'LENT' || slot.songs.some(x => !massSetOf(x.title)))) return;
+    slot.songs = out[k];
+    changed.push(slot.label);
+  });
+  M.manual = true;
+  setDirty();
+  renderSlots();
+  renderHeader();
+  $('status').textContent = `● 换成${name}：${changed.join('、') || '没有可以换的'}${donor ? `（照 ${donor.date} 那台）` : ''}，检查一下再保存`;
 }
 function newMass() {
   const latest = regular()[0]?.date;

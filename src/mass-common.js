@@ -1,7 +1,7 @@
 // 排歌页、这台弥撒总览共用：歌名整理、礼仪曲是哪一套
 export const PROPER_KEYS = ['entrance', 'psalm', 'offertory', 'communion', 'thanks', 'recessional'];
 // 礼仪曲（一整套）：复制文字时合成一行「弥撒曲：…」
-export const ORDINARY = ['kyrie', 'gloria', 'alleluia', 'sanctus', 'mystery', 'agnus'];
+export const ORDINARY = ['kyrie', 'gloria', 'alleluia', 'sanctus', 'mystery', 'amen', 'agnus'];
 export const MASS_SETS = [
   [/常年期/, '常年期'], [/四旬期/, '四旬期'], [/将临期/, '将临期'], [/圣诞期/, '圣诞期'], [/复活期/, '复活期'],
   [/光明弥撒/, '光明弥撒曲'], [/青年(版)?弥撒/, '青年弥撒曲'], [/生命树/, '在生命树下弥撒曲'],
