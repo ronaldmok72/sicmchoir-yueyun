@@ -744,11 +744,11 @@
             isUpdate = true;
           }
 
-          const songData = { id: songId, title: cleanName, imageUrl: imageUrl };
+          const songData = { id: songId, title: cleanName, imageUrl: imageUrl, at: Date.now() };
 
           // 保存到 Firebase
           await setDoc(doc(db, "custom_songs", songId), songData);
-          await setDoc(doc(db, "custom_songs", "_v"), { at: Date.now() });   // 曲库版本：大家的手机下次打开就会重读
+          await setDoc(doc(db, "custom_songs", "_v"), { at: Date.now() }, { merge: true });   // 曲库版本：大家的手机下次打开只读改过的歌
 
           // 暴力更新本地数据
           if (isUpdate) {
@@ -802,7 +802,7 @@
         try {
           // 强制从 Firebase 数据库中删除
           await deleteDoc(doc(db, "custom_songs", id));
-          await setDoc(doc(db, "custom_songs", "_v"), { at: Date.now() });
+          { const t = Date.now(); await setDoc(doc(db, "custom_songs", "_v"), { at: t, full: t }, { merge: true }); }   // 删了歌：大家的手机整份重读一次
           
           // 从本地数组中移除
           const index = LIBRARY_DATA.findIndex(s => s.id === id);

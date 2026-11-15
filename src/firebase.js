@@ -26,6 +26,16 @@ export const RESULTS = 'quiz_results';
 // ───────── 读不到最新的 → 先用手机记着的 ─────────
 // 额度用完／连不上：资料库回 resource-exhausted、unavailable，或者 SDK 自己先拿手机记着的（fromCache）
 const SOFT = ['resource-exhausted', 'unavailable', 'deadline-exceeded'];
+// 免费额度在美国太平洋时间半夜重置 → 换成这部手机的时间，例如「下午 4 点」
+export function resetAt() {
+  try {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' })
+      .formatToParts(new Date()).map(x => [x.type, x.value]));
+    const t = new Date(Date.now() + (1440 - (+p.hour * 60 + +p.minute)) * 60e3);
+    const h = t.getHours() + (t.getMinutes() >= 30 ? 1 : 0);
+    return `${h < 12 ? '早上' : h < 18 ? '下午' : '晚上'} ${h % 12 || 12} 点`;
+  } catch { return '下午 3、4 点'; }
+}
 let warned = false;
 function staleBanner(why) {
   if (warned) return;
@@ -33,7 +43,7 @@ function staleBanner(why) {
   const show = () => {
     const bar = document.createElement('div');
     bar.style.cssText = 'position:relative;z-index:60;background:#f59e0b;color:#1c1917;padding:10px 16px;font-size:13px;line-height:1.6;display:flex;gap:10px;align-items:flex-start';
-    bar.innerHTML = `<div style="flex:1">⚠️ <b>${why === 'resource-exhausted' ? '资料库今天的免费读取额度用完了' : '现在读不到资料库'}</b>（没网络，或今天的免费额度用完了，下午 3 点恢复）。` +
+    bar.innerHTML = `<div style="flex:1">⚠️ <b>${why === 'resource-exhausted' ? '资料库今天的免费读取额度用完了' : '现在读不到资料库'}</b>（没网络，或今天的免费额度用完了，${resetAt()}恢复）。` +
       '这一页显示的是这部手机上次记着的资料，可能不是最新的；签到、改资料要等恢复了才行。</div>' +
       '<button style="flex-shrink:0;background:none;border:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit">知道了</button>';
     bar.querySelector('button').onclick = () => bar.remove();

@@ -3,7 +3,7 @@
 // 资料都是排歌页、职务表、座位表存的（masses / duties / seatings / members），这里只读
 // 这里会写的只有两样：团员投票会不会来（rsvp/{日期_practice|mass}）、合照（photos/{日期 或 婚礼id}，相片本身放 Cloudinary）
 import { collection, doc, setDoc, updateDoc, deleteField, arrayUnion, deleteDoc, query, where, documentId, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, getDocs, getDoc } from "./firebase.js";
+import { db, getDocs, getDoc, resetAt } from "./firebase.js";
 import { customSongs, cachedSongs } from "./song-cache.js";
 import { litDay, tidyTitle } from "./liturgy.js";
 import { waTitle, ORDINARY, massSetOf, PROPER_KEYS } from "./mass-common.js";
@@ -69,14 +69,28 @@ async function load(fromCache) {
   const cut = new Date(TODAY + 'T12:00'); cut.setDate(cut.getDate() - 45);
   const want = new URLSearchParams(location.search).get('d');
   const from = want && want < iso(cut) ? want : iso(cut);   // 特地看以前的某一天：从那天读起
-  const get = c => (fromCache ? getDocsFromCache : getDocs)(query(collection(db, c), where(documentId(), '>=', from))).catch(() => ({ docs: [] }));
+  // 每一样最多等 15 秒（额度用完时有些手机会一直等）；读不到的记下来
+  let failed = 0;
+  const within = p => fromCache ? p : Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 15e3))]);
+  const get = c => within((fromCache ? getDocsFromCache : getDocs)(query(collection(db, c), where(documentId(), '>=', from)))).catch(() => { failed++; return { docs: [] }; });
   const [[ma, du, se, rv, ph], cs, mb, nt] = await Promise.all([
     Promise.all(['masses', 'duties', 'seatings', 'rsvp', 'photos'].map(get)),
-    fromCache ? cachedSongs() : customSongs(db).catch(() => []),
-    loadMembers(fromCache),
-    loadNotices(db, fromCache).catch(() => ({ active: [] })),
+    fromCache ? cachedSongs() : within(customSongs(db)).catch(() => cachedSongs()),
+    within(loadMembers(fromCache)).catch(() => loadMembers(true)),
+    within(loadNotices(db, fromCache)).catch(() => loadNotices(db, true)).catch(() => ({ active: [] })),
   ]);
   if (fromCache && !ma.docs.length) return false;
+  // 手机没记过、资料库又读不到：讲清楚，不要一直「读取中…」或显示一页空的
+  if (!fromCache && failed && !ma.docs.length) {
+    if (date) return true;   // 已经用手机记着的画好了，留着
+    const box = $('loading');
+    box.innerHTML = `<div class="text-slate-700 font-semibold">现在读不到资料</div>
+      <div class="mt-1">今天免费的读取次数可能用完了（${resetAt()}恢复），或者网络不好。</div>
+      <div class="mt-1">可以先按右上角「🎼 看乐谱」。</div>
+      <button type="button" class="mt-3 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">再试一次</button>`;
+    box.querySelector('button').onclick = () => { box.textContent = '读取中…'; load().catch(err => { console.error(err); box.textContent = '读取失败：' + (err.code || err.message); }); };
+    return false;
+  }
   rsvps = Object.fromEntries(rv.docs.map(d => [d.id, d.data()]));
   photos = Object.fromEntries(ph.docs.map(d => [d.id, d.data()]));
   notices = nt.active;
@@ -99,7 +113,12 @@ async function load(fromCache) {
   $('loading').classList.add('hidden');
   $('day').classList.remove('hidden');
   render();
+  if (!fromCache && !failed) try { localStorage.setItem(FRESH, String(Date.now())); } catch { /* 没关系 */ }
+  return true;
 }
+// 3 分钟内刚读过最新的（例如看完谱又回来）：直接用手机记着的，不再整页重读——弥撒前后大家进进出出，这样省很多读取次数
+const FRESH = 'sicDayAt';
+const justRead = () => { try { return Date.now() - (+localStorage.getItem(FRESH) || 0) < 3 * 60e3; } catch { return false; } };
 
 // 可以看的日期：最近过去的一个主日 + 接下来有排东西的 + 接下来 8 个主日
 function dates() {
@@ -817,4 +836,4 @@ document.addEventListener('sic-login', () => {
 });
 
 
-load(true).catch(() => false).then(() => load()).catch(err => { console.error(err); if (!date) $('loading').textContent = '读取失败：' + (err.code || err.message); });
+load(true).catch(() => false).then(ok => ok && justRead() ? null : load()).catch(err => { console.error(err); if (!date) $('loading').textContent = '读取失败：' + (err.code || err.message); });

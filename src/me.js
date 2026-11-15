@@ -1,7 +1,7 @@
 // 我的资料：一打开先看到自己的资料、出席、测验；按「修改资料」才出现表格。团员自己改名字（至少有圣名）、全名、电话；名单上本来就有他的话，自己合并
 // 改名字时，职务表、座位表、婚礼名单上的旧名字一起改（members-common.js）
 import { collection, doc, updateDoc, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db, getDocs, getDoc, RESULTS } from "./firebase.js";
+import { db, getDocs, getDoc, history, RESULTS } from "./firebase.js";
 import { renameEverywhere, mergeMembers, lookAlikes } from "./members-common.js";
 import { markOf, scoreOf, fmtPts, OFFICIAL_FROM } from "./checkin-common.js";
 import { VOICE_NAME, normVoice } from "./people.js";
@@ -10,7 +10,9 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const gate = window.sicStaff;
 const f = $('f');
-let members = [], me = null;
+let members = null, me = null;
+// 全团名单只有要用才读（自己注册的新团员找「名单上本来就有你吗」、改名字查有没有同名）——以前每次打开都整份读
+const allMembers = async () => members ||= (await getDocs(collection(db, 'members'))).docs.map(d => ({ id: d.id, ...d.data() }));
 const pad = n => String(n).padStart(2, '0');
 const MDAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 f.bm.innerHTML = '<option value="">月</option>' + MDAYS.map((_, i) => `<option value="${pad(i + 1)}">${i + 1} 月</option>`).join('');
@@ -25,8 +27,9 @@ async function load() {
   $('need-login').classList.toggle('hidden', !!who);
   $('body').classList.toggle('hidden', !who);
   if (!who) return;
-  members = (await getDocs(collection(db, 'members'))).docs.map(d => ({ id: d.id, ...d.data() }));
-  me = members.find(m => m.id === who.id);
+  members = null;
+  const mine = await getDoc(doc(db, 'members', who.id));
+  me = mine.exists() ? { id: mine.id, ...mine.data() } : null;
   if (!me) { gate.logout(); return load(); }
   fillForm();
   renderView();
@@ -34,7 +37,7 @@ async function load() {
   $('need-box').classList.toggle('hidden', !miss.length);
   $('need-box').innerHTML = miss.length ? `👉 还差：${miss.join('、')}。 <button type="button" id="need-go" class="font-semibold underline">现在去填 ›</button>` : '';
   $('need-go')?.addEventListener('click', () => editing(true));
-  renderMerge();
+  renderMerge().catch(x => console.error(x));
   renderAttendance().catch(x => { console.error(x); $('my-att-list').textContent = '读不到出席记录。'; });
   renderQuiz().catch(x => console.error(x));
 }
@@ -77,13 +80,13 @@ $('btn-cancel').addEventListener('click', () => { fillForm(); f.phone.value = ''
 // 我的出席：今年，再按季看；跟点名页同一套算法
 async function renderAttendance() {
   const now = new Date(), y = now.getFullYear(), today = `${y}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const since = c => getDocs(query(collection(db, c), where(documentId(), '>=', `${y}-01-01`))).catch(() => ({ docs: [] }));
+  const since = c => history(c).catch(() => ({ docs: [] }));   // 旧的用手机记着的，最近 45 天读最新
   const [at, rv, cfg] = await Promise.all([since('attendance'), since('rsvp'), getDoc(doc(db, 'config', 'attendance')).catch(() => null)]);
   const votes = Object.fromEntries(rv.docs.map(d => [d.id, d.data().votes || {}]));
   // 2027-01-01 起正式算，之前试行的不算进去
   const official = today >= OFFICIAL_FROM;
   if (official) $('my-att-note')?.remove();
-  const evs = at.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.date && e.date <= today && (!official || e.date >= OFFICIAL_FROM));
+  const evs = at.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.date && e.date >= `${y}-01-01` && e.date <= today && (!official || e.date >= OFFICIAL_FROM));
   const need = cfg?.data?.()?.need || 7;
   const line = (label, list, want) => {
     const c = { P: 0, T: 0, L: 0, A: 0 };
@@ -132,8 +135,8 @@ function nameTip() {
 f.name.addEventListener('input', nameTip);
 
 // 名单上本来就有你（自己注册时没点到）：还没登记电话、名字第一个字一样的
-function renderMerge() {
-  const cand = me.selfJoined && !me.pendingMerge ? lookAlikes(me, members).filter(o => !o.phoneTail && !o.selfJoined) : [];
+async function renderMerge() {
+  const cand = me.selfJoined && !me.pendingMerge ? lookAlikes(me, await allMembers()).filter(o => !o.phoneTail && !o.selfJoined) : [];
   const box = $('merge-box');
   box.classList.toggle('hidden', !cand.length);
   if (!cand.length) return;
@@ -174,7 +177,7 @@ f.addEventListener('submit', async e => {
   const cname = f.cname.value.replace(/\s+/g, ''), noCname = f.noCname.checked;
   if (!name) return err('名字不能空');
   if (!cname && !noCname) return err('请填中文全名；真的没有中文名的话，打勾「我没有中文名」。');
-  if (members.some(m => m.id !== me.id && m.name.trim().toLowerCase() === name.toLowerCase())) return err(`名单上已经有「${name}」了。加上姓或中文名区别一下。`);
+  if (name.toLowerCase() !== me.name.trim().toLowerCase() && (await allMembers()).some(m => m.id !== me.id && m.name.trim().toLowerCase() === name.toLowerCase())) return err(`名单上已经有「${name}」了。加上姓或中文名区别一下。`);
   const bm = f.bm.value, bd = f.bd.value;
   if (!bm !== !bd) return err('生日要月和日都选；不想填就两个都留空。');
   if (bm && +bd > MDAYS[+bm - 1]) return err(`${+bm} 月没有 ${+bd} 日，再看一下。`);

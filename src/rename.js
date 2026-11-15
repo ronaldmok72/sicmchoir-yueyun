@@ -8,7 +8,7 @@ import { logChange } from "./changelog.js";
 // r = { id, imageUrl, oldTitle, newTitle, where, setlistId, at }
 // 谁改的：用电话登录的就记他的名字；只输了后台密码的记「用后台密码的人」
 export async function renameSong(db, r) {
-  await setDoc(doc(db, 'custom_songs', r.id), { id: r.id, title: r.newTitle, imageUrl: r.imageUrl }, { merge: true });
+  await setDoc(doc(db, 'custom_songs', r.id), { id: r.id, title: r.newTitle, imageUrl: r.imageUrl, at: Date.now() }, { merge: true });
   bumpSongs(db);
   if (r.setlistId) {
     const ref = doc(db, 'setlists', r.setlistId);

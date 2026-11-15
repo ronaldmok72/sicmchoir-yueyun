@@ -412,7 +412,7 @@ $('picker-upload').addEventListener('change', async e => {
     fd.append('upload_preset', 'ml_default');
     const r = await (await fetch('https://api.cloudinary.com/v1_1/dsfhilcgz/image/upload', { method: 'POST', body: fd })).json();
     if (!r.secure_url) throw new Error(r.error?.message || '图片上传失败');
-    const song = { id: same?.id || `song_custom_${Date.now()}_0`, title, imageUrl: r.secure_url };
+    const song = { id: same?.id || `song_custom_${Date.now()}_0`, title, imageUrl: r.secure_url, at: Date.now() };
     await setDoc(doc(db, 'custom_songs', song.id), song);
     bumpSongs(db);
     if (same && LIBRARY_DATA.includes(same)) Object.assign(same, song); else { LIBRARY_DATA.push(song); EXTRA = EXTRA.filter(x => x.id !== song.id); }
