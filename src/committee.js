@@ -4,6 +4,7 @@
 import { collection, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, FieldPath } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs, getDoc } from "./firebase.js";
 import { docx } from "./docx.js";
+import { termStatus } from "./liturgy.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1092,7 +1093,7 @@ function renderRoster() {
             ${cols.map(c => `<th class="px-3 py-2 text-left font-semibold border-b border-slate-200">${esc(c)}</th>`).join('')}
           </tr></thead>
           <tbody>${parsed.map(x => {
-            const now = x.r.start <= thisY && thisY <= termEnd(x.r);
+            const now = termStatus(x.r.start, termEnd(x.r)) === 'now';
             return `<tr class="align-top ${now ? 'bg-indigo-50/60' : ''}">
               <td class="sticky left-0 ${now ? 'bg-indigo-50' : 'bg-white'} px-3 py-2 border-b border-r border-slate-200 whitespace-nowrap font-semibold">
                 <button data-ract="edit" data-id="${x.r.id}" class="hover:text-indigo-600 text-left">${esc(x.r.term)}</button>${now ? '<div class="text-[11px] font-normal text-indigo-600">现任</div>' : ''}</td>
@@ -1119,7 +1120,7 @@ function renderRoster() {
     return;
   }
   view.innerHTML = head + `<div class="mt-3 space-y-3">${list.slice().reverse().map(r => {
-    const now = r.start <= thisY && thisY <= termEnd(r), next = r.start > thisY;
+    const s = termStatus(r.start, termEnd(r)), now = s === 'now', next = s === 'next';   // 换届在将临期第一主日
     return `
     <section class="bg-white rounded-2xl border ${now ? 'border-indigo-300 ring-1 ring-indigo-200' : 'border-slate-200'} p-4">
       <div class="flex items-center gap-2">

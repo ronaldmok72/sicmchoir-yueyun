@@ -3,6 +3,7 @@
 // 「什么事找谁」照团员名单上开了哪个后台（members.areas）
 import { collection, doc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, getDocs, getDoc } from "./firebase.js";
+import { termStatus } from "./liturgy.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -52,17 +53,18 @@ async function renderWho() {
 async function load() {
   const s = await getDoc(doc(db, 'config', 'committee'));
   const terms = s.exists() ? (s.data().terms || []) : [];
-  const y = new Date().getFullYear();
+  const st = t => termStatus(t.start, termEnd(t));
   if (!terms.length) {
     $('now').innerHTML = '<div class="text-sm text-slate-500">执委名单还没放上来。执委打开「执委专区」时会自动更新。</div>';
   } else {
-    const cur = terms.find(t => t.start <= y && y <= termEnd(t)) || terms.at(-1);
+    // 换届在将临期第一主日（新的礼仪年开始）
+    const cur = terms.find(t => st(t) === 'now') || terms.filter(t => st(t) === 'past').at(-1) || terms.at(-1);
     $('now').innerHTML = `<div class="flex items-center gap-2"><div class="font-bold">${esc(cur.term)} 届</div><span class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">现任</span></div>
       <div class="mt-2 divide-y divide-slate-100">${rows(cur.text)}</div>`;
     const past = terms.filter(t => t !== cur).reverse();
     $('past').innerHTML = past.map(t => `
       <details class="bg-white rounded-xl border border-slate-200 px-4 py-2.5">
-        <summary class="cursor-pointer select-none text-sm"><span class="font-semibold">${esc(t.term)} 届</span>${t.start > y ? '<span class="ml-2 text-[11px] text-emerald-700">下一届</span>' : ''}
+        <summary class="cursor-pointer select-none text-sm"><span class="font-semibold">${esc(t.term)} 届</span>${st(t) === 'next' ? '<span class="ml-2 text-[11px] text-emerald-700">下一届（将临期第一主日上任）</span>' : ''}
           <span class="text-xs text-slate-400">　${esc(roles(t.text).find(r => r.role === '主席')?.people.join('、') ? '主席：' + roles(t.text).find(r => r.role === '主席').people.join('、') : '')}</span></summary>
         <div class="mt-1 divide-y divide-slate-100">${rows(t.text)}</div>
       </details>`).join('') || '<div class="text-sm text-slate-400 px-1">还没有以前的名单。</div>';

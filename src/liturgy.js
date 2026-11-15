@@ -22,6 +22,14 @@ function advent1(y) {
   const sunBefore = addDays(xmas, -(xmas.getDay() || 7));
   return addDays(sunBefore, -21);
 }
+// 执委换届跟礼仪年走：「2027 - 2028」届从 2026 年将临期第一主日上任，做到 2028 年将临期第一主日前一天（基督君王节那一周是最后一周）
+// 回 'now'（现任）／'next'（还没上任）／'past'
+export function termStatus(start, end, today = new Date()) {
+  const t = D(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  if (!start) return 'past';
+  if (t < advent1(start - 1)) return 'next';
+  return t < advent1(end || start) ? 'now' : 'past';
+}
 // 主显节（马来西亚移到 1/2–1/8 之间的主日）、主受洗节（主显后的主日；主显在 1/7、1/8 就移到星期一）
 function epiphany(y) { const d = D(y, 1, 2); return addDays(d, (7 - d.getDay()) % 7); }
 function baptism(y) { const e = epiphany(y); return e.getDate() >= 7 ? addDays(e, 1) : addDays(e, 7); }
