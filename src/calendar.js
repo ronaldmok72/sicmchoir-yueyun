@@ -101,7 +101,7 @@ function renderHead() {
     <div class="text-xs text-slate-500 mt-2">这个礼仪年：${dmy(Y.start)} 将临期第一主日 → ${dmy(Y.end)}（基督君王节那一周是最后一周）</div>
     <div class="mt-3 rounded-xl ${soon ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-slate-50 text-slate-600'} px-3 py-2 text-sm">
       ${soon ? '🔔 ' : ''}<b>${dmy(Y.next)}</b>（星期日${left > 0 ? `，还有 ${left} 天` : ''}）将临期第一主日起是 <b>${Y.nextCycle}年</b>，读${GOSPEL[Y.nextCycle]}。
-      之后：${[1, 2].map(i => { const n = litYearOf(add(Y.next, 366 * i - 1)); return `${n.start.slice(0, 4)} 年将临期起 ${n.cycle}年`; }).join('，')}。
+      之后：${(() => { let n = litYearOf(Y.next); return [1, 2].map(() => (n = litYearOf(n.next), `${n.start.slice(0, 4)} 年将临期起${n.cycle}年`)).join('，'); })()}。
     </div>`;
 }
 
