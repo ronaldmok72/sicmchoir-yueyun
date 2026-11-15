@@ -241,7 +241,7 @@ function renderHead() {
   $('head').innerHTML = `
     <div class="text-sm text-slate-500">${y} 年 ${mo} 月 ${dd} 日　星期${week(date)}${date === TODAY ? '　<span class="text-indigo-600 font-semibold">今天</span>' : ''}</div>
     <div class="text-lg font-semibold mt-0.5">${onlySpecial(date) ? `💒 婚礼弥撒${specials[date].length > 1 ? ` × ${specials[date].length} 台` : ''}` : esc(titleOf(date))}</div>
-    ${onlySpecial(date) ? '' : `<div class="text-xs text-slate-400 mt-0.5">${lit.cycle}年</div>`}
+    ${onlySpecial(date) ? '' : `<a href="calendar.html" class="inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold">${lit.cycle}年 · 礼仪日历 ›</a>`}
     ${notes.length ? `<div class="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">📌 ${notes.map(esc).join('<br>📌 ')}</div>` : ''}
     ${noteBtn}`;
   $('btn-note')?.addEventListener('click', editNote);

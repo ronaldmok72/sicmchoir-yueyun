@@ -14,6 +14,7 @@
     { group: '📚 找歌', tone: 'teal' },
     { href: 'songs.html', icon: '🎶', title: '歌单目录', sub: '全部的歌都在这里，随时看谱学歌' },
     { href: 'years.html', icon: '📖', title: '历年排歌', sub: '每一年哪一天唱什么，找回以前的歌' },
+    { href: 'calendar.html', icon: '📆', title: '礼仪日历', sub: '今年是甲／乙／丙年、接下来每个主日和大日子' },
     { group: '📢 团里的事', tone: 'amber' },
     { href: 'notices.html', icon: '📣', title: '公告', sub: '最近的活动、要练哪几首歌' },
     { href: 'exco.html', icon: '🏛️', title: '执委团', sub: '现任执委、什么事找谁、历届执委' },

@@ -5,7 +5,7 @@ import { db, history as recentDocs } from "./firebase.js";
 import { LIBRARY_DATA, loadLibrary } from "./library.js";
 import { HISTORY } from "./songlist-history.js";
 import { splitLine, splitSongs, matchSong } from "./songlist-import.js";
-import { litDay, keyOfTitle, nameOf } from "./liturgy.js";
+import { litDay, keyOfTitle, nameOf, CNY } from "./liturgy.js";
 import { PROPER_KEYS, ORDINARY, massSetOf, waTitle } from "./mass-common.js";
 
 const $ = id => document.getElementById(id);
@@ -18,8 +18,6 @@ const QUIET = ['pre', 'post', 'pater', 'doxology', 'welcome'];
 const wd = d => '日一二三四五六'[new Date(d + 'T12:00').getDay()];
 
 // ───────── 旧歌单的日期：标题有写（1/1/17）就照写的，没有就照礼仪年历推算 ─────────
-// 农历新年每年不一样，推算不出来
-const CNY = { 2017: '2017-01-28', 2018: '2018-02-16', 2019: '2019-02-05', 2020: '2020-01-25', 2024: '2024-02-10', 2025: '2025-01-29', 2026: '2026-02-17', 2027: '2027-02-06' };
 const yearKeys = {};
 function dateOfKey(k, y) {
   if (!yearKeys[y]) {

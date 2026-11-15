@@ -36,6 +36,22 @@ function baptism(y) { const e = epiphany(y); return e.getDate() >= 7 ? addDays(e
 
 // 礼仪年 Y = 从 Y-1 年将临期到 Y 年基督君王节；Y%3：1 甲、2 乙、0 丙
 export const cycleOf = litYear => ['丙', '甲', '乙'][litYear % 3];
+// 甲年主日福音读玛窦、乙年马尔谷、丙年路加
+export const GOSPEL = { 甲: '玛窦福音', 乙: '马尔谷福音', 丙: '路加福音' };
+// 这一天在哪个礼仪年：{ litYear, cycle, start, end（最后一天 = 基督君王节那周的星期六）, next（下一个礼仪年第一天）}
+export function litYearOf(dateStr) {
+  const [y, mo, da] = dateStr.split('-').map(Number);
+  const d = D(y, mo, da);
+  const litYear = d >= advent1(y) ? y + 1 : y;
+  const start = advent1(litYear - 1), next = advent1(litYear);
+  return { litYear, cycle: cycleOf(litYear), start: iso(start), end: iso(addDays(next, -1)), next: iso(next), nextCycle: cycleOf(litYear + 1) };
+}
+// 农历新年每年不一样，算不出来，照农历写死（新春感恩弥撒就在初一当天）
+export const CNY = {
+  2017: '2017-01-28', 2018: '2018-02-16', 2019: '2019-02-05', 2020: '2020-01-25', 2021: '2021-02-12', 2022: '2022-02-01', 2023: '2023-01-22',
+  2024: '2024-02-10', 2025: '2025-01-29', 2026: '2026-02-17', 2027: '2027-02-06', 2028: '2028-01-26', 2029: '2029-02-13', 2030: '2030-02-03',
+  2031: '2031-01-23', 2032: '2032-02-11', 2033: '2033-01-31', 2034: '2034-02-19', 2035: '2035-02-08',
+};
 
 export const SEASON_OF = k => k.startsWith('OT') ? 'OT' : k.startsWith('ADV') ? 'ADV' : k.startsWith('LENT') ? 'LENT' : k.startsWith('EAS') ? 'EAS' : ({
   XMASEVE: 'XMAS', XMAS: 'XMAS', HOLYFAMILY: 'XMAS', MARY: 'XMAS', EPIPHANY: 'XMAS', BAPTISM: 'XMAS', NYE: 'XMAS',
