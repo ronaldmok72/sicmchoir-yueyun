@@ -16,6 +16,7 @@
     { href: 'years.html', icon: '📖', title: '历年排歌', sub: '每一年哪一天唱什么，找回以前的歌' },
     { group: '📢 团里的事', tone: 'amber' },
     { href: 'notices.html', icon: '📣', title: '公告', sub: '最近的活动、要练哪几首歌' },
+    { href: 'exco.html', icon: '🏛️', title: '执委团', sub: '现任执委、什么事找谁、历届执委' },
     { href: 'quiz.html', icon: '📝', title: '团员小测验', sub: '自我了解用，不影响职位', quiz: true },
     { group: '🗂️ 排单', tone: 'sky', back: true },
     { href: 'mass.html', icon: '⛪', title: '弥撒排歌', sub: '按位置选歌，保存就更新乐谱；婚礼也在这里', staff: 'mass' },

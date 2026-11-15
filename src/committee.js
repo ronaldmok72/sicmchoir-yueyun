@@ -112,6 +112,19 @@ async function load() {
   ITEMS = docs.filter(d => d.kind === 'item');
   FIN = docs.filter(d => d.kind === 'fin');
   MEETINGS = docs.filter(d => !['year', 'roster', 'item', 'fin'].includes(d.kind)).map(norm).sort((a, b) => b.date.localeCompare(a.date));
+  syncPublic().catch(err => console.warn('执委团公开版', err));
+}
+// 历届执委的公开版（config/committee，大家在「🏛️ 执委团」看得到，只有届、岗位、名字）
+// 执委打开这页时对一下：公开版跟不上（有人改了、补了、还原了、导入了）→ 请登录服务重新抄一份
+async function syncPublic(force) {
+  const list = Object.values(ROSTER);
+  const at = list.reduce((m, r) => (r.updatedAt || '') > m ? r.updatedAt : m, '');
+  if (!force) {
+    const p = await getDoc(doc(db, 'config', 'committee')).catch(() => null);
+    if (p?.exists() && p.data().at === at && p.data().n === list.length) return;
+  }
+  const { status } = await window.sicStaff.staffCall('publishRoster', {});
+  if (status !== 200) console.warn('执委团公开版没更新', status);
 }
 
 // ───────── 画面 ─────────
@@ -1175,6 +1188,7 @@ async function rosterSave(id, { term, text, notes }, isNew) {
   const out = { kind: 'roster', term, start: Number((term.match(/\d{4}/) || [0])[0]), text, notes, by: whoNow(), updatedAt: new Date().toISOString(), history };
   await window.sicStaff.withAuth(() => setDoc(ref, out));
   ROSTER[id] = { id, ...out };
+  syncPublic(true).catch(err => console.warn('执委团公开版', err));
   return true;
 }
 

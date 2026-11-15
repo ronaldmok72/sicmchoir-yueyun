@@ -9,6 +9,7 @@
 //   action 'register' { id（名单上的那一位，新团员不用）, info } → 注册好的那一位
 //   action 'setPin'   { member, h } → 第一次设 PIN（要电话对得上、还没设过）→ { areas }
 //   后台的事：keys / saveKeys / setPhone / clearPin / setMaster / mergeSecrets / migrate（要带证明，见下面）
+//   action 'publishRoster' → 执委（执委专区）请服务器把历届执委抄一份公开版到 config/committee（大家在「🏛️ 执委团」看）
 //
 // 打乱过的电话、PIN、密码表都藏在 secrets（资料库规则不给任何手机读写，只有这里的服务器钥匙碰得到）：
 //   secrets/m_{团员id} = { phoneHash, pinHash, master（他的 PIN 也开最高权限）, pinFails, pinLockUntil }　secrets/access = { json: 密码表 }
@@ -292,6 +293,20 @@ const ACTIONS = {
     await patch(sa, secPath(id), { phoneHash: h });
     await patch(sa, path, { phoneTail: tail, updatedAt: new Date().toISOString() }, ['phoneHash']);
     return send(res, 200);
+  },
+  // 历届执委公开版：执委会议资料（meetings）只有执委读得到，这里抄一份只有「届、岗位、名字」的到 config/committee
+  // 备注栏、括号里的备注、谁改的、改动记录都不抄（那些可能有「要核对」这类内部的话）
+  async publishRoster(sa, body, res) {
+    const v = await verify(sa, body);
+    if (!v.areas.has('committee') && !v.areas.has('access')) return send(res, 401);
+    const q = await F.getDocs(F.query(await coll(sa, 'meetings'), F.where('kind', '==', 'roster')));
+    const all = q.docs.map(d => d.data());
+    const clean = t => String(t || '').split(/\r?\n/).map(l => l.replace(/[（(][^（）()]*[）)]/g, '').replace(/[ \t]+/g, ' ').trim()).filter(Boolean).join('\n');
+    const terms = all.map(r => ({ term: String(r.term || ''), start: Number(r.start) || 0, text: clean(r.text) }))
+      .filter(t => t.term).sort((a, b) => a.start - b.start);
+    const at = all.reduce((m, r) => String(r.updatedAt || '') > m ? String(r.updatedAt) : m, '');
+    await F.setDoc(await ref(sa, 'config/committee'), { terms, at, n: all.length, publishedAt: new Date().toISOString() });
+    return send(res, 200, { n: all.length });
   },
   // 清掉 PIN（他忘了）：最高权限
   async clearPin(sa, body, res) {
