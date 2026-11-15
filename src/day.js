@@ -72,7 +72,7 @@ async function load(fromCache) {
   // 每一样最多等 15 秒（额度用完时有些手机会一直等）；读不到的记下来
   let failed = 0;
   const within = p => fromCache ? p : Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 15e3))]);
-  const get = c => within((fromCache ? getDocsFromCache : getDocs)(query(collection(db, c), where(documentId(), '>=', from)))).catch(() => { failed++; return { docs: [] }; });
+  const get = c => within((fromCache ? getDocsFromCache : getDocs)(query(collection(db, c), where(documentId(), '>=', from)))).then(s => { if (!fromCache && s.metadata?.fromCache && s.empty) failed++; return s; }).catch(() => { failed++; return { docs: [] }; });
   const [[ma, du, se, rv, ph], cs, mb, nt] = await Promise.all([
     Promise.all(['masses', 'duties', 'seatings', 'rsvp', 'photos'].map(get)),
     fromCache ? cachedSongs() : within(customSongs(db)).catch(() => cachedSongs()),
