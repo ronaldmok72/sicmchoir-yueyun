@@ -329,6 +329,7 @@ function renderSongs(isStaff) {
   $('songs').innerHTML = card('🎵 唱的歌', editLink(isStaff, 'mass.html')) + `
     ${m.setlistName ? '' : '<div class="text-xs text-amber-700 mb-2">还在排，可能会改</div>'}
     ${sets.length ? `<div class="text-sm mb-2"><span class="text-slate-500">弥撒曲：</span>${esc(sets.join('、'))}</div>` : ''}
+    <div id="alle-verse">${verseHtml(date)}</div>
     <div class="divide-y divide-slate-100">
       ${show.map(s => `
         <div class="flex gap-3 py-2 text-sm">
@@ -493,6 +494,12 @@ function wedSeats(w, isMe) {
   </div>`;
 }
 
+// 阿肋路亚经文（福音前欢呼中间唱的那一句）：存在 prayers/{礼仪key}.verse.{甲|乙|丙}，祈祷文页输入
+function verseHtml(d) {
+  const lit = litDay(d), v = prayers[lit.key]?.verse?.[lit.cycle];
+  return v ? `<div class="text-sm mb-2 rounded-lg bg-indigo-50 px-3 py-2"><span class="text-indigo-700 font-semibold">阿肋路亚经文：</span>${esc(v)}</div>` : '';
+}
+
 // 公告 + 要练的歌（还在显示的公告都放这里，不管选哪一天）
 // 练习前祈祷文（主日才有）：星期四、星期六练习那天自动打开，其他时候按一下展开
 const prayers = {};
@@ -505,6 +512,7 @@ async function renderPrayer() {
   prayers[lit.key] ??= await loadPrayer(lit.key);
   if (d !== date) return;   // 读的时候已经换了别天
   const p = prayers[lit.key];
+  if ($('alle-verse')) $('alle-verse').innerHTML = verseHtml(d);
   const ahead = Math.round((new Date(d + 'T12:00') - new Date(TODAY + 'T12:00')) / 864e5);
   const wasOpen = box.dataset.date === d ? box.open : [4, 6].includes(new Date().getDay()) && ahead >= 0 && ahead < 7;
   box.dataset.date = d;
@@ -518,6 +526,7 @@ async function renderPrayer() {
     <div class="mt-3 space-y-4">
       ${p?.entrance ? para('进堂咏', p.entrance, p.ref) : ''}
       ${p?.collect ? para('集祷经', '请大家祈祷：' + p.collect) : ''}
+      ${p?.verse?.[lit.cycle] ? para(`阿肋路亚经文（${lit.cycle}年）`, p.verse[lit.cycle]) : ''}
       ${p?.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="经书这一页" class="w-full rounded-xl border border-slate-200">` : ''}
       ${p ? '' : '<div class="text-sm text-amber-700 bg-amber-50 rounded-xl px-3 py-2">这个主日的进堂咏、集祷经还没有人输入。<a href="prayer.html?d=' + d + '" class="underline font-semibold">去输入（一次就好）</a></div>'}
       ${para('圣女则济利亚祷文', CECILIA)}
