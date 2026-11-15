@@ -71,6 +71,7 @@ export function buildSlots(template, source, ordinary, anyMass, amen = [], extra
   const out = template.map(t => ({
     key: t.key, label: t.label,
     songs: PROPER.includes(t.key) ? (songs[t.key] || []).map(x => ({ ...x }))
+      : t.key === 'verse' ? []   // 福音前欢呼经文：每个主日不一样，不照同季带；空着 = 自动翻回答唱咏那页
       : t.key === 'amen' ? amen.map(x => ({ ...x }))
       : ordinary ? from(ordinary, t.key)
       : YEAR_ROUND.includes(t.key) ? from(anyMass, t.key) : [],

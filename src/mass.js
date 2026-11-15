@@ -20,6 +20,7 @@ const SLOT_TEMPLATE = [
   { key: 'gloria',      label: '光荣颂',              hint: ['光荣颂'] },
   { key: 'psalm',       label: '答唱咏',              hint: ['圣咏'] },
   { key: 'alleluia',    label: '福音前欢呼',          hint: ['阿肋路亚', '福音前'] },
+  { key: 'verse',       label: '福音前欢呼经文',      hint: [] },
   { key: 'offertory',   label: '奉献咏',              code: 'D' },
   { key: 'sanctus',     label: '圣圣圣',              hint: ['圣圣圣'] },
   { key: 'mystery',     label: '信德的奥迹',          hint: ['信德的奥迹', '欢呼词'] },
@@ -38,7 +39,7 @@ const TPL = Object.fromEntries(SLOT_TEMPLATE.map(s => [s.key, s]));
 // 💒 婚礼也在这里排：kind = rite 婚配礼仪（其中一方不是教友，没有感恩经）／wedding 婚姻弥撒（全套）；主日、平日弥撒没有 kind
 // 婚礼一天可以几台，id = 日期_时间（2026-10-17_0930），多了 time、roles [{role,name}]、singers [团员名字]
 const KIND_TITLE = { rite: '婚配礼仪~ ', wedding: '婚姻弥撒~ ' };
-const RITE_KEYS = ['pre', 'entrance', 'psalm', 'alleluia', 'pater', 'communion', 'thanks', 'recessional', 'post'];
+const RITE_KEYS = ['pre', 'entrance', 'psalm', 'alleluia', 'verse', 'pater', 'communion', 'thanks', 'recessional', 'post'];
 const templateOf = kind => kind === 'rite' ? SLOT_TEMPLATE.filter(s => RITE_KEYS.includes(s.key)) : kind ? SLOT_TEMPLATE.filter(s => s.key !== 'welcome') : SLOT_TEMPLATE;
 const isWed = m => !!m?.kind;
 const regular = () => masses.filter(m => !m.kind);   // 自动排歌、推荐只看主日／平日弥撒
@@ -129,6 +130,7 @@ function renderHeader() {
   sel.value = M.isNew ? '__new' : M.id;
 
   // 新的一场／草稿：显示照哪一份旧歌单排的，可以换；另外两个起手方法
+  renderSetBar();
   const tools = $('start-tools');
   tools.innerHTML = '';
   if ((M.isNew || !M.setlistName) && !isWed(M)) renderAutoBox(tools);
@@ -156,14 +158,8 @@ function renderAutoBox(tools) {
         ${sources.map(s => `<option value="${esc(s.id)}" ${s.id === M.autoFrom ? 'selected' : ''}>${s.cycle === day.cycle ? '★ ' : ''}${esc(s.label)}</option>`).join('')}
       </select></label>
       <div class="text-slate-400">★ = 同一个${day.cycle}年，最适合照着排</div>` : ''}
-    ${M.autoFrom !== undefined && M.ordinaryHint ? `<div class="text-amber-700">${esc(M.ordinaryHint)}</div>` : ''}
-    ${M.kind === 'rite' ? '' : `<label class="flex flex-wrap items-center gap-2 text-slate-500">整套弥撒曲换成：
-      <select id="swap-set" class="flex-1 min-w-[12rem] border border-slate-300 rounded-md px-2 py-1 bg-white text-slate-700">
-        <option value="">— 选一套（垂怜曲到羔羊颂一次换）—</option>
-        ${[...new Set(MASS_SETS.map(x => x[1]))].map(n => `<option>${esc(n)}</option>`).join('')}
-      </select></label>`}`;
+    ${M.autoFrom !== undefined && M.ordinaryHint ? `<div class="text-amber-700">${esc(M.ordinaryHint)}</div>` : ''}`;
   tools.appendChild(box);
-  box.querySelector('#swap-set')?.addEventListener('change', e => { const n = e.target.value; e.target.value = ''; if (n) swapSet(n); });
   box.querySelector('#auto-src')?.addEventListener('change', e => {
     if (!e.target.value) return;
     const filled = M.slots.some(s => s.songs.length);
@@ -205,6 +201,7 @@ function sharedWith(si) {
   return first && first.songs.some(x => hasHint(x.title, slot.key)) ? first.label : null;
 }
 function renderSlots() {
+  addVerseSlot();
   const box = $('slots');
   box.innerHTML = '';
   M.slots.forEach((slot, si) => {
@@ -231,7 +228,7 @@ function renderSlots() {
     el.innerHTML = `
       <div class="flex items-${own ? 'start' : 'center'} gap-2">
         ${label}
-        <div class="flex-1 min-w-0">${songs || (sharedWith(si) ? `<span class="text-sm text-slate-400">✓ 跟上面「${esc(sharedWith(si))}」同一张谱</span>` : '<span class="text-sm text-slate-300">—</span>')}</div>
+        <div class="flex-1 min-w-0">${songs || (slot.key === 'verse' ? verseNote(slot, si) : sharedWith(si) ? `<span class="text-sm text-slate-400">✓ 跟上面「${esc(sharedWith(si))}」同一张谱</span>` : '<span class="text-sm text-slate-300">—</span>')}</div>
         <button data-act="add" data-si="${si}" class="shrink-0 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-xs">＋ 选歌</button>
         ${own ? `<button data-act="del-slot" data-si="${si}" class="shrink-0 px-1 text-xs text-slate-300 hover:text-red-500" title="删掉这个位置">删</button>` : ''}
       </div>`;
@@ -253,6 +250,8 @@ $('slots').addEventListener('click', e => {
     if (v.trim()) x.note = v.trim(); else delete x.note;
   }
   if (b.dataset.act === 'up' && k > 0) [slot.songs[k - 1], slot.songs[k]] = [slot.songs[k], slot.songs[k - 1]];
+  if (b.dataset.act === 'verse-off') slot.skip = true;
+  if (b.dataset.act === 'verse-on') delete slot.skip;
   if (b.dataset.act === 'slot-up' && si > 0) [M.slots[si - 1], M.slots[si]] = [M.slots[si], M.slots[si - 1]];
   if (b.dataset.act === 'slot-down' && si < M.slots.length - 1) [M.slots[si + 1], M.slots[si]] = [M.slots[si], M.slots[si + 1]];
   if (b.dataset.act === 'slot-edit') {
@@ -505,7 +504,8 @@ async function save() {
   if (isWed(M) && Object.values(KIND_TITLE).includes(M.title + ' ')) return alert('名称要写新人的名字，例如：婚配礼仪~ Jason Tan & Yap Phui Khei');
   const items = [];
   let missing = 0;
-  M.slots.forEach(s => s.songs.forEach(x => {
+  const auto = autoVerse();
+  M.slots.forEach(s => (s.key === 'verse' && !s.songs.length && auto ? [auto] : s.songs).forEach(x => {
     if (x.missing) { missing++; return; }   // 还没有谱的，乐谱里先跳过
     if (items.some(i => i.id === x.id && PAIR[s.key])) return;   // 同一张谱放了两个位置：乐谱只出现一次
     const lib = songById(x.id) || x;   // 用曲库最新的歌名和图片
@@ -526,7 +526,7 @@ async function save() {
     const now = new Date().toISOString();
     const data = {
       date: M.date, title: M.title, note: M.note || '', setlistName: name,
-      slots: M.slots.map(s => ({ key: s.key, label: s.label, ...(s.note ? { note: s.note } : {}), songs: s.songs.map(x => x.missing
+      slots: M.slots.map(s => ({ key: s.key, label: s.label, ...(s.note ? { note: s.note } : {}), ...(s.skip ? { skip: true } : {}), songs: s.songs.map(x => x.missing
         ? { id: null, title: x.title, imageUrl: '', missing: true }
         : { id: x.id, title: (songById(x.id) || x).title, imageUrl: (songById(x.id) || x).imageUrl, ...(x.note ? { note: x.note } : {}) }) })),
       ...(isWed(M) ? {
@@ -665,6 +665,121 @@ function addAmenSlot() {
   return songs.length > 0;
 }
 
+// 以前存的弥撒没有「福音前欢呼经文」（2026-11-15 才加）：补在福音前欢呼后面，空的，不算改动
+function addVerseSlot() {
+  if (M.slots.some(s => s.key === 'verse')) return;
+  const at = M.slots.findIndex(s => s.key === 'alleluia');
+  if (at >= 0) M.slots.splice(at + 1, 0, { key: 'verse', label: TPL.verse.label, songs: [] });
+}
+// 福音前欢呼经文空着：福音前欢呼是单独一首（例如姜震 A 版，不是整套弥撒曲里的）→ 唱完翻回答唱咏那页，经文印在那页最下面
+// 回传要再放一次的答唱咏；不用的话回 null
+function autoVerse() {
+  const v = M.slots.find(s => s.key === 'verse'), al = M.slots.find(s => s.key === 'alleluia'), ps = M.slots.find(s => s.key === 'psalm');
+  if (!v || v.songs.length || v.skip || !al?.songs.length || al.songs.some(x => massSetOf(x.title))) return null;
+  const p = ps?.songs.filter(x => !x.missing && x.id).slice(-1)[0];
+  return p || null;
+}
+function verseNote(slot, si) {
+  const p = autoVerse();
+  if (p) return `<span class="text-sm text-emerald-700">✓ 自动：唱完翻回「${esc(clean(p.title))}」那页（经文在最下面）</span>
+    <button data-act="verse-off" data-si="${si}" class="ml-1 text-xs text-slate-400 hover:text-red-500 underline">不用</button>`;
+  if (slot.skip) return `<span class="text-sm text-slate-400">不翻回答唱咏</span>
+    <button data-act="verse-on" data-si="${si}" class="ml-1 text-xs text-indigo-500 hover:text-indigo-700 underline">要翻回</button>`;
+  return '<span class="text-sm text-slate-300">—</span> <span class="text-xs text-slate-300">（福音前欢呼用单独一首，例如姜震 A 版，会自动翻回答唱咏那页）</span>';
+}
+
+// ───────── 🎼 弥撒曲组合：自己存的一套（垂怜曲到羔羊颂，连大阿门、天主经），一按就换 ─────────
+// 存在 config/massSets（开页面读一次）；存／删交给登录服务（有「弥撒排歌」权限的人才可以）
+const SET_KEYS = ['kyrie', 'gloria', 'alleluia', 'verse', 'sanctus', 'mystery', 'amen', 'pater', 'doxology', 'agnus'];
+let SETS = [];
+async function loadSets() {
+  try { const d = await getDoc(doc(db, 'config', 'massSets')); SETS = d.exists() ? d.data().sets || [] : []; } catch (e) { console.error(e); }
+}
+const idsOf = list => (list || []).filter(x => x.id && !x.missing).map(x => x.id).join('|');
+function currentSet() {
+  return SETS.find(s => Object.entries(s.slots || {}).every(([k, l]) => idsOf(M.slots.find(x => x.key === k)?.songs) === idsOf(l)))?.name || '';
+}
+function renderSetBar() {
+  const bar = $('set-bar');
+  const show = M.kind !== 'rite';
+  bar.classList.toggle('hidden', !show);
+  if (!show) return;
+  const now = currentSet();
+  bar.innerHTML = `<div class="flex flex-wrap items-center gap-2 bg-white rounded-xl border border-indigo-200 px-3 py-2 text-sm">
+    <span class="font-semibold text-indigo-700">🎼 弥撒曲组合</span>
+    ${now ? `<span class="text-xs text-emerald-700">现在用：${esc(now)}</span>` : ''}
+    <select id="set-pick" class="flex-1 min-w-[10rem] border border-slate-300 rounded-md px-2 py-1 bg-white text-slate-700 text-sm">
+      <option value="">换成…</option>
+      ${SETS.length ? `<optgroup label="自己存的组合">${SETS.map((s, i) => `<option value="my${i}">${esc(s.name)}</option>`).join('')}</optgroup>` : ''}
+      <optgroup label="照曲库整套换（垂怜曲到羔羊颂）">${[...new Set(MASS_SETS.map(x => x[1]))].map(n => `<option value="lib:${esc(n)}">${esc(n)}</option>`).join('')}</optgroup>
+    </select>
+    <button id="set-save" class="px-2.5 py-1 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs hover:bg-indigo-100">💾 把这台存成一套</button>
+    ${SETS.length ? '<button id="set-del" class="px-1.5 text-xs text-slate-400 hover:text-red-500" title="删掉一套存过的">🗑</button>' : ''}
+  </div>`;
+  $('set-pick').addEventListener('change', e => {
+    const v = e.target.value;
+    e.target.value = '';
+    if (v.startsWith('lib:')) return swapSet(v.slice(4));
+    const s = SETS[Number(v.slice(2))];
+    if (s) applySet(s);
+  });
+  $('set-save').addEventListener('click', saveSet);
+  $('set-del')?.addEventListener('click', delSet);
+}
+function applySet(set) {
+  addAmenSlot(); addVerseSlot();
+  const order = SLOT_TEMPLATE.map(t => t.key);
+  const changed = [];
+  Object.entries(set.slots || {}).forEach(([k, list]) => {
+    let slot = M.slots.find(s => s.key === k);
+    if (!slot) {   // 这一台没有这个位置（例如以前删掉了）→ 照平常的顺序插回去
+      if (!list.length || !TPL[k]) return;
+      slot = { key: k, label: TPL[k].label, songs: [] };
+      const at = M.slots.findIndex(s => order.indexOf(s.key) > order.indexOf(k));
+      M.slots.splice(at < 0 ? M.slots.length : at, 0, slot);
+    }
+    slot.songs = list.map(x => ({ ...x }));
+    if (k === 'verse') delete slot.skip;
+    changed.push(slot.label);
+  });
+  M.manual = true;
+  setDirty();
+  renderSlots();
+  renderHeader();
+  $('status').textContent = `● 换成「${set.name}」：${changed.join('、')}，检查一下再保存`;
+}
+async function callSets(body, ok) {
+  const st = window.sicStaff;
+  if (!st?.staffCall) return alert('登录还没准备好，请重新整理页面再试。');
+  $('status').textContent = '存组合中…';
+  try {
+    const { status, j } = await st.staffCall('saveMassSets', body);
+    if (status === 401) throw new Error('要有「弥撒排歌」的权限');
+    if (status !== 200) throw new Error(j.error || status);
+    SETS = j.sets || [];
+    renderSetBar();
+    $('status').textContent = ok;
+  } catch (e) { setDirty(dirty); alert('存不到：' + (e.message || e)); }
+}
+function saveSet() {
+  const slots = {};
+  SET_KEYS.forEach(k => { const s = M.slots.find(x => x.key === k); if (s) slots[k] = s.songs.filter(x => !x.missing && x.id).map(x => ({ id: x.id, title: x.title, imageUrl: x.imageUrl })); });
+  if (!Object.values(slots).some(l => l.length)) return alert('这一台的垂怜曲到羔羊颂都还没选歌。');
+  const lines = SET_KEYS.filter(k => slots[k]?.length).map(k => `${TPL[k].label}：${slots[k].map(x => waTitle(x.title)).join(' / ')}`);
+  if (slots.verse && !slots.verse.length && autoVerse()) lines.splice(lines.findIndex(l => l.startsWith(TPL.alleluia.label)) + 1, 0, `${TPL.verse.label}：自动翻回答唱咏那页`);
+  const guess = currentSet() || [massSetOf(slots.kyrie?.[0]?.title || ''), slots.alleluia?.[0] && !massSetOf(slots.alleluia[0].title) ? waTitle(slots.alleluia[0].title).replace(/^阿肋路亚\s*/, '') : ''].filter(Boolean).join(' + ');
+  const name = (prompt(`把这台的弥撒曲存成一套，以后在「换成…」一按就换：\n\n${lines.join('\n')}\n\n（空着的位置也会照存，例如将临期不唱光荣颂）\n\n这一套叫什么？`, guess) || '').trim().slice(0, 40);
+  if (!name) return;
+  if (SETS.some(s => s.name === name) && !confirm(`已经有一套叫「${name}」，换掉它？`)) return;
+  callSets({ op: 'put', name, set: { name, slots } }, `✅ 存好了「${name}」，以后在「换成…」里选`);
+}
+function delSet() {
+  const n = prompt(`删掉哪一套？打号码：\n\n${SETS.map((s, i) => `${i + 1}. ${s.name}`).join('\n')}\n\n（弥撒里已经排好的歌不会动）`);
+  const s = SETS[Number(n) - 1];
+  if (!s || !confirm(`删掉「${s.name}」？`)) return;
+  callSets({ op: 'del', name: s.name }, `已删掉「${s.name}」`);
+}
+
 // ───────── 整套弥撒曲一次换掉（垂怜曲、光荣颂、阿肋路亚、圣圣圣、信德的奥迹、大阿门、羔羊颂）─────────
 // 先找最近一台用过这一套的弥撒，照它排（大家平常怎么排就怎么排）；没有的话照曲库歌名找
 // 将临期、四旬期不唱光荣颂；四旬期的福音前欢呼、还有自己另外选的阿肋路亚（例如姜震 A 版）不动
@@ -774,7 +889,7 @@ $('btn-new').addEventListener('click', () => {
   $('status').textContent = '读取中…';
   try {
     await loadLibrary(db);
-    await loadMasses();
+    await Promise.all([loadMasses(), loadSets()]);
   } catch (e) {
     console.error(e);
     $('status').textContent = '读取失败：' + (e.code || e.message);

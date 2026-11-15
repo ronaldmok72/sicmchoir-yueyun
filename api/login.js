@@ -308,6 +308,33 @@ const ACTIONS = {
     await F.setDoc(await ref(sa, 'config/committee'), { terms, at, n: all.length, publishedAt: new Date().toISOString() });
     return send(res, 200, { n: all.length });
   },
+  // 弥撒曲组合（垂怜曲到羔羊颂一套）：有「弥撒排歌」的人可以存／删，存在 config/massSets（资料库规则不用改）
+  // op = put（同名就换掉）／del；两个人同时改也不会互相盖掉：每次先读最新的再改一套
+  async saveMassSets(sa, body, res) {
+    const v = await verify(sa, body);
+    if (!v.areas.has('mass') && !v.areas.has('admin') && !v.areas.has('access')) return send(res, 401);
+    const KEYS = ['kyrie', 'gloria', 'alleluia', 'verse', 'sanctus', 'mystery', 'amen', 'pater', 'doxology', 'agnus'];
+    const name = str(body.name, 40).trim() || str(body.set?.name, 40).trim();
+    if (!name) return send(res, 400, { error: '要有名字' });
+    const cur = await getDoc(sa, 'config/massSets');
+    let sets = Array.isArray(cur?.sets) ? cur.sets : [];
+    sets = sets.filter(x => x?.name !== name);
+    if (body.op === 'put') {
+      const slots = {};
+      for (const k of KEYS) {
+        const list = body.set?.slots?.[k];
+        if (!Array.isArray(list)) continue;
+        slots[k] = list.slice(0, 4).map(x => ({ id: str(x?.id, 120), title: str(x?.title, 200), imageUrl: str(x?.imageUrl, 600) }))
+          .filter(x => x.id && x.title && /^https:\/\//.test(x.imageUrl));
+      }
+      if (!Object.values(slots).some(l => l.length)) return send(res, 400, { error: '这一套没有歌' });
+      sets.push({ name, slots });
+      if (sets.length > 40) return send(res, 400, { error: '最多存 40 套' });
+    } else if (body.op !== 'del') return send(res, 400, { error: '不认识的动作' });
+    sets.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    await F.setDoc(await ref(sa, 'config/massSets'), { sets, at: new Date().toISOString() });
+    return send(res, 200, { sets });
+  },
   // 清掉 PIN（他忘了）：最高权限
   async clearPin(sa, body, res) {
     if (!(await verify(sa, body)).areas.has('access') || !str(body.id)) return send(res, 401);
