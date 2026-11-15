@@ -85,7 +85,9 @@ async function openEditor() {
   f.collect.value = data?.collect || '';
   f.verse.value = data?.verse?.[lit.cycle] || '';
   $('ed-verse-label').textContent = `阿肋路亚经文（${lit.cycle}年；福音前欢呼中间唱的那一句）`;
-  f.photo.value = '';
+  shot = null;
+  $('ed-keep').checked = false;
+  $('ed-keep-row').classList.add('hidden');
   $('ed-ai').value = '';
   $('ed-ai-msg').classList.add('hidden');
   $('ed-photo').textContent = data?.imageUrl ? '已经有照片了；再选一张会换掉。' : '';
@@ -102,12 +104,12 @@ document.addEventListener('sic-login', () => window.sicLogin?.close());
 const clean = s => s.trim().replace(/^请大家祈祷[:：]\s*/, '').replace(/\s*\n\s*/g, '');
 f.addEventListener('submit', async e => {
   e.preventDefault();
-  const file = f.photo.files[0];
+  const file = shot && $('ed-keep').checked ? shot : null;
   const next = { ref: f.ref.value.trim().replace(/^[（(]|[)）]$/g, ''), entrance: clean(f.entrance.value), collect: clean(f.collect.value) };
   const verse = clean(f.verse.value);
   next.verse = { ...(data?.verse || {}), [lit.cycle]: verse };
   if (!verse) delete next.verse[lit.cycle];
-  if (!next.entrance && !next.collect && !verse && !file && !data?.imageUrl) { $('ed-err').textContent = '至少打一段，或放一张照片'; return; }
+  if (!next.entrance && !next.collect && !verse && !file && !data?.imageUrl) { $('ed-err').textContent = '至少打一段，或拍一张经书'; return; }
   const b = $('ed-save');
   b.disabled = true; b.textContent = file ? '上传照片中…' : '保存中…';
   try {
@@ -147,18 +149,35 @@ function shrink(file) {
     img.src = URL.createObjectURL(file);
   });
 }
+let shot = null;   // 刚才拍的那张（读不到字的话可以存起来给大家看）
+const late = (p, ms, why) => Promise.race([p, new Promise((_, bad) => setTimeout(() => bad(new Error(why)), ms))]);
 $('ed-ai').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
+  shot = file;
+  $('ed-keep-row').classList.remove('hidden');
   const msg = $('ed-ai-msg');
   const say = (t, cls) => { msg.textContent = t; msg.className = `text-xs ${cls}`; };
-  say('📷 读字中…（大概 10–30 秒）', 'text-indigo-600');
+  // 每一秒更新：现在做到哪一步、过了几秒（不会看起来像卡住）
+  const t0 = Date.now();
+  let step = '缩小照片';
+  const show = () => say(`⏳ ${step}…（${Math.round((Date.now() - t0) / 1000)} 秒）`, 'text-indigo-600');
+  show();
+  const tick = setInterval(show, 1000);
+  const ac = new AbortController();
+  let timer;
   try {
-    await gate?.ensureAuth?.();
+    const img = await shrink(file);
+    step = '确认登录';
+    await late(gate?.ensureAuth?.(), 20e3, '登录太久没反应，请重新整理页面再试');
+    const tok = await late(gate?.idToken?.(), 20e3, '登录太久没反应，请重新整理页面再试').catch(() => null);
+    if (!tok) throw new Error('要先用电话登录（右上角菜单）');
+    step = 'AI 读字中（大概 10–40 秒）';
+    timer = setTimeout(() => ac.abort(), 110e3);
     const r = await fetch('/api/summarize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await gate?.idToken?.()) },
-      body: JSON.stringify({ stage: 'book', image: { data: await shrink(file), mime: 'image/jpeg' }, cycle: lit.cycle }),
+      method: 'POST', signal: ac.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+      body: JSON.stringify({ stage: 'book', image: { data: img, mime: 'image/jpeg' }, cycle: lit.cycle }),
     });
     const j = await r.json().catch(() => ({}));
     if (r.status === 401) throw new Error('要先用电话登录（右上角菜单）');
@@ -169,8 +188,16 @@ $('ed-ai').addEventListener('change', async e => {
     if (b.entrance) { f.entrance.value = b.entrance; got.push('进堂咏'); }
     if (b.collect) { f.collect.value = b.collect; got.push('集祷经'); }
     if (b.verse) { f.verse.value = b.verse; got.push('阿肋路亚经文'); }
-    say(got.length ? `✅ 读到：${got.join('、')}。请对一下经书有没有错字（看不清的字会写「□」），再按保存。` : '读不到字，请拍清楚一点再试，或直接打字。', got.length ? 'text-emerald-700' : 'text-amber-700');
-  } catch (err) { console.error(err); say('没读到：' + (err.message || err), 'text-red-500'); }
+    $('ed-keep').checked = !got.length;
+    clearInterval(tick);
+    say(got.length ? `✅ 读到：${got.join('、')}（${Math.round((Date.now() - t0) / 1000)} 秒）。请对一下经书有没有错字（看不清的字会写「□」），再按保存。` : '读不到字：请拍清楚一点再试，或直接打字。照片会存起来给大家看。', got.length ? 'text-emerald-700' : 'text-amber-700');
+  } catch (err) {
+    console.error(err);
+    clearInterval(tick);
+    $('ed-keep').checked = true;
+    say(err.name === 'AbortError' ? '读太久了（超过 110 秒），可能网络慢或 AI 太忙。可以再拍一次，或直接打字；按保存的话照片会先存起来给大家看。'
+      : '没读到：' + (err.message || err) + '。按保存的话照片会先存起来给大家看。', 'text-red-500');
+  } finally { clearInterval(tick); clearTimeout(timer); }
 });
 
 // ───────── 接下来 8 个主日：哪些已经输入 ─────────

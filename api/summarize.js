@@ -129,23 +129,24 @@ ${known.map(t => '  · ' + t).join('\n')}` : ''}
   活动名要短，像「圣诞报佳音 Cantata」「复活节礼仪中文弥撒」「婚礼礼仪 – 2 场」「声乐培训」；有确切日子可加在后面「（22/8）」。
   只是提议、还没定的不要放；不要放「歌咏团执委会议」（会自动加）。`;
 
-async function gemini(key, content, instruction, schema) {
+// opt（可以不给）：per 每个型号最多等几毫秒、budget 全部最多几毫秒、max 最多写几个字、models 先试哪几个型号（拍经书要快）
+async function gemini(key, content, instruction, schema, opt = {}) {
   const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } }
     : content.image ? { inline_data: { mime_type: content.mime, data: content.image } } : { text: content.text }, { text: instruction }];
   let busy = false, slow = false;
   const tried = new Set(), gone = [];
-  const deadline = Date.now() + 270e3;   // Vercel 最多给 300 秒，留点时间回话
+  const deadline = Date.now() + (opt.budget || 270e3);   // Vercel 最多给 300 秒，留点时间回话
   // 整理会议记录不用「想」很久：叫它少想、直接写（新旧型号写法不一样）
   const think = model => /gemini-2\.5/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: 'low' };   // 新型号（含 gemini-flash-latest）；不认的话下面会自动不加再试
   const once = async (model, noThink) => {
     tried.add(model);
     const left = deadline - Date.now();
-    if (left < 20e3) { slow = true; return null; }
-    const cfg = { temperature: 0.2, maxOutputTokens: 32768, responseMimeType: 'application/json', responseSchema: schema };
+    if (left < (opt.per ? 8e3 : 20e3)) { slow = true; return null; }
+    const cfg = { temperature: 0.2, maxOutputTokens: opt.max || 32768, responseMimeType: 'application/json', responseSchema: schema };
     const tc = !noThink && think(model);
     if (tc) cfg.thinkingConfig = tc;
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), Math.min(left, 200e3));
+    const timer = setTimeout(() => ac.abort(), Math.min(left, opt.per || 200e3));
     let r;
     try {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -169,7 +170,7 @@ async function gemini(key, content, instruction, schema) {
     if (!text) throw new Error('AI 没有回答（' + (j.candidates?.[0]?.finishReason || j.promptFeedback?.blockReason || '不知道原因') + '）');
     return JSON.parse(text);
   };
-  for (const model of MODELS) {
+  for (const model of opt.models || MODELS) {
     const g = await once(model);
     if (g) return g;
   }
@@ -178,7 +179,7 @@ async function gemini(key, content, instruction, schema) {
     const g = await once(model);
     if (g) return g;
   }
-  if (slow) throw new Error('AI 整理太久没做完（内容很长）。再按一次试试；还是不行，请跟 Ronald 说');
+  if (slow) throw new Error(opt.slow || 'AI 整理太久没做完（内容很长）。再按一次试试；还是不行，请跟 Ronald 说');
   if (busy) throw new Error('Google 的 AI 现在太多人用，请过一两分钟再按一次');
   throw new Error(`找不到可以用的 AI 型号（试过 ${gone.join('、')}），请跟 Ronald 说`);
 }
@@ -253,7 +254,11 @@ module.exports = async (req, res) => {
       if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(mime) || !body.image?.data) throw new Error('要一张照片');
       if (body.image.data.length > MAX * 1.37) throw new Error('照片太大（超过 4MB）');
       const cycle = ['甲', '乙', '丙'].includes(body.cycle) ? body.cycle : '';
-      const g = await gemini(key, { image: body.image.data, mime }, promptBook(cycle), SCHEMA_BOOK);
+      // 读一页经书：每个型号最多等 40 秒，全部最多 95 秒；先试最快的 2.5 flash（不用「想」）
+      const g = await gemini(key, { image: body.image.data, mime }, promptBook(cycle), SCHEMA_BOOK, {
+        per: 40e3, budget: 95e3, max: 4096, models: ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'],
+        slow: 'AI 读太久没读完，请再拍一次试试（拍近一点、只拍那一页）',
+      });
       const t = s => String(s || '').replace(/\s*\n\s*/g, '').trim();
       return res.status(200).end(JSON.stringify({ book: { ref: t(g.ref), entrance: t(g.entrance), collect: t(g.collect).replace(/^请大家祈祷[:：]\s*/, ''), verse: t(g.verse).replace(/^阿肋路亚[，,。！!\s]*/, '').replace(/[，,。\s]*阿肋路亚[。！!]*$/, '') } }));
     } catch (e) { return fail(400, String(e.message || e)); }

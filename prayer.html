@@ -97,8 +97,8 @@
       </div>
       <div class="text-xs text-stone-500">进堂咏、集祷经每年同一个主日都一样：存一次，以后每年自己出来。阿肋路亚经文分甲乙丙年，存一次，三年后同一个主日自己出来。</div>
       <label class="block rounded-xl bg-indigo-50 border border-indigo-200 px-3 py-2.5 cursor-pointer">
-        <span class="font-semibold text-indigo-700">📷 拍经书那一页，自动读出字</span>
-        <span class="block text-xs text-indigo-600 mt-0.5">拍清楚一点；读出来会填进下面，看过没错再按保存。读经本那一页（有阿肋路亚经文的）也可以拍。</span>
+        <span class="font-semibold text-indigo-700">📷 拍经书那一页（或选一张照片）</span>
+        <span class="block text-xs text-indigo-600 mt-0.5">会自动读出字填进下面（大概 10–40 秒，下面会显示进度），你看过没错再按保存。读经本那一页（有阿肋路亚经文的）也可以拍。</span>
         <input id="ed-ai" type="file" accept="image/*" class="hidden"></label>
       <div id="ed-ai-msg" class="hidden text-xs"></div>
       <label class="block space-y-1"><span class="text-stone-500">进堂咏的出处（例如：咏 16:6,8）</span>
@@ -109,8 +109,7 @@
         <textarea name="collect" rows="5" class="w-full border border-stone-300 rounded-lg px-3 py-2"></textarea></label>
       <label class="block space-y-1"><span id="ed-verse-label" class="text-stone-500">阿肋路亚经文</span>
         <textarea name="verse" rows="2" class="w-full border border-stone-300 rounded-lg px-3 py-2" placeholder="例如：上主，求祢向我们显示祢的仁慈，赐给我们祢的救恩。"></textarea></label>
-      <label class="block space-y-1"><span class="text-stone-500">📷 经书那一页的照片（存起来给大家看，可以不放）</span>
-        <input name="photo" type="file" accept="image/*" class="block w-full text-xs"></label>
+      <label id="ed-keep-row" class="hidden text-xs text-stone-500"><input id="ed-keep" type="checkbox" class="mr-1 align-middle">刚才拍的照片也存起来给大家看（字读不到的时候用）</label>
       <div id="ed-photo" class="text-xs text-stone-400"></div>
       <div class="flex items-center gap-2 pt-1">
         <span id="ed-err" class="text-xs text-red-500 flex-1"></span>
