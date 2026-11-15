@@ -2,9 +2,9 @@
 // 进堂咏、集祷经存 Firestore prayers/{礼仪 key}（OT29、ADV1、EASTER…）：输入一次，明年同一个主日自己出来
 // 星期四、星期六练的是接下来那个主日的歌，所以显示接下来的主日（今天是主日就是今天）
 import { doc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase.js";
+import { db, getDoc } from "./firebase.js";
 import { litDay } from "./liturgy.js";
-import { CECILIA, bookName, loadPrayer } from "./prayer-common.js";
+import { CECILIA, SEED, bookName, loadPrayer } from "./prayer-common.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -37,6 +37,10 @@ async function load() {
 
 function render() {
   const has = !!(data && (data.entrance || data.collect || data.imageUrl));
+  const verse = data?.verse?.[lit.cycle] || '';
+  $('sec-verse').classList.toggle('hidden', !verse);
+  $('verse').textContent = verse;
+  $('verse-cycle').textContent = `（${lit.cycle}年）`;
   $('missing').classList.toggle('hidden', has);
   $('sec-entrance').classList.toggle('hidden', !data?.entrance);
   $('sec-collect').classList.toggle('hidden', !data?.collect);
@@ -79,7 +83,11 @@ async function openEditor() {
   f.ref.value = data?.ref || '';
   f.entrance.value = data?.entrance || '';
   f.collect.value = data?.collect || '';
+  f.verse.value = data?.verse?.[lit.cycle] || '';
+  $('ed-verse-label').textContent = `阿肋路亚经文（${lit.cycle}年；福音前欢呼中间唱的那一句）`;
   f.photo.value = '';
+  $('ed-ai').value = '';
+  $('ed-ai-msg').classList.add('hidden');
   $('ed-photo').textContent = data?.imageUrl ? '已经有照片了；再选一张会换掉。' : '';
   $('ed-err').textContent = '';
   $('editor').classList.remove('hidden');
@@ -96,7 +104,10 @@ f.addEventListener('submit', async e => {
   e.preventDefault();
   const file = f.photo.files[0];
   const next = { ref: f.ref.value.trim().replace(/^[（(]|[)）]$/g, ''), entrance: clean(f.entrance.value), collect: clean(f.collect.value) };
-  if (!next.entrance && !next.collect && !file && !data?.imageUrl) { $('ed-err').textContent = '至少打一段，或放一张照片'; return; }
+  const verse = clean(f.verse.value);
+  next.verse = { ...(data?.verse || {}), [lit.cycle]: verse };
+  if (!verse) delete next.verse[lit.cycle];
+  if (!next.entrance && !next.collect && !verse && !file && !data?.imageUrl) { $('ed-err').textContent = '至少打一段，或放一张照片'; return; }
   const b = $('ed-save');
   b.disabled = true; b.textContent = file ? '上传照片中…' : '保存中…';
   try {
@@ -117,6 +128,70 @@ f.addEventListener('submit', async e => {
     $('msg').textContent = '✅ 存好了，明年同一个主日会自己出来';
   } catch (err) { console.error(err); $('ed-err').textContent = '没存到：' + (err.code || err.message); }
   b.disabled = false; b.textContent = '保存';
+});
+
+// ───────── 拍经书 → AI 读出字（填进表格，人看过再保存）─────────
+// 手机照片很大：先缩到 1600px 宽的 JPEG 再送
+function shrink(file) {
+  return new Promise((ok, bad) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      ok(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = () => bad(new Error('这张照片打不开'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+$('ed-ai').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const msg = $('ed-ai-msg');
+  const say = (t, cls) => { msg.textContent = t; msg.className = `text-xs ${cls}`; };
+  say('📷 读字中…（大概 10–30 秒）', 'text-indigo-600');
+  try {
+    await gate?.ensureAuth?.();
+    const r = await fetch('/api/summarize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await gate?.idToken?.()) },
+      body: JSON.stringify({ stage: 'book', image: { data: await shrink(file), mime: 'image/jpeg' }, cycle: lit.cycle }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) throw new Error('要先用电话登录（右上角菜单）');
+    if (!r.ok) throw new Error(j.error || r.status);
+    const b = j.book || {};
+    const got = [];
+    if (b.ref) { f.ref.value = b.ref; }
+    if (b.entrance) { f.entrance.value = b.entrance; got.push('进堂咏'); }
+    if (b.collect) { f.collect.value = b.collect; got.push('集祷经'); }
+    if (b.verse) { f.verse.value = b.verse; got.push('阿肋路亚经文'); }
+    say(got.length ? `✅ 读到：${got.join('、')}。请对一下经书有没有错字（看不清的字会写「□」），再按保存。` : '读不到字，请拍清楚一点再试，或直接打字。', got.length ? 'text-emerald-700' : 'text-amber-700');
+  } catch (err) { console.error(err); say('没读到：' + (err.message || err), 'text-red-500'); }
+});
+
+// ───────── 接下来 8 个主日：哪些已经输入 ─────────
+$('btn-ahead').addEventListener('click', async () => {
+  const box = $('ahead'), b = $('btn-ahead');
+  b.disabled = true; b.textContent = '读取中…';
+  const first = add(iso(new Date()), (7 - new Date().getDay()) % 7);
+  const suns = Array.from({ length: 8 }, (_, i) => add(first, i * 7));
+  const rows = await Promise.all(suns.map(async d => {
+    const l = litDay(d);
+    let p = null;
+    try { const s = await getDoc(doc(db, 'prayers', l.key)); p = s.exists() ? s.data() : SEED[l.key] || null; } catch { p = SEED[l.key] || null; }
+    const okText = !!(p && (p.entrance || p.collect || p.imageUrl)), okVerse = !!p?.verse?.[l.cycle];
+    return `<a href="prayer.html?d=${d}" class="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50">
+      <span class="w-12 shrink-0 text-stone-500">${dm(d)}</span>
+      <span class="flex-1 min-w-0 truncate">${esc(bookName(l.key, l.name))} <span class="text-xs text-stone-400">${l.cycle}年</span></span>
+      <span class="text-xs whitespace-nowrap">${okText ? '✅' : '⚠️'} 祈祷文　${okVerse ? '✅' : '⚠️'} 阿肋路亚</span></a>`;
+  }));
+  box.innerHTML = rows.join('') + '<div class="px-4 py-2 text-xs text-stone-400">⚠️ 的按进去输入（可以拍经书）。输入过的以后每年（阿肋路亚：三年后）自己出来。</div>';
+  box.classList.remove('hidden');
+  b.disabled = false; b.textContent = '📋 接下来 8 个主日：哪些还没输入？';
 });
 
 load();

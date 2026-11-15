@@ -60,6 +60,11 @@
         <p class="text-sm text-stone-400 mb-1">请大家祈祷：</p>
         <p id="collect" class="prayer"></p>
       </section>
+      <section id="sec-verse" class="hidden bg-white rounded-2xl border border-stone-200 p-5">
+        <div class="flex items-baseline gap-2 mb-2"><h2 class="font-semibold text-indigo-700">阿肋路亚经文</h2><span id="verse-cycle" class="text-sm text-stone-400"></span></div>
+        <p class="text-sm text-stone-400 mb-1">福音前欢呼中间唱的那一句（甲乙丙年不一样）</p>
+        <p id="verse" class="prayer"></p>
+      </section>
       <img id="photo" class="hidden w-full rounded-2xl border border-stone-200" alt="经书这一页">
       <section class="bg-white rounded-2xl border border-stone-200 p-5">
         <h2 class="font-semibold text-indigo-700 mb-2">圣女则济利亚祷文</h2>
@@ -67,6 +72,12 @@
       </section>
       <button id="btn-edit" class="hidden w-full text-xs text-stone-400 hover:text-indigo-600">✏️ 有打错？改这一页</button>
     </article>
+
+    <!-- 接下来几个主日：哪些已经输入、哪些还没（按了才读，省读取次数） -->
+    <section class="mt-6">
+      <button id="btn-ahead" class="w-full px-4 py-2.5 rounded-xl bg-white border border-stone-200 text-sm text-slate-700 font-semibold hover:border-indigo-300">📋 接下来 8 个主日：哪些还没输入？</button>
+      <div id="ahead" class="hidden mt-2 bg-white rounded-2xl border border-stone-200 divide-y divide-slate-100"></div>
+    </section>
   </main>
 
   <!-- 底部 -->
@@ -84,14 +95,21 @@
         <h2 id="ed-title" class="font-semibold text-base"></h2>
         <button type="button" id="ed-close" class="text-stone-400 hover:text-stone-700 px-2 text-lg">✕</button>
       </div>
-      <div class="text-xs text-stone-500">照经书打字（或贴上），也可以只拍照上传。存一次，明年同一个主日就会自己出来。</div>
+      <div class="text-xs text-stone-500">进堂咏、集祷经每年同一个主日都一样：存一次，以后每年自己出来。阿肋路亚经文分甲乙丙年，存一次，三年后同一个主日自己出来。</div>
+      <label class="block rounded-xl bg-indigo-50 border border-indigo-200 px-3 py-2.5 cursor-pointer">
+        <span class="font-semibold text-indigo-700">📷 拍经书那一页，自动读出字</span>
+        <span class="block text-xs text-indigo-600 mt-0.5">拍清楚一点；读出来会填进下面，看过没错再按保存。读经本那一页（有阿肋路亚经文的）也可以拍。</span>
+        <input id="ed-ai" type="file" accept="image/*" class="hidden"></label>
+      <div id="ed-ai-msg" class="hidden text-xs"></div>
       <label class="block space-y-1"><span class="text-stone-500">进堂咏的出处（例如：咏 16:6,8）</span>
         <input name="ref" class="w-full border border-stone-300 rounded-lg px-3 py-2"></label>
       <label class="block space-y-1"><span class="text-stone-500">进堂咏</span>
         <textarea name="entrance" rows="4" class="w-full border border-stone-300 rounded-lg px-3 py-2"></textarea></label>
       <label class="block space-y-1"><span class="text-stone-500">集祷经（「请大家祈祷」后面那一段）</span>
         <textarea name="collect" rows="5" class="w-full border border-stone-300 rounded-lg px-3 py-2"></textarea></label>
-      <label class="block space-y-1"><span class="text-stone-500">📷 经书那一页的照片（可以不放）</span>
+      <label class="block space-y-1"><span id="ed-verse-label" class="text-stone-500">阿肋路亚经文</span>
+        <textarea name="verse" rows="2" class="w-full border border-stone-300 rounded-lg px-3 py-2" placeholder="例如：上主，求祢向我们显示祢的仁慈，赐给我们祢的救恩。"></textarea></label>
+      <label class="block space-y-1"><span class="text-stone-500">📷 经书那一页的照片（存起来给大家看，可以不放）</span>
         <input name="photo" type="file" accept="image/*" class="block w-full text-xs"></label>
       <div id="ed-photo" class="text-xs text-stone-400"></div>
       <div class="flex items-center gap-2 pt-1">

@@ -8,6 +8,8 @@
 // 第 2 步 POST { stage: 'summary', minutes, date, title, topics: ['指挥培训', ...], known: [已有待办], prevPoints: [上一版重点] }
 //   （topics 是以前用过的进展分类；known／prevPoints 是再整理一次时带上的，AI 只补新的）
 //   → { summary: { points, todos, reports, events } }
+// 经书照片 POST { stage: 'book', image: { data: base64, mime }, cycle: '甲'|'乙'|'丙' }（用电话登录过的团员都可以）
+//   → { book: { ref, entrance, collect, verse } }：练习前祈祷文页拍经书／读经本，AI 把字读出来，人看过再保存
 // GET → { configured: true/false }
 const crypto = require('crypto');
 
@@ -128,7 +130,8 @@ ${known.map(t => '  · ' + t).join('\n')}` : ''}
   只是提议、还没定的不要放；不要放「歌咏团执委会议」（会自动加）。`;
 
 async function gemini(key, content, instruction, schema) {
-  const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } } : { text: content.text }, { text: instruction }];
+  const parts = [content.pdf ? { inline_data: { mime_type: 'application/pdf', data: content.pdf } }
+    : content.image ? { inline_data: { mime_type: content.mime, data: content.image } } : { text: content.text }, { text: instruction }];
   let busy = false, slow = false;
   const tried = new Set(), gone = [];
   const deadline = Date.now() + 270e3;   // Vercel 最多给 300 秒，留点时间回话
@@ -193,6 +196,21 @@ async function currentModels(key) {
   } catch { return []; }
 }
 
+// ───────── 经书照片 → 文字 ─────────
+const SCHEMA_BOOK = S('OBJECT', {
+  properties: {
+    ref: S('STRING', { description: '进堂咏的出处，例如「咏 16:6,8」；没有就空' }),
+    entrance: S('STRING', { description: '进堂咏全文；照片上没有就空' }),
+    collect: S('STRING', { description: '集祷经全文，不要「请大家祈祷」那几个字；照片上没有就空' }),
+    verse: S('STRING', { description: '福音前欢呼（阿肋路亚）中间那一句经文，不要「阿肋路亚」这几个字；照片上没有就空' }),
+  },
+  required: ['ref', 'entrance', 'collect', 'verse'],
+});
+const promptBook = cycle => `这是天主教弥撒经书（感恩祭典）或读经本的照片，用简体中文。
+只把照片上真的印着的字照抄出来，一个字都不要改、不要补、不要自己写；看不清的字写「□」。繁体字转成简体。
+要抄的：进堂咏（和它的出处）、集祷经、福音前欢呼（阿肋路亚）中间那一句经文${cycle ? `（读本分甲乙丙年的话，只要${cycle}年的）` : ''}。
+照片上没有的那一项就空着。不要换行，标点照原文。`;
+
 // AI 回来的 → 跟 App 里一场会议一样的样子
 function meetingOf(g) {
   return {
@@ -226,10 +244,23 @@ module.exports = async (req, res) => {
 
   let who;
   try { who = await claimsOf((req.headers.authorization || '').replace(/^Bearer /, '')); } catch { who = null; }
+  const body = (() => { try { return typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}; } catch { return {}; } })();
+  // 经书照片：用电话登录过的团员、有后台的都可以（练习前祈祷文页本来就是大家都能输入）
+  if (body.stage === 'book') {
+    if (!who || !(who.member || (who.areas || []).length)) return fail(401, '要先用电话登录');
+    try {
+      const mime = String(body.image?.mime || '');
+      if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(mime) || !body.image?.data) throw new Error('要一张照片');
+      if (body.image.data.length > MAX * 1.37) throw new Error('照片太大（超过 4MB）');
+      const cycle = ['甲', '乙', '丙'].includes(body.cycle) ? body.cycle : '';
+      const g = await gemini(key, { image: body.image.data, mime }, promptBook(cycle), SCHEMA_BOOK);
+      const t = s => String(s || '').replace(/\s*\n\s*/g, '').trim();
+      return res.status(200).end(JSON.stringify({ book: { ref: t(g.ref), entrance: t(g.entrance), collect: t(g.collect).replace(/^请大家祈祷[:：]\s*/, ''), verse: t(g.verse).replace(/^阿肋路亚[，,。！!\s]*/, '').replace(/[，,。\s]*阿肋路亚[。！!]*$/, '') } }));
+    } catch (e) { return fail(400, String(e.message || e)); }
+  }
   if (!who || !(who.areas || []).includes('committee')) return fail(401, '没有权限（要开「执委专区」）');
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const topics = (Array.isArray(body.topics) ? body.topics : []).map(String).slice(0, 40);
     // 第 2 步：只读第 1 步写好的记录
     if (body.stage === 'summary') {
