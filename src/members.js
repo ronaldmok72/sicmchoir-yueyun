@@ -220,17 +220,38 @@ function openEditor(m) {
   pickGender = editing.gender || genderOf(editing) || '';
   const q = m && quizFor(m);
   $('quiz-hint').textContent = [q ? `测验（${q.name}）写：${q.raw || '没答'}` : '', m?.registeredAt ? `注册时自己选：${normVoice(m.voiceSelf) ? VOICE_NAME[m.voiceSelf] : '还不知道'}` : ''].filter(Boolean).join('　');
-  // 电话只存打乱过的样子，这里只看得到最后 4 码
-  const ph = $('phone-hint');
-  ph.className = `text-xs rounded-lg px-3 py-2 ${m?.phoneTail ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'}`;
-  ph.innerHTML = !m ? '📱 加好之后，他打开 App 用电话注册时，在名单上选自己的名字就会连起来。'
-    : m.phoneTail ? `📱 电话已登记：…${esc(m.phoneTail || '')}${m.registeredAt ? `（${new Date(m.registeredAt).toLocaleDateString('en-GB')} 自己注册）` : ''}　<span class="text-slate-400">完整号码不会存，换号码到「🔑 密码管理」</span>`
-    : '📱 还没登记电话。叫他打开 App，用自己的电话注册一次就好（或在「🔑 后台权限」帮他加）。';
+  phoneHint(m);
   $('edit-delete').classList.toggle('hidden', !m);
   renderChips();
   capeWarn();
   $('editor').classList.remove('hidden');
   setTimeout(() => (m ? null : form.name.focus()), 50);
+}
+// 电话只存打乱过的样子，这里只看得到最后 4 码。最高权限的人直接在这里换／加（以前要去「密码管理」，那页已经合进「后台权限」）
+function phoneHint(m) {
+  const ph = $('phone-hint'), boss = window.sicStaff?.isMaster?.();
+  const btn = t => boss ? ` <button type="button" id="phone-change" class="ml-1 px-2 py-0.5 rounded-md bg-white border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50">${t}</button>` : '';
+  ph.className = `text-xs rounded-lg px-3 py-2 ${m?.phoneTail ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'}`;
+  ph.innerHTML = !m ? '📱 加好之后，他打开 App 用电话注册时，在名单上选自己的名字就会连起来。'
+    : m.phoneTail ? `📱 电话已登记：…${esc(m.phoneTail)}${m.registeredAt ? `（${new Date(m.registeredAt).toLocaleDateString('en-GB')} 自己注册）` : ''}${btn('换电话')}
+      <div class="text-slate-400 mt-0.5">完整号码不会存。${boss ? '' : '要换号码：他自己在「✏️ 我的资料」换，或找有最高权限的人。'}</div>`
+    : `📱 还没登记电话。叫他打开 App，用自己的电话注册一次就好。${btn('帮他加电话')}`;
+  $('phone-change')?.addEventListener('click', () => changePhone(m));
+}
+async function changePhone(m) {
+  const gate = window.sicStaff;
+  const v = prompt(`${m.name} 的电话号码${m.phoneTail ? `（现在是 …${m.phoneTail}，输新的就换掉）` : ''}：`);
+  if (v === null || !v.trim()) return;
+  const n = gate.normPhone(v);
+  if (n.length < 10) return alert('电话号码好像不完整');
+  const tail = n.slice(-4);
+  try {
+    const { status, j } = await gate.staffCall('setPhone', { id: m.id, phoneHash: await gate.phoneHash(v), phoneTail: tail });
+    if (status === 409) return alert(`这个电话已经是 ${j?.name || '别人'} 的了。`);
+    if (status !== 200) throw new Error(status === 401 ? '这部手机没有最高权限' : '没存到 ' + status);
+    m.phoneTail = tail;
+    phoneHint(m);
+  } catch (err) { console.error(err); alert('没存到：' + (err.code || err.message)); }
 }
 function renderChips() {
   const chip = (on, label, attr) => `<button type="button" ${attr} class="px-2.5 py-1.5 rounded-lg border text-sm ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:border-indigo-300'}">${esc(label)}</button>`;
