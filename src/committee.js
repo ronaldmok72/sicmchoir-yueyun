@@ -71,7 +71,7 @@ function clean(m) {
 
 function inline(s) {
   return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" class="text-indigo-600 underline break-all">$1</a>');
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="sic-view" rel="noopener" class="text-indigo-600 underline break-all">$1</a>');
 }
 // 完整会议记录：# 标题、### 小标题、- 项目（前面空两格 = 往里缩），**粗体**
 function rich(text) {
@@ -298,7 +298,7 @@ function renderDetail(m) {
       </div>
       <div class="text-sm text-slate-500 mt-0.5">${fmtDate(m.date)}${m.time ? ' · ' + esc(m.time) : ''}</div>
       <div class="mt-2 flex flex-wrap gap-2">
-        ${m.driveUrl ? `<a href="${esc(m.driveUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium">📎 打开原件</a>` : ''}
+        ${m.driveUrl ? `<a href="${esc(m.driveUrl)}" target="sic-view" rel="noopener" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium">📎 打开原件</a>` : ''}
         <button data-act="ai-this" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">🤖 ${m.status === 'agenda' ? '贴会议记录整理' : '用会议记录重新整理'}</button>
         ${m.status === 'done' ? '<button data-act="word" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 text-sm">⬇️ 下载 Word</button>' : ''}
       </div>
@@ -1451,7 +1451,7 @@ async function uploadPicked(data, say) {
 async function openFile(f) {
   const box = document.createElement('div');
   box.className = 'fixed inset-0 z-50 bg-black/80 flex flex-col p-3 gap-2';
-  box.innerHTML = `<div class="flex justify-end gap-2">${window.sicStaff.isMaster() ? `<a href="https://drive.google.com/file/d/${encodeURIComponent(f.id)}/view" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-white text-sm">在 Drive 打开</a>` : ''}<button data-close class="px-3 py-1.5 rounded-lg bg-white text-sm font-semibold">关闭</button></div><div data-body class="flex-1 min-h-0 flex items-center justify-center text-white text-sm">读取中…</div>`;
+  box.innerHTML = `<div class="flex justify-end gap-2">${window.sicStaff.isMaster() ? `<a href="https://drive.google.com/file/d/${encodeURIComponent(f.id)}/view" target="sic-view" rel="noopener" class="px-3 py-1.5 rounded-lg bg-white text-sm">在 Drive 打开</a>` : ''}<button data-close class="px-3 py-1.5 rounded-lg bg-white text-sm font-semibold">关闭</button></div><div data-body class="flex-1 min-h-0 flex items-center justify-center text-white text-sm">读取中…</div>`;
   let url = null;
   box.querySelector('[data-close]').onclick = () => { box.remove(); if (url) URL.revokeObjectURL(url); };
   document.body.append(box);
@@ -1464,7 +1464,7 @@ async function openFile(f) {
       body.innerHTML = '<img alt="附件" class="max-w-full max-h-full object-contain">';
       body.firstChild.src = url;
     } else {
-      body.innerHTML = '<a target="_blank" rel="noopener" class="px-4 py-2 rounded-lg bg-white text-slate-800 font-semibold">打开 PDF</a>';
+      body.innerHTML = '<a target="sic-view" rel="noopener" class="px-4 py-2 rounded-lg bg-white text-slate-800 font-semibold">打开 PDF</a>';
       body.firstChild.href = url;
       body.firstChild.download = j.name;
     }

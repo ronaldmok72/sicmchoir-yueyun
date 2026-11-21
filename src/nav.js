@@ -162,3 +162,11 @@
   document.addEventListener('click', e => { if (e.target.closest('[data-nav-open]')) open(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
 })();
+
+// 按 App 图标回来（manifest 的 launch_handler 用原本的窗口，不开新的）：放着超过 10 分钟 → 重新整理拿最新的；刚看过就不动
+// 弥撒排歌有没保存的改动时，浏览器会先问要不要离开
+(() => {
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => { hiddenAt = document.hidden ? Date.now() : hiddenAt; });
+  window.launchQueue?.setConsumer(() => { if (hiddenAt && Date.now() - hiddenAt > 10 * 60e3) location.reload(); });
+})();

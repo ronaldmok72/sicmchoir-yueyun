@@ -131,7 +131,7 @@ function renderAudio() {
   btn.classList.toggle('flex', !!(list.length || staff));
   $('v-audio').innerHTML = list.map((x, i) => `
     <div class="flex items-center rounded-xl hover:bg-white/10">
-      <a href="${esc(x.url)}" target="_blank" rel="noopener" class="flex-1 min-w-0 px-3 py-2.5 text-sm truncate">🎧 ${esc(x.label || '听录音')} <span class="text-zinc-500">↗</span></a>
+      <a href="${esc(x.url)}" target="sic-view" rel="noopener" class="flex-1 min-w-0 px-3 py-2.5 text-sm truncate">🎧 ${esc(x.label || '听录音')} <span class="text-zinc-500">↗</span></a>
       ${staff ? `<button data-audio-del="${i}" class="px-3 py-2.5 text-zinc-500 hover:text-red-400" title="拿掉">✕</button>` : ''}
     </div>`).join('') + (staff ? `<button data-audio-add class="w-full px-3 py-2.5 rounded-xl text-sm text-indigo-300 hover:bg-white/10 text-left">＋ 加录音连结</button>` : '');
 }

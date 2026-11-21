@@ -210,7 +210,7 @@ function renderSlots() {
       <div class="flex items-center gap-1.5 py-1 group">
         ${s.missing
           ? `<span class="flex-1 min-w-0 truncate text-sm text-amber-600" title="曲库里还没有这首的谱：按 ＋ 选歌，在选歌框按「➕ 上传新谱」就可以换掉它">⚠ 还没有谱：${esc(s.title)}</span>`
-          : `<span class="flex-1 min-w-0"><a href="${esc(s.imageUrl)}" target="_blank" rel="noopener" class="block truncate text-sm text-slate-800 hover:text-indigo-600" title="看乐谱">${esc(clean(s.title))}</a>${s.note ? `<span class="block text-xs text-indigo-600">✎ ${esc(s.note)}</span>` : ''}</span>`}
+          : `<span class="flex-1 min-w-0"><a href="${esc(s.imageUrl)}" target="sic-view" rel="noopener" class="block truncate text-sm text-slate-800 hover:text-indigo-600" title="看乐谱">${esc(clean(s.title))}</a>${s.note ? `<span class="block text-xs text-indigo-600">✎ ${esc(s.note)}</span>` : ''}</span>`}
         ${s.missing ? '' : `<button data-act="note" data-si="${si}" data-k="${k}" class="px-1.5 ${s.note ? 'text-indigo-500' : 'text-slate-300'} hover:text-indigo-600" title="这一台唱哪几段／特别歌词">✎</button>`}
         ${slot.songs.length > 1 ? `<button data-act="up" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-slate-600 ${k === 0 ? 'invisible' : ''}" title="上移">↑</button>` : ''}
         <button data-act="rm" data-si="${si}" data-k="${k}" class="px-1.5 text-slate-300 hover:text-red-500" title="拿掉">✕</button>

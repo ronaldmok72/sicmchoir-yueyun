@@ -780,7 +780,7 @@ function photoBlock(key, main = false) {
     ${main ? card(title, add) : `<div class="flex items-center justify-between mb-1.5"><div class="text-sm text-slate-500">${title}</div>${add}</div>`}
     ${items.length ? `<div class="grid grid-cols-3 gap-1.5">${items.map((p, i) => `
       <div class="relative">
-        <a href="${esc(full(p.url))}" target="_blank" rel="noopener"><img src="${esc(thumb(p.url))}" loading="lazy" alt="" class="w-full aspect-square object-cover rounded-lg bg-slate-100"></a>
+        <a href="${esc(full(p.url))}" target="sic-view" rel="noopener"><img src="${esc(thumb(p.url))}" loading="lazy" alt="" class="w-full aspect-square object-cover rounded-lg bg-slate-100"></a>
         ${can ? `<button data-photo-del="${esc(key)}" data-i="${i}" class="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/50 text-white text-xs" title="拿掉">✕</button>` : ''}
       </div>`).join('')}</div>` : '<div class="text-xs text-slate-400">还没有照片</div>'}
   </div>`;
